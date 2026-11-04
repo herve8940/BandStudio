@@ -784,6 +784,9 @@ def cached_chords(a: Analysis, items: list[dict] | None, key=None, cache=None) -
     import sys
     from pathlib import Path
     from . import chord_model
+    if chord_model.engine_setting() == "off":
+        chord_model.LAST = {"engine": "off"}
+        return []
     if cache is None:
         from .bridge import BRIDGE_DIR
         cache = BRIDGE_DIR / "prompter_chords.json"

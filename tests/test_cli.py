@@ -85,6 +85,7 @@ def test_prepare_french(env, lang, bridge_dir, resdir):
     assert cli.main(["prepare", "--resource-dir", str(resdir)]) == 0
     st = status(bridge_dir)
     assert st["state"] == "done"
+    assert st["prompter_published"] is True
     assert st["message"].startswith("Morceau préparé") and "Refrain 1" in st["message"]
     assert "lu dans le nom" not in st["message"]                     # avertissement informatif masqué
     plan = env.plans[-1]
@@ -97,6 +98,36 @@ def test_prepare_french(env, lang, bridge_dir, resdir):
     assert song["language"] == "fr" and song["sections"][2]["type"] == "chorus"
     assert (resdir / "reaper_www_root" / "prompteur.html").exists()
     assert song["count_in_bars"] == 2
+
+
+def test_prepare_reports_failed_publication_for_flow_retry(env, lang, bridge_dir, monkeypatch):
+    lang("fr")
+    def fail(*a, **k):
+        raise OSError("publication unavailable")
+    monkeypatch.setattr(server.prompter, "publish", fail)
+    assert cli.main(["prepare", "--reanalyse"]) == 0  # REAPER plan succeeded
+    st = status(bridge_dir)
+    assert st["state"] == "done" and st["prompter_published"] is False
+    assert "publication unavailable" in st["message"]
+
+
+def test_publication_exposes_auto_lyrics_warning_and_clears_previous_job(env, lang, monkeypatch):
+    import asyncio
+    from reacue_mcp import lyrics_auto
+    lang("fr")
+    def auto(*a, **k):
+        lyrics_auto.LAST_INFO.update({"state": "existing", "model": "small", "selected_model": "turbo",
+                                      "warning": "Existing small draft kept"})
+        return None
+    monkeypatch.setattr(server.lyrics, "cached_lyrics", auto)
+    result = asyncio.run(server.prepare_song(reanalyse=True))["prompteur"]
+    assert result["lyrics_auto"]["model"] == "small"
+    assert result["lyrics_auto"]["selected_model"] == "turbo"
+    assert "Existing small draft kept" in result["warning"]
+    monkeypatch.setattr(server.lyrics, "cached_lyrics", lambda *a, **k: None)
+    result = asyncio.run(server.prepare_song(reanalyse=True))["prompteur"]
+    assert result["lyrics_auto"] == {}
+    assert "Existing small draft kept" not in result.get("warning", "")
 
 
 def test_prepare_english(env, lang, bridge_dir, resdir):
@@ -119,6 +150,34 @@ def test_prepare_english(env, lang, bridge_dir, resdir):
     n = len(env.plans)
     assert cli.main(["publish"]) == 0
     assert status(bridge_dir)["message"].startswith("Prompter republished") and len(env.plans) == n
+
+
+@pytest.mark.parametrize("chord_info", [
+    {"engine": "reacue", "fallback": True, "message": "Chord model failed; rules used"},
+    {"engine": "reacue", "warning": "Chord model failed; rules used"},
+])
+def test_publication_exposes_model_fallbacks_and_clears_previous_job(env, lang, monkeypatch, chord_info):
+    import asyncio
+    from reacue_mcp import chord_model
+    lang("en")
+
+    def fallback(*a, **k):
+        chord_model.LAST.update(chord_info)
+        return []
+
+    monkeypatch.setattr(server.chords, "cached_chords", fallback)
+    monkeypatch.setattr(server.drums, "cached_drums", lambda *a, **k: {
+        "engine": "adtof", "bars": [], "warning": "ADT_STR missing; ADTOF used"})
+    result = asyncio.run(server.prepare_song(reanalyse=True))["prompteur"]
+    assert result["data"]
+    assert "Chord model failed; rules used" in result["warning"]
+    assert "ADT_STR missing; ADTOF used" in result["warning"]
+
+    monkeypatch.setattr(server.chords, "cached_chords", lambda *a, **k: [])
+    monkeypatch.setattr(server.drums, "cached_drums", lambda *a, **k: {"bars": []})
+    result = asyncio.run(server.prepare_song(reanalyse=True))["prompteur"]
+    assert "Chord model failed; rules used" not in result.get("warning", "")
+    assert "ADT_STR missing; ADTOF used" not in result.get("warning", "")
 
 
 def test_old_bridge_keeps_voix_track(env, lang, monkeypatch):

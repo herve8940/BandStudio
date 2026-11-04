@@ -1,9 +1,9 @@
-# Paroles calées mot par mot (alignement forcé wav2vec2) et paroles automatiques (Whisper) pour ReaCue, en local - Windows.
+﻿# Paroles calées mot par mot (alignement forcé wav2vec2) et paroles automatiques (Whisper) pour ReaCue, en local - Windows.
 # Word-by-word lyrics timing (wav2vec2 forced alignment) and automatic lyrics (Whisper) for ReaCue, local - Windows.
 # Lancé par « Install ReaCue Words.bat » ; ou :
 #   powershell -ExecutionPolicy Bypass -File install\install_words_windows.ps1 [-Lang fr|en] [-ExtraIndexUrl <url>]
 # Langues des modèles : français et anglais (≈ 1,3 Go chacun) ; une seule : $env:REACUE_WORDS_LANGS = "fr" (ou "en").
-# Paroles automatiques : Whisper « large-v3-turbo » (≈ 1,6 Go) ; sans Whisper : $env:REACUE_WHISPER = "0".
+# Paroles automatiques : Whisper (lyrics_model / REACUE_LYRICS_MODEL) ; sans Whisper : $env:REACUE_WHISPER = "0".
 # Environnement séparé .venv-words (n'abîme pas le .venv de ReaCue). Relançable sans risque : sur une installation
 # existante, seul ce qui manque est ajouté (paquets et modèles déjà présents gardés).
 # Fichier enregistré en UTF-8 avec BOM (sinon Windows PowerShell 5.1 lit les accents en ANSI).
@@ -97,20 +97,28 @@ if ($Whisper) {
   & uv pip install --python $Py --no-deps -r requirements-whisper.txt
   if ($LASTEXITCODE -ne 0) { Fail "installation de Whisper impossible (voir ci-dessus)." "could not install Whisper (see above)." }
 }
-Write-Host (T "  téléchargement des modèles de calage et test sur un audio synthétique…" "  downloading the timing models and testing on synthetic audio…")
-& $Py (Join-Path $Here "reacue_words.py") check --langs $Langs --lang $L
-if ($LASTEXITCODE -ne 0) { Fail "le calage de paroles ne fonctionne pas (voir ci-dessus)." "lyrics timing does not work (see above)." }
+$WordsEngine = (& $Py -c "import os, reacue_performance as p; print(os.environ.get('REACUE_WORDS_ENGINE') or p.settings().get('words_engine', 'off'))").Trim()
+if ($LASTEXITCODE -ne 0) { Fail "lecture des réglages impossible." "could not read settings." }
+if ($WordsEngine -eq "auto") {
+  Write-Host (T "  téléchargement des modèles de calage et test sur un audio synthétique…" "  downloading the timing models and testing on synthetic audio…")
+  & $Py (Join-Path $Here "reacue_words.py") check --langs $Langs --lang $L
+  if ($LASTEXITCODE -ne 0) { Fail "le calage de paroles ne fonctionne pas (voir ci-dessus)." "lyrics timing does not work (see above)." }
+} else {
+  Write-Host (T "  Calage mot par mot désactivé : modèles existants conservés, aucun téléchargement." "  Word alignment disabled: existing models kept, no download.")
+}
 if ($Whisper) {
-  Write-Host (T "  Licence : openai-whisper et modèle Whisper large-v3-turbo d'OpenAI (MIT). Détails : THIRD_PARTY_NOTICES.md" `
-                "  Licence: OpenAI's openai-whisper and Whisper large-v3-turbo model (MIT). Details: THIRD_PARTY_NOTICES.md")
-  Write-Host (T "  modèle Whisper (environ 1,6 Go la première fois) et test…" `
-                "  Whisper model (about 1.6 GB the first time) and test…")
-  & $Py (Join-Path $Here "reacue_transcribe.py") check --download --lang $L
+  $WhisperModel = (& $Py -c 'import reacue_transcribe as r; print(r.selected_model())').Trim()
+  if ($LASTEXITCODE -ne 0) { Fail "lecture du modele impossible." "could not read selected model." }
+  Write-Host (T "  Licence : openai-whisper et modèle Whisper $WhisperModel d'OpenAI (MIT). Détails : THIRD_PARTY_NOTICES.md" `
+                "  Licence: OpenAI's openai-whisper and Whisper $WhisperModel model (MIT). Details: THIRD_PARTY_NOTICES.md")
+  Write-Host (T "  modèle Whisper sélectionné ($WhisperModel) et test…" `
+                "  selected Whisper model ($WhisperModel) and test…")
+  & $Py (Join-Path $Here "reacue_transcribe.py") check --download --lang $L --model $WhisperModel
   if ($LASTEXITCODE -ne 0) { Fail "les paroles automatiques (Whisper) ne fonctionnent pas (voir ci-dessus)." "automatic lyrics (Whisper) do not work (see above)." }
   Write-Host (T "  Paroles automatiques installées : sans paroles.txt, ReaCue écrit un brouillon 'paroles (auto).txt' à corriger (réglage 'lyrics_auto')." `
                 "  Automatic lyrics installed: without lyrics.txt, ReaCue writes a draft 'paroles (auto).txt' to correct ('lyrics_auto' setting).")
 }
 
-Write-Host (T "  Paroles mot par mot installées : actions 'ReaCue - Caler les paroles' et 'ReaCue - Paroles automatiques (Whisper)' dans REAPER." `
-              "  Word-by-word lyrics installed: 'ReaCue - Time lyrics' and 'ReaCue - Automatic lyrics (Whisper)' actions in REAPER.")
+Write-Host (T "  Installation paroles terminée : actions 'ReaCue - Caler les paroles' et 'ReaCue - Paroles automatiques (Whisper)' dans REAPER." `
+              "  Lyrics installation complete: 'ReaCue - Time lyrics' and 'ReaCue - Automatic lyrics (Whisper)' actions in REAPER.")
 exit 0

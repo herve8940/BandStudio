@@ -6,7 +6,7 @@ install/install_words_*), jamais dans le .venv de ReaCue. Utilisé seulement qua
 de fichier de paroles : ReaCue (reacue_mcp/lyrics_auto.py) écrit alors un brouillon « paroles (auto).txt » à
 partir des phrases renvoyées ici.
 
-Modèle : openai-whisper (code MIT) « large-v3-turbo » (poids MIT, ≈ 1,6 Go), dans <ReaCue>/words/whisper/
+Modèle : openai-whisper (code MIT) « small » par défaut ou « large-v3-turbo » (poids MIT), dans <ReaCue>/words/whisper/
 (téléchargé par l'installateur depuis le serveur d'OpenAI ; sinon converti depuis le dépôt Hugging Face
 officiel openai/whisper-large-v3-turbo, même licence). Jamais téléchargé pendant une transcription.
 
@@ -18,11 +18,11 @@ Contre les hallucinations sur du chant :
   - le nettoyage (phrases parasites, répétitions en boucle, découpe en lignes) est fait côté ReaCue.
 
     <python> reacue_transcribe.py transcribe --audio <voix.wav> --out <résultat.json>
-                                             [--lang auto|fr|en|…] [--model large-v3-turbo] [--status <état.json>]
+                                             [--lang auto|fr|en|…] [--model small|large-v3-turbo] [--status <état.json>]
         -> {"engine": "whisper", "model", "language", "language_prob", "seconds", "voiced_s",
             "segments": [{"t", "end", "text", "avg_logprob", "no_speech_prob", "compression_ratio",
                           "words": [{"w", "t", "end", "p"}]}]}
-    <python> reacue_transcribe.py check [--download] [--lang fr|en] [--model large-v3-turbo]
+    <python> reacue_transcribe.py check [--download] [--lang fr|en] [--model small|large-v3-turbo]
         télécharge le modèle s'il manque (--download), le charge, fait un essai, affiche « WHISPER_OK ».
 """
 from __future__ import annotations
@@ -42,12 +42,21 @@ reacue_performance.configure()
 HERE = Path(__file__).resolve().parent
 WORDS_DIR = Path(os.environ.get("REACUE_WORDS_DIR") or HERE / "words")
 WHISPER_DIR = WORDS_DIR / "whisper"
-DEFAULT_MODEL = "large-v3-turbo"
+DEFAULT_MODEL = "small"
 HF_REPOS = {"large-v3-turbo": "openai/whisper-large-v3-turbo", "large-v3": "openai/whisper-large-v3",
             "medium": "openai/whisper-medium", "small": "openai/whisper-small", "base": "openai/whisper-base",
             "tiny": "openai/whisper-tiny"}
 SR = 16000
 ENGINE = "whisper"
+
+
+def selected_model() -> str:
+    """Installer/CLI default follows the saved profile without importing the main package."""
+    override = os.environ.get("REACUE_LYRICS_MODEL", "").strip()
+    if override:
+        return override
+    value = reacue_performance.settings().get("lyrics_model", DEFAULT_MODEL)
+    return value if value in ("small", "large-v3-turbo") else DEFAULT_MODEL
 
 # détection d'activité vocale (trames de 20 ms)
 VAD_HOP = 320
@@ -221,15 +230,14 @@ def load(name: str = DEFAULT_MODEL, root: Path | None = None, device: str | None
     if p is None:
         raise FileNotFoundError(f"{root / (name + '.pt')}")
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-    if p.name == f"{name}.pt" and name in whisper._MODELS:
-        model = whisper.load_model(name, device=device, download_root=str(root))   # contrôle SHA-256
-    else:
-        model = whisper.load_model(str(p), device=device)
-        if name in getattr(whisper, "_ALIGNMENT_HEADS", {}):   # têtes d'alignement officielles (mots)
-            try:
-                model.set_alignment_heads(whisper._ALIGNMENT_HEADS[name])
-            except RuntimeError:                      # dimensions différentes : têtes par défaut
-                pass
+    # Passing a model name permits Whisper to redownload corrupt/missing cached weights.
+    # A local path keeps inference strictly offline; installation/check owns downloads.
+    model = whisper.load_model(str(p), device=device)
+    if name in getattr(whisper, "_ALIGNMENT_HEADS", {}):
+        try:
+            model.set_alignment_heads(whisper._ALIGNMENT_HEADS[name])
+        except RuntimeError:                          # dimensions différentes : têtes par défaut
+            pass
     model.eval()
     return model
 
@@ -352,8 +360,8 @@ def check(lang: str = "fr", model_name: str = DEFAULT_MODEL, do_download: bool =
     print(f"  python {sys.version.split()[0]} | torch {torch.__version__} | numpy {np.__version__} | "
           f"openai-whisper {getattr(whisper, '__version__', '?')}")
     if do_download and model_file(model_name) is None:
-        print(t(f"  téléchargement du modèle Whisper {model_name} (environ 1,6 Go)…",
-                f"  downloading the Whisper {model_name} model (about 1.6 GB)…"), flush=True)
+        print(t(f"  téléchargement du modèle Whisper {model_name}…",
+                f"  downloading the Whisper {model_name} model…"), flush=True)
         download(model_name)
     t0 = time.time()
     model = load(model_name)
@@ -383,11 +391,11 @@ def main(argv=None) -> int:
     a.add_argument("--audio", required=True)
     a.add_argument("--out", required=True)
     a.add_argument("--lang", default="auto")
-    a.add_argument("--model", default=DEFAULT_MODEL)
+    a.add_argument("--model", default=selected_model())
     a.add_argument("--status")
     c = sub.add_parser("check")
     c.add_argument("--lang", default="fr", choices=["fr", "en"])
-    c.add_argument("--model", default=DEFAULT_MODEL)
+    c.add_argument("--model", default=selected_model())
     c.add_argument("--download", action="store_true")
     args = ap.parse_args(argv)
     if args.cmd == "transcribe":

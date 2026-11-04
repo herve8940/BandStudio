@@ -1,7 +1,7 @@
 """Paroles automatiques (composant optionnel) / Automatic lyrics (optional component).
 
 Quand le dossier du morceau n'a pas de fichier de paroles (paroles.txt, lyrics.txt… : lyrics.find_lyrics_file),
-ReaCue transcrit le stem voix avec Whisper (openai-whisper, code et poids MIT, modèle « large-v3-turbo ») et écrit
+ReaCue transcrit le stem voix avec Whisper (openai-whisper, code et poids MIT, modèle « small » ou « large-v3-turbo ») et écrit
 un brouillon « paroles (auto).txt » dans le dossier du morceau et conserve les temps de Whisper dans un
 fichier .timing.json adjacent. Les temps restent valides pour la même source voix et le même texte ;
 les corrections manuelles restent prioritaires. Sans temps valides, le calage par ligne est utilisé.
@@ -36,8 +36,8 @@ from .lyrics import AUTO_NAME, lyric_dirs
 
 ROOT = Path(__file__).resolve().parent.parent          # dossier d'installation de ReaCue
 ENGINE = "whisper"
-MODEL = os.environ.get("REACUE_LYRICS_MODEL") or "large-v3-turbo"
-CACHE_VERSION = 2
+MODEL = "small"  # compatibility/default; resolve the active setting at each call
+CACHE_VERSION = 3
 ERROR_RETRY_S = 300  # Retry transient failures after five minutes; do not retry on every refresh.
 TIMEOUT_S = 1200                 # 20 min (Mac Intel, CPU : 3 à 6 min attendues) ; au-delà : pas de paroles
 SR = 16000
@@ -75,6 +75,21 @@ def setting() -> str:
     return v if v in ("auto", "off") else "auto"
 
 
+def model_setting() -> str:
+    """Resolve on every call so a running MCP server follows profile changes."""
+    override = os.environ.get("REACUE_LYRICS_MODEL", "").strip()
+    if override:
+        return override
+    from .settings import load_settings
+    value = str(load_settings().get("lyrics_model") or MODEL)
+    return value if value in ("small", "large-v3-turbo") else MODEL
+
+
+def _message(fr: str, en: str) -> str:
+    from .i18n import get_lang
+    return en if get_lang() == "en" else fr
+
+
 def _words_dir(install_dir: Path | None = None) -> Path:
     return Path(os.environ.get("REACUE_WORDS_DIR") or Path(install_dir or ROOT) / "words")
 
@@ -82,7 +97,7 @@ def _words_dir(install_dir: Path | None = None) -> Path:
 def model_file(install_dir: Path | None = None, model: str | None = None) -> Path | None:
     """Poids présents (<ReaCue>/words/whisper/<modèle>.pt, ou <modèle>-hf.pt converti), sinon None."""
     d = _words_dir(install_dir) / "whisper"
-    m = model or MODEL
+    m = model or model_setting()
     for p in (d / f"{m}.pt", d / f"{m}-hf.pt"):
         try:
             if p.is_file() and p.stat().st_size > 1000:
@@ -330,7 +345,8 @@ def _progress(msg: str):
 
 
 def run_engine(wav: Path, workdir: Path, lang: str = "auto", install_dir: Path | None = None,
-               timeout: float = TIMEOUT_S, python: str | None = None, script: str | None = None) -> dict:
+               timeout: float = TIMEOUT_S, python: str | None = None, script: str | None = None,
+               model: str | None = None) -> dict:
     """Lance reacue_transcribe.py transcribe ; renvoie le résultat (dict) ou lève RuntimeError."""
     from . import words
     from .i18n import t
@@ -345,7 +361,7 @@ def run_engine(wav: Path, workdir: Path, lang: str = "auto", install_dir: Path |
             p.unlink()
         except OSError:
             pass
-    cmd = [py, sc, "transcribe", "--audio", str(wav), "--out", str(out_p), "--lang", lang, "--model", MODEL,
+    cmd = [py, sc, "transcribe", "--audio", str(wav), "--out", str(out_p), "--lang", lang, "--model", model or model_setting(),
            "--status", str(status)]
     kw = {}
     if os.name == "nt":
@@ -402,7 +418,7 @@ def _install_stamp(install_dir: Path | None = None) -> str:
 def memo_key(a, items: list[dict] | None, lang: str, install_dir: Path | None = None) -> str:
     from .lyrics import _voice_source
     src = _voice_source(a, items)
-    h = hashlib.sha1(f"{ENGINE}:{MODEL}:{CACHE_VERSION}:{lang}:{_install_stamp(install_dir)}".encode())
+    h = hashlib.sha1(f"{ENGINE}:{model_setting()}:{CACHE_VERSION}:{lang}:{_install_stamp(install_dir)}".encode())
     import reacue_performance
     if reacue_performance.profile() == "fast":
         h.update(b":fast")
@@ -410,7 +426,7 @@ def memo_key(a, items: list[dict] | None, lang: str, install_dir: Path | None = 
         p = Path(src[0])
         try:
             st = p.stat()
-            h.update(f"{p.resolve()}|{st.st_size}|{int(st.st_mtime)}".encode())
+            h.update(f"{p.resolve()}|{st.st_size}|{st.st_mtime_ns}|{float(src[1]):.6f}".encode())
         except OSError:
             h.update(f"{p}|missing".encode())
     return h.hexdigest()
@@ -435,7 +451,9 @@ def _memo_write(path: Path | None, key: str, value: dict):
         d = dict(list(d.items())[-100:])
     try:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        Path(path).write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+        tmp = Path(path).with_name(Path(path).name + f".{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, path)
     except OSError:
         pass
 
@@ -474,12 +492,13 @@ def read_timing(path):
         return {}
 
 
-def save_timing(a, items, path, lines):
+def save_timing(a, items, path, lines, model=None, language="auto", key=None):
     from .lyrics import read_lyrics
     texts = [x["text"] for x in read_lyrics(path)]
     matches = [_norm(x) for x in texts] == [_norm(x["text"]) for x in lines]
-    data = {"version": 1, "source": source_stamp(a, items), "texts": texts,
-            "lines": lines if matches else [], "matched": matches}
+    data = {"version": 2, "source": source_stamp(a, items), "texts": texts,
+            "lines": lines if matches else [], "matched": matches,
+            "model": model or model_setting(), "language": language, "key": key}
     target = timing_path(path)
     tmp = target.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
@@ -522,18 +541,51 @@ def ensure_auto_lyrics(a, items: list[dict] | None, files: list[str] | None = No
     LAST_INFO.clear()
     have = None
     try:
+        from . import words
+        selected = model_setting()
+        lang = words.language_setting()
+        LAST_INFO["selected_model"] = selected
         if files is None:
             files = [d["file"] for d in items] if items else [a.file] + list((a.stems or {}).values())
         have = find_auto_file(files)
-        if have and read_timing(have).get("source") == source_stamp(a, items):
-            LAST_INFO.update({"state": "existing", "file": str(have)})
-            return have
+        if have:
+            timing = read_timing(have)
+            previous = timing.get("model")
+            if not previous:
+                # Old drafts identify their generator in the comment header, if available.
+                header = "\n".join(x for x in have.read_text(encoding="utf-8-sig").splitlines()[:5]
+                                   if x.startswith("#"))
+                match = re.search(r"\bWhisper\s+([\w.-]+)", header)
+                previous = match.group(1) if match else None
+            different = (previous and previous != selected) or (
+                lang != "auto" and timing.get("language") not in (None, "auto", lang))
+            if different or timing.get("source") == source_stamp(a, items):
+                LAST_INFO.update({"state": "existing", "file": str(have), "model": previous})
+                if different or not previous:
+                    old = previous or "?"
+                    warning = _message(
+                        f"Brouillon existant conservé (Whisper {old}, langue {timing.get('language', '?')}) ; "
+                        f"modèle demandé : {selected}, langue {lang}. Pour une nouvelle transcription, "
+                        "sauvegardez le brouillon hors du dossier du morceau, retirez « paroles (auto).txt », "
+                        "puis republiez. Un fichier paroles.txt personnel reste prioritaire.",
+                        f"Existing draft kept (Whisper {old}, language {timing.get('language', '?')}); "
+                        f"requested model: {selected}, language {lang}. To transcribe again, back up the draft "
+                        "outside the song folder, remove 'paroles (auto).txt', then republish. "
+                        "A personal lyrics.txt file keeps priority.")
+                    LAST_INFO.update({"warning": warning, "message": warning})
+                return have
         if setting() != "auto":
             LAST_INFO["state"] = "off"
             return have
         why = missing_reason(install_dir)
         if why:
-            LAST_INFO.update({"state": "missing", "missing": why})
+            message = _message(
+                f"Whisper {selected} indisponible ({why}) : lancez Install ReaCue Words pour installer "
+                "le modèle sélectionné. Aucun téléchargement pendant la préparation.",
+                f"Whisper {selected} unavailable ({why}): run Install ReaCue Words to install "
+                "the selected model. Preparation never downloads models.")
+            LAST_INFO.update({"state": "missing", "missing": why, "model": selected,
+                              "message": message, "warning": message})
             return have
         from .lyrics import _voice_source
         if not _voice_source(a, items):
@@ -543,40 +595,43 @@ def ensure_auto_lyrics(a, items: list[dict] | None, files: list[str] | None = No
         if folder is None or not folder.is_dir():
             LAST_INFO.update({"state": "no_folder"})
             return have
-        from . import words
-        lang = words.language_setting()
         if cache is None:
-            from .bridge import BRIDGE_DIR
-            cache = BRIDGE_DIR / "prompter_lyrics_auto.json"
+            cache = folder / ".reacue" / "lyrics_auto.json"
         key = memo_key(a, items, lang, install_dir)
         memo = _memo_read(cache).get(key)
-        if memo and (memo.get("state") != "error" or
+        if memo and memo.get("state") != "success" and (memo.get("state") != "error" or
                      time.time() - float(memo.get("failed_at", 0)) < ERROR_RETRY_S):
             LAST_INFO.update({"state": memo.get("state", "error"), **memo, "cached": True})
             return have
-        _progress(t("lyrics_auto_running", s=0))
         t0 = time.time()
-        with tempfile.TemporaryDirectory(prefix="reacue_whisper_") as tmp:
-            wav = words.write_voice(a, items, Path(tmp) / "voice16k.wav")
-            try:
-                res = run_engine(wav, Path(tmp), lang, install_dir)
-            except Exception as e:
-                _memo_write(cache, key, {"state": "error", "error": str(e), "failed_at": time.time()})
-                raise
+        cached = bool(memo and memo.get("state") == "success" and isinstance(memo.get("result"), dict))
+        if cached:
+            res = memo["result"]
+        else:
+            _progress(t("lyrics_auto_running", s=0))
+            with tempfile.TemporaryDirectory(prefix="reacue_whisper_") as tmp:
+                wav = words.write_voice(a, items, Path(tmp) / "voice16k.wav")
+                try:
+                    res = run_engine(wav, Path(tmp), lang, install_dir, model=selected)
+                except Exception as e:
+                    _memo_write(cache, key, {"state": "error", "error": str(e), "failed_at": time.time()})
+                    raise
         lines = segments_to_lines(res.get("segments") or [])
         info = {"lang": res.get("language") or lang, "lines": len(lines),
                 "words": sum(len(x["text"].split()) for x in lines), "seconds": round(time.time() - t0, 1),
-                "model": res.get("model") or MODEL}
+                "model": res.get("model") or selected, "cached": cached}
         if not lines:
             _memo_write(cache, key, {"state": "empty", **info})
             LAST_INFO.update({"state": "empty", **info, "message": t("lyrics_auto_empty")})
             return have
+        if not cached:
+            _memo_write(cache, key, {"state": "success", "result": res})
         text = format_draft(lines, block_gap(a), info["model"], info["lang"])
         p = have or write_draft(folder, text)
         if p is None:                                    # créé entre-temps : on garde celui-là
             p = folder / AUTO_NAME
         try:
-            save_timing(a, items, p, lines)
+            save_timing(a, items, p, lines, model=info["model"], language=info["lang"], key=key)
         except (OSError, ValueError):
             pass  # Preserve the draft if a read-only folder prevents storing timing.
         LAST_INFO.update({"state": "existing" if have else "created", "file": str(p), **info,

@@ -400,10 +400,10 @@ def test_engine_setting_and_cache_key(tmp_path, monkeypatch, bridge_dir):
         p.write_text(json.dumps({"drums_engine": "REACUE"}), encoding="utf-8")
         assert D.engine_setting() == "reacue" and S.load_settings()["drums_engine"] == "reacue"
         p.write_text(json.dumps({"drums_engine": "bogus"}), encoding="utf-8")
-        assert D.engine_setting() == "auto" and S.load_settings()["drums_engine"] == "auto"
+        assert D.engine_setting() == "adtof" and S.load_settings()["drums_engine"] == "adtof"
     finally:
         p.unlink(missing_ok=True)
-    assert S.DEFAULTS["drums_engine"] == "auto"
+    assert S.DEFAULTS["drums_engine"] == "adtof"
     # clé du cache du prompteur : dépend de la présence du modèle
     wav = tmp_path / "d-drums.wav"
     sf.write(str(wav), np.zeros(SR, np.float32), SR)

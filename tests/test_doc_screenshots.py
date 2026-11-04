@@ -50,7 +50,15 @@ def _font(cache, size, bold, face=None):
             try:
                 cache[k] = ImageFont.truetype(alternate, int(round(size * 0.9 * SCALE)))
             except OSError:
-                cache[k] = ImageFont.load_default()
+                # A real font keeps accents and requested sizes when verifying on macOS.
+                mac = {"sans": "Arial Bold.ttf" if bold else "Arial.ttf",
+                       "mono": "Courier New Bold.ttf" if bold else "Courier New.ttf",
+                       "cond": "Arial Narrow Bold.ttf"}[kind]
+                try:
+                    cache[k] = ImageFont.truetype("/System/Library/Fonts/Supplemental/" + mac,
+                                                  int(round(size * 0.9 * SCALE)))
+                except OSError:
+                    cache[k] = ImageFont.load_default()
     return cache[k]
 
 
@@ -290,6 +298,10 @@ def test_assistant_and_settings(concert, tmp_path, lang):
     assert ("Bienvenue dans ReaCue" if lang == "fr" else "Welcome to ReaCue") in T, T
     W.press_text(L, g, "Terminer" if lang == "fr" else "Finish", exact=True)
     L.execute('REACUE_CTX.goto_tab("settings")'); W.frame(L, g)
+    T = snap(L, g, "settings_models", lang)
+    assert ("Essentiel" if lang == "fr" else "Essential") in T, T
+    assert g.REACUE_CTX.layout_h < 800
+    L.execute('REACUE_CTX.tabs.settings.set_page("live")'); W.frame(L, g)
     L.execute("REACUE_CTX.tabs.settings.set_advanced(false)"); W.frame(L, g)
     T = snap(L, g, "settings", lang)
     assert ("Langue" if lang == "fr" else "Language") in T, T

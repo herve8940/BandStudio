@@ -317,6 +317,7 @@ end
 L.STUDIO_FILES = {
   "studio.html",
   "reacue_studio/base.css", "reacue_studio/core.js", "reacue_studio/travail.css", "reacue_studio/travail.js",
+  "reacue_studio/presentation.js", "reacue_studio/prompter-pro.css", "reacue_studio/studio-pro.css",
   "reacue_studio/concert.css", "reacue_studio/concert.js",
   "reacue_studio/biblio.css", "reacue_studio/biblio.js", "reacue_studio/groupe.js",
   "reacue_studio/fonts/OFL-Barlow-Condensed.txt", "reacue_studio/fonts/OFL-IBM-Plex-Mono.txt",
@@ -1093,7 +1094,14 @@ L.ROLES = {          -- même ordre et mêmes noms que reacue_mcp/concert.py (RO
   { "mix", "Mix", "Mix", { 95, 94, 90 } },
 }
 local ROLE_BY_NAME = {}
-for _, r in ipairs(L.ROLES) do ROLE_BY_NAME[r[2]:lower()] = r[1]; ROLE_BY_NAME[r[3]:lower()] = r[1] end
+local LOWER = { ["À"] = "à", ["Â"] = "â", ["Ä"] = "ä", ["Á"] = "á", ["Ç"] = "ç", ["É"] = "é", ["È"] = "è",
+  ["Ê"] = "ê", ["Ë"] = "ë", ["Î"] = "î", ["Ï"] = "ï", ["Í"] = "í", ["Ô"] = "ô", ["Ö"] = "ö", ["Ó"] = "ó",
+  ["Ù"] = "ù", ["Û"] = "û", ["Ü"] = "ü", ["Ú"] = "ú", ["Ÿ"] = "ÿ", ["Ñ"] = "ñ", ["Æ"] = "æ", ["Œ"] = "œ" }
+function L.lower_utf8(s)
+  s = tostring(s or ""):gsub("[A-Z]", function(c) return string.char(c:byte() + 32) end)
+  return (s:gsub("[\xC3\xC5][\x80-\xBF]", function(c) return LOWER[c] or c end))
+end
+for _, r in ipairs(L.ROLES) do ROLE_BY_NAME[L.lower_utf8(r[2])] = r[1]; ROLE_BY_NAME[L.lower_utf8(r[3])] = r[1] end
 -- pistes d'un morceau séparé par ReaCue (« Guitare », « Piano »…) : mêmes rôles
 for k, v in pairs({ guitare = "guitars", guitar = "guitars", piano = "keys", clavier = "keys", synth = "keys",
                     batt = "drums", ["lead guitars"] = "lead_guitar" }) do
@@ -1110,14 +1118,14 @@ function L.role_label(role)
 end
 -- rôle d'une piste commune du concert (« Basse », « Bass 2 »…) ou nil
 function L.role_of_track(name)
-  local n = (name or ""):gsub("%s+%d+$", ""):lower()
+  local n = L.lower_utf8((name or ""):gsub("[ \t\r\n\v\f]+%d+$", ""))
   return ROLE_BY_NAME[n]
 end
 -- noms acceptés pour un rôle (commandes distantes) : rôle, nom FR ou EN
 function L.norm_role(x)
-  x = tostring(x or ""):lower()
+  x = L.lower_utf8(x)
   for _, r in ipairs(L.ROLES) do
-    if x == r[1] or x == r[2]:lower() or x == r[3]:lower() then return r[1] end
+    if x == r[1] or x == L.lower_utf8(r[2]) or x == L.lower_utf8(r[3]) then return r[1] end
   end
   return nil
 end
@@ -1546,9 +1554,11 @@ function L.url_decode(s)
   return (s:gsub("%%(%x%x)", function(h) return string.char(tonumber(h, 16)) end))
 end
 function L.url_encode(s)
-  return (tostring(s or ""):gsub("[^%w%-%._~]", function(c) return string.format("%%%02X", c:byte()) end))
+  -- RFC 3986 : seuls les octets ASCII non réservés restent littéraux. %w dépend de la locale
+  -- et laisse parfois passer un seul octet d'un caractère UTF-8 sur macOS.
+  return (tostring(s or ""):gsub("[^A-Za-z0-9%-%._~]", function(c) return string.format("%%%02X", c:byte()) end))
 end
-function L.song_key(p) return (tostring(p or ""):gsub("\\", "/")):lower() end
+function L.song_key(p) return L.lower_utf8((tostring(p or ""):gsub("\\", "/"))) end
 
 function L.state_path() return reaper.GetResourcePath() .. SEP .. "ReaCueMCP" .. SEP .. "reacue_state.json" end
 function L.state_load()
@@ -1585,8 +1595,10 @@ function L.set_note(c, arg)
   if c and c.songs and not c.songs[i] then return false end
   local proj, title = L.song_project(c, i)
   if not proj or proj == "" then return false end
-  txt = L.url_decode(txt):gsub("[%c]+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-  if utf8.len(txt) and utf8.len(txt) > L.MAX_NOTE then txt = txt:sub(1, utf8.offset(txt, L.MAX_NOTE + 1) - 1) end
+  txt = L.url_decode(txt):gsub("[%z\1-\31\127]+", " "):gsub("^ +", ""):gsub(" +$", "")
+  local chars = utf8.len(txt)
+  if not chars then return false end
+  if chars > L.MAX_NOTE then txt = txt:sub(1, utf8.offset(txt, L.MAX_NOTE + 1) - 1) end
   local d = L.state_load()
   local s = state_song(d, proj, title)
   if type(s.notes) ~= "table" then s.notes = {} end
@@ -1643,6 +1655,10 @@ end
 function L.band_beat(v, now)
   local id, role, name, ready, ep = tostring(v or ""):match("^(%w+)|([%w_]*)|([^|]*)|([01])|(%w*)")
   if not id or #id > 24 then return false end
+  name = L.url_decode(name):gsub("[%z\1-\31\127|;,]", " ")
+  local chars = utf8.len(name)
+  if not chars then return false end
+  if chars > 24 then name = name:sub(1, utf8.offset(name, 25) - 1) end
   local B = L.band
   local cur = B.clients[id]
   if not cur then
@@ -1652,8 +1668,6 @@ function L.band_beat(v, now)
     cur = {}
     B.clients[id] = cur
   end
-  name = L.url_decode(name):gsub("[%c|;,]", " ")
-  if utf8.len(name) and utf8.len(name) > 24 then name = name:sub(1, utf8.offset(name, 25) - 1) end
   local ok = ready == "1" and ep == L.band_epoch()
   cur.role, cur.name, cur.at = role, name, now
   cur.ready_at = ok and (cur.ready and cur.ready_at or now) or nil
@@ -1760,7 +1774,7 @@ end
 -- ouvrir un projet de la bibliothèque (comme l'onglet Concert : nouvel onglet, sauf si c'est le projet en cours)
 function L.open_project(p)
   p = tostring(p or "")
-  if not p:lower():match("%.rpp$") or not L.exists(p) then return false end
+  if not L.lower_utf8(p):match("%.rpp$") or not L.exists(p) then return false end
   if L.song_key(L.project_file()) == L.song_key(p) then return true end
   reaper.Main_OnCommand(40859, 0)
   reaper.Main_openProject(p)

@@ -101,6 +101,14 @@ def test_language_from_settings(tmp_path):
     assert M.lang() == "en" and M.tr("prepare") == "Preparing the song"
 
 
+@pytest.mark.parametrize("text", ["À la fin — Élodie 🎸", "Léa, Zoé et François", '"une ligne"\n\t\\\x00\x1f'])
+def test_json_encoder_escapes_ascii_controls_without_corrupting_utf8(tmp_path, text):
+    _, M = load_run(tmp_path)
+    encoded = M.json_encode(text)
+    assert json.loads(encoded) == text
+    assert M.json_decode(encoded) == text
+
+
 def test_install_dir_priority(tmp_path):
     data = tmp_path / "ReaCueMCP"
     data.mkdir()

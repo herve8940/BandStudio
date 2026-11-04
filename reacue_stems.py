@@ -10,7 +10,7 @@ Tourne dans l'environnement séparé .venv-demucs (installé par install/install
 
 Lancé par l'action REAPER « ReaCue - Séparer les stems » (ReaCue_stems.lua), en arrière-plan :
 
-    <.venv-demucs python> reacue_stems.py separate --input <audio> --out <dossier> [--model htdemucs_6s]
+    <.venv-demucs python> reacue_stems.py separate --input <audio> --out <dossier> [--model htdemucs]
 
         -> <dossier>/<model>/<nom du fichier>-<stem>.wav
 
@@ -81,7 +81,7 @@ MODELS = {   # stems produits par chaque modèle Demucs (ordre d'import dans REA
 
 }
 
-DEFAULT_MODEL = "htdemucs_6s"
+DEFAULT_MODEL = "htdemucs"
 
 FILENAME = "{track}-{stem}.{ext}"     # le nom d'origine (tonalité, bpm) est gardé : ReaCue le lit
 

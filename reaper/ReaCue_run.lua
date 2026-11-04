@@ -166,7 +166,8 @@ function M.json_decode(s)
 end
 
 local function json_str_enc(v)
-  return '"' .. v:gsub('[%c"\\]', function(c)
+  -- JSON échappe les contrôles ASCII, pas les octets de continuation des caractères UTF-8.
+  return '"' .. v:gsub('[%z\1-\31"\\]', function(c)
     local map = { ['"'] = '\\"', ['\\'] = '\\\\', ["\n"] = "\\n", ["\r"] = "\\r", ["\t"] = "\\t" }
     return map[c] or string.format("\\u%04x", c:byte())
   end) .. '"'
@@ -207,13 +208,23 @@ function M.json_encode(v, indent, order, depth)
   return "{" .. table.concat(out, ",") .. nl0 .. "}"
 end
 
--- écriture atomique d'un fichier texte
+-- Remplacement atomique sur POSIX ; sauvegarde/restauration sur Windows si le remplacement est refusé.
 function M.write_atomic(path, text)
   local tmp = path .. ".tmp"
   local f = io.open(tmp, "wb"); if not f then return false end
-  f:write(text); f:close()
-  os.remove(path)
-  return os.rename(tmp, path) and true or false
+  local wrote = f:write(text)
+  local closed = f:close()
+  if not wrote or not closed then os.remove(tmp); return false end
+  if os.rename(tmp, path) then return true end -- remplace sans retirer l'ancien fichier sur macOS/Linux
+  if not is_windows() or not exists(path) then os.remove(tmp); return false end
+  -- Le CRT Windows peut refuser rename si la destination existe. Ne jamais écraser une sauvegarde
+  -- non restaurée d'un échec précédent ; si la seconde opération échoue, remettre l'ancien fichier.
+  local backup = path .. ".previous"
+  if exists(backup) or not os.rename(path, backup) then os.remove(tmp); return false end
+  if os.rename(tmp, path) then os.remove(backup); return true end
+  os.rename(backup, path) -- en cas d'échec de restauration, la sauvegarde reste récupérable
+  os.remove(tmp)
+  return false
 end
 
 M.read = read
@@ -348,7 +359,7 @@ end
 function M.status()
   local s = read(STATUS)
   if not s then return nil end
-  return jfield(s, "state"), jfield(s, "message"), jfield(s, "cmd"), jfield(s, "step")
+  return jfield(s, "state"), jfield(s, "message"), jfield(s, "cmd"), jfield(s, "step"), jfield(s, "prompter_published")
 end
 
 function M.run(cmd, label, script_dir)

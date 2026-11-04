@@ -993,10 +993,13 @@ def _try_constant_grid(y_beat, y_drums, y_harm, sr, dur, beats_per_bar, denomina
     return (beats, m, downbeats, bpm_out, True, cv, info), (bpm, mad, frac)
 
 
-def _bpm_prior(y_beat, sr, bpm_hint, start_bpm):
+def _bpm_prior(y_beat, sr, bpm_hint, start_bpm, tracked_beats=None):
     if bpm_hint:
         return float(bpm_hint), max(1.5, 0.02 * bpm_hint)
-    _, beats = _beats(y_beat, sr, None, start_bpm)
+    if tracked_beats is None:
+        _, beats = _beats(y_beat, sr, None, start_bpm)
+    else:
+        beats = tracked_beats
     if len(beats) < 8:
         return None, None
     b = 60.0 / float(np.median(np.diff(beats)))
@@ -1007,7 +1010,12 @@ def _build_grid(y_beat, y_feat, sr, dur, beats_per_bar, denominator, bpm_hint, w
                 y_low=None, start_bpm=None, y_drums=None, y_harm=None, preroll_sources=None):
     """Temps, premiers temps de mesure, tempo moyen et stabilité.
     1) grille droite si une seule droite explique la pulsation ; 2) sinon carte de tempo (suivi)."""
-    bpm0, span = _bpm_prior(y_beat, sr, bpm_hint, start_bpm)
+    # The constant-grid prior and the variable-tempo fallback use the same tracker.
+    # Keep its result for this call instead of tracking the whole song twice.
+    tracked_beats = None
+    if not bpm_hint:
+        _, tracked_beats = _beats(y_beat, sr, None, start_bpm)
+    bpm0, span = _bpm_prior(y_beat, sr, bpm_hint, start_bpm, tracked_beats)
     if bpm0:
         res, diag = _try_constant_grid(y_beat, y_drums if y_drums is not None else y_beat,
                                        y_harm if y_harm is not None else y_feat, sr, dur,
@@ -1016,14 +1024,18 @@ def _build_grid(y_beat, y_feat, sr, dur, beats_per_bar, denominator, bpm_hint, w
         if res is not None:
             return res
     beats, m, downbeats, bpm, stable, cv = _build_grid_tracked(
-        y_beat, y_feat, sr, dur, beats_per_bar, denominator, bpm_hint, warnings, y_low, start_bpm)
+        y_beat, y_feat, sr, dur, beats_per_bar, denominator, bpm_hint, warnings, y_low, start_bpm,
+        tracked_beats=tracked_beats)
     return beats, m, downbeats, bpm, False, max(cv, 0.0121), {"pre_bars": 0, "pre_role": None}
 
 
 def _build_grid_tracked(y_beat, y_feat, sr, dur, beats_per_bar, denominator, bpm_hint, warnings,
-                        y_low=None, start_bpm=None):
+                        y_low=None, start_bpm=None, tracked_beats=None):
     """Carte de tempo à partir du suivi des temps (morceaux à tempo variable)."""
-    _, beats = _beats(y_beat, sr, bpm_hint, start_bpm)
+    if tracked_beats is None:
+        _, beats = _beats(y_beat, sr, bpm_hint, start_bpm)
+    else:
+        beats = tracked_beats
     if len(beats) < 8:
         raise ValueError(t("too_few_beats"))
 

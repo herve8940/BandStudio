@@ -51,6 +51,7 @@ return function(ctx)
       new_name_field = "Nom du concert :", added = "« %s » ajouté au concert « %s » Construis-le dans l'onglet Concert.",
       not_saved = "Enregistre d'abord le projet du morceau (Cmd+S / Ctrl+S).",
       after_stems = "",
+      analysis_options = "Options d'analyse",
       propose = "Morceau créé. Tout préparer maintenant (stems, structure, click, téléphones) ?", later = "Plus tard",
       steps = "Tout faire", cancel = "Arrêter", resume = "Reprendre", close = "Fermer", summary = "Résumé",
       st_skipped = "déjà fait", st_cancelled = "annulé", st_pending = "", ready_in = "Morceau prêt ✓  (%s)",
@@ -97,6 +98,7 @@ return function(ctx)
       new_name_field = "Concert name:", added = "“%s” added to the concert “%s”. Build it in the Concert tab.",
       not_saved = "Save the song's project first (Cmd+S / Ctrl+S).",
       after_stems = "",
+      analysis_options = "Analysis options",
       propose = "Song created. Prepare everything now (stems, structure, click, phones)?", later = "Later",
       steps = "Do everything", cancel = "Stop", resume = "Resume", close = "Close", summary = "Summary",
       st_skipped = "already done", st_cancelled = "cancelled", st_pending = "", ready_in = "Song ready ✓  (%s)",
@@ -828,6 +830,19 @@ return function(ctx)
     if acted then return ny end
     y = ny + 4
     local busy = ctx.job ~= nil
+
+    -- Les moteurs se choisissent avant le premier calcul (aucune analyse à l'ouverture).
+    if not busy and not (run and not run.finished) then
+      local settings = ctx.tabs.settings
+      local bw = U.text_w(t("analysis_options"), 12) + 24
+      if U.button("analysis_options", t("analysis_options"), x, y, bw, 26, nil, 12) then
+        settings.set_page("models")
+        ctx.goto_tab("settings")
+        return y
+      end
+      U.text(U.fit(settings.model_summary(), math.max(0, w - bw - 12), 11), x + bw + 12, y + 6, 11, U.MUTED)
+      y = y + 34
+    end
 
     -- proposé après « + Nouveau morceau »
     if ctx.propose_all and ctx.propose_all == ctx.proj_key and not run then

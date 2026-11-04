@@ -326,6 +326,9 @@ def main(argv=None):
         se = res.get("structure_engine") or {}
         extra = {}
         if args.cmd == "prepare":
+            # Optional enrichments may warn while the prompter itself is already published.
+            # The Lua flow only retries publication when this explicit success is absent.
+            extra["prompter_published"] = bool((res.get("prompteur") or {}).get("data"))
             # moteur des sections, lu par la fenêtre (pastille « Structure ») : songformer | reacue | regions
             extra["engine"] = ("regions" if res.get("structure_from_regions") or "structure_engine" not in res
                                else se.get("engine") or "reacue")

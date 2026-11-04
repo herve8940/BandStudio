@@ -108,11 +108,56 @@ def test_ready_reset_changes_epoch(concert):
     assert band(g)[0] != "1761480000"
 
 
+@pytest.mark.parametrize("name", ["Léa", "Zoé", "Àlex — Élodie 🎸", "François à la basse", "東京"])
+def test_band_names_roundtrip_as_ascii_percent_encoded_utf8(concert, name):
+    _, g, M = rt(concert)
+    assert M.url_encode(name) == quote(name, safe="-._~")
+    assert M.url_decode(M.url_encode(name)) == name
+    g.state.ext["hb0"] = "aaaa1111|vocals|" + quote(name, safe="") + "|0|"
+    M.band_poll(10.0)
+    published = g.state.ext["band"]
+    assert published.isascii()
+    assert M.url_decode(band(g)[1][0][2]) == name
+
+
+def test_band_names_limit_characters_and_reject_invalid_utf8(concert):
+    _, g, M = rt(concert)
+    name = "É🎸" * 20
+    assert M.band_beat("aaaa1111|vocals|" + quote(name, safe="") + "|0|", 10.0)
+    assert not M.band_beat("bbbb2222|vocals|%C3%28|0|", 10.0)
+    M.band_publish(10.0, True)
+    rows = band(g)[1]
+    assert len(rows) == 1 and M.url_decode(rows[0][2]) == name[:24]
+
+
+@pytest.mark.parametrize("path", [
+    r"C:\Musique\ÉTÉ\L'ŒUVRE — Zoé 🎸.RPP",
+    "/Users/Léa/À bientôt/François.RPP",
+    "/Music/Demo Song.RPP",
+    "/Music/東京 — MIX.RPP",
+])
+def test_song_keys_preserve_utf8_and_match_python_for_french_titles(concert, path):
+    from reacue_mcp.library import song_key
+    _, _, M = rt(concert)
+    assert M.song_key(path) == song_key(path)
+
+
+@pytest.mark.parametrize("name,role", [
+    ("Chant", "vocals"), ("CHANT 2", "vocals"), ("Batterie", "drums"),
+    ("GUITARES 3", "guitars"), ("CLAVIERS", "keys"), ("VOIX", None), ("Élodie 🎸", None),
+])
+def test_french_instrument_roles_and_generated_voice_tracks(concert, name, role):
+    _, _, M = rt(concert)
+    assert M.role_of_track(name) == role
+    assert M.lower_utf8(name) == name.lower()
+    assert M.norm_role("ChAnT") == "vocals"
+
+
 def test_notes_saved_in_state_and_republished(concert, tmp_path):
     res = concert[0]
     L, g, M = rt(concert, tmp_path)
     c = M.load_concert()
-    text = "On coupe sur le 4 | crash"
+    text = "À la fin — Élodie 🎸 | crash"
     assert send(M, g, c, "note", f"2:9:{quote(text)}") == ("note", "ok")
     st = json.loads(Path(M.state_path()).read_text(encoding="utf-8"))
     key = M.song_key(c.songs[2].project)
@@ -128,6 +173,7 @@ def test_notes_saved_in_state_and_republished(concert, tmp_path):
     assert st["songs"][M.song_key(c.songs[1].project)]["notes"]["1"] == "é" * 200
     assert send(M, g, c, "note", "9:1:x") == ("note", "bad")
     assert send(M, g, c, "note", "abc") == ("note", "bad")
+    assert send(M, g, c, "note", "1:1:%C3%28") == ("note", "bad")
     assert res.rpp.exists()
 
 

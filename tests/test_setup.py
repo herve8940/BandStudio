@@ -178,7 +178,7 @@ def test_stems_action_and_setting(reaper):
     for f in ("ReaCue_stems.lua", "ReaCue_Separer_stems.lua"):
         assert (reaper / "Scripts" / "ReaCue" / f).exists()
     s = json.loads((reaper / "ReaCueMCP" / "reacue_settings.json").read_text(encoding="utf-8"))
-    assert s["stems_model"] == "htdemucs_6s"
+    assert s["stems_model"] == "htdemucs"
 
 
 @pytest.mark.parametrize("lang", ["fr", "en"])
@@ -197,7 +197,7 @@ def test_concert_actions_scripts_and_settings(reaper, lang, monkeypatch, tmp_pat
     s = json.loads((reaper / "ReaCueMCP" / "reacue_settings.json").read_text(encoding="utf-8"))
     assert s["concert_dir"] is None and s["projects_dir"] is None
     assert "remote_pin" not in json.dumps(s)            # le PIN de la Régie est généré dans REAPER, jamais ici
-    S.main(["uninstall", "--reaper-dir", str(reaper), "--lang", lang])
+    S.main(["uninstall", "--reaper-dir", str(reaper), "--lang", lang, "--reaper-running", "no"])
     kb = (reaper / "reaper-kb.ini").read_text(encoding="utf-8")
     assert "REACUE_CONCERT" not in kb and "REACUE_NEXT_SONG" not in kb
 
