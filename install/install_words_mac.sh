@@ -4,7 +4,7 @@
 # Lancé par « Install ReaCue Words.command » ; ou :
 #   bash install/install_words_mac.sh [fr|en]
 # Langues des modèles : français et anglais (≈ 1,3 Go chacun) ; une seule : REACUE_WORDS_LANGS=fr (ou en).
-# Paroles automatiques : Whisper « large-v3-turbo » (≈ 1,6 Go) ; sans Whisper : REACUE_WHISPER=0.
+# Paroles automatiques : modèle choisi par lyrics_model / REACUE_LYRICS_MODEL ; sans Whisper : REACUE_WHISPER=0.
 # Environnement séparé .venv-words (n'abîme pas le .venv de ReaCue). Relançable sans risque : sur une installation
 # existante, seul ce qui manque est ajouté (paquets et modèles déjà présents gardés).
 # Internet nécessaire : environ 1 Go pour PyTorch (rien si la séparation de stems est déjà installée) + les modèles.
@@ -40,18 +40,23 @@ if [ "$WHISPER" != "0" ]; then
   uv pip install --python .venv-words/bin/python --no-deps -r requirements-whisper.txt \
     || fail "installation de Whisper impossible (voir ci-dessus)." "could not install Whisper (see above)."
 fi
-t "  téléchargement des modèles ($LANGS, environ 1,3 Go chacun) et test…" \
-  "  downloading the models ($LANGS, about 1.3 GB each) and testing…"
-.venv-words/bin/python reacue_words.py check --lang "$L" --langs "$LANGS" \
-  || fail "le calage mot par mot ne fonctionne pas (voir ci-dessus)." "word-by-word timing does not work (see above)."
-t "  Paroles mot par mot installées : utilisées automatiquement à la prochaine publication du prompteur (réglage « words_engine »)." \
-  "  Word-by-word lyrics installed: used automatically at the next prompter update (“words_engine” setting)."
+WORDS_ENGINE="$(.venv-words/bin/python -c 'import os, reacue_performance as p; print(os.environ.get("REACUE_WORDS_ENGINE") or p.settings().get("words_engine", "off"))')"
+if [ "$WORDS_ENGINE" = "auto" ]; then
+  t "  téléchargement des modèles ($LANGS, environ 1,3 Go chacun) et test…" \
+    "  downloading the models ($LANGS, about 1.3 GB each) and testing…"
+  .venv-words/bin/python reacue_words.py check --lang "$L" --langs "$LANGS" \
+    || fail "le calage mot par mot ne fonctionne pas (voir ci-dessus)." "word-by-word timing does not work (see above)."
+else
+  t "  Calage mot par mot désactivé : modèles wav2vec2 conservés s'ils existent, aucun téléchargement." \
+    "  Word alignment disabled: existing wav2vec2 models kept, no download."
+fi
 if [ "$WHISPER" != "0" ]; then
-  t "  Licence : openai-whisper et modèle Whisper large-v3-turbo d'OpenAI (MIT). Détails : THIRD_PARTY_NOTICES.md" \
-    "  Licence: OpenAI's openai-whisper and Whisper large-v3-turbo model (MIT). Details: THIRD_PARTY_NOTICES.md"
-  t "  modèle Whisper (environ 1,6 Go la première fois) et test…" \
-    "  Whisper model (about 1.6 GB the first time) and test…"
-  .venv-words/bin/python reacue_transcribe.py check --download --lang "$L" \
+  WHISPER_MODEL="$(.venv-words/bin/python -c 'import reacue_transcribe as r; print(r.selected_model())')"
+  t "  Licence : openai-whisper et modèle Whisper $WHISPER_MODEL d'OpenAI (MIT). Détails : THIRD_PARTY_NOTICES.md" \
+    "  Licence: OpenAI's openai-whisper and Whisper $WHISPER_MODEL model (MIT). Details: THIRD_PARTY_NOTICES.md"
+  t "  installation du modèle Whisper sélectionné ($WHISPER_MODEL) et test…" \
+    "  installing the selected Whisper model ($WHISPER_MODEL) and testing…"
+  .venv-words/bin/python reacue_transcribe.py check --download --lang "$L" --model "$WHISPER_MODEL" \
     || fail "les paroles automatiques (Whisper) ne fonctionnent pas (voir ci-dessus)." "automatic lyrics (Whisper) do not work (see above)."
   t "  Paroles automatiques installées : sans paroles.txt, ReaCue écrit un brouillon « paroles (auto).txt » à corriger (réglage « lyrics_auto »)." \
     "  Automatic lyrics installed: without lyrics.txt, ReaCue writes a draft “paroles (auto).txt” to correct (“lyrics_auto” setting)."

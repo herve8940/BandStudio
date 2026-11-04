@@ -6,7 +6,7 @@
 --      <dossier du fichier>/<nom>-stems/<modèle>/<nom>-<stem>.wav (gardé : une 2e fois, import immédiat) ;
 --   3. les stems sont importés sur une piste chacun, calés comme l'item d'origine (position, longueur,
 --      décalage, vitesse), et l'item d'origine est retiré du projet (un seul « Annuler » remet tout).
--- Modèle : réglage "stems_model" de reacue_settings.json (htdemucs_6s par défaut, ou htdemucs).
+-- Modèle : réglage "stems_model" de reacue_settings.json (htdemucs par défaut ; 6s/ft sur choix explicite).
 
 local S = {}
 local SEP = package.config:sub(1, 1)
@@ -20,7 +20,7 @@ S.MODELS = {
   htdemucs = { "vocals", "drums", "bass", "other" },
   htdemucs_ft = { "vocals", "drums", "bass", "other" },
 }
-S.DEFAULT_MODEL = "htdemucs_6s"
+S.DEFAULT_MODEL = "htdemucs"
 -- pistes générées par ReaCue (jamais séparées), comme dans ReaCue_Bridge.lua
 S.GENERATED = { CLICK = true, CUES = true, VOIX = true, VOICE = true, ["TIMECODE LTC"] = true, ["TIMECODE MTC"] = true }
 

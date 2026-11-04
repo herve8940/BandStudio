@@ -415,15 +415,17 @@ def detect_drums(a: Analysis, items=None, engine: str | None = None, install_dir
     Moteur : ADTOF (modèle entraîné, composant facultatif) s'il est installé et que le réglage
     `drums_engine` vaut « auto », sinon les règles de ReaCue ; tout échec du modèle retombe sur les règles
     (clé « warning » dans le résultat)."""
+    eng = engine or engine_setting()
+    if eng == "off":
+        return {"engine": "off", "bars": [], "lanes": [], "sections": [], "version": VERSION}
     src = _drum_source(a, items)
     if src is None:
         from .i18n import t as _t
         raise ValueError(_t("no_drum_stem"))
     f, shift = src
     y = _load_placed(a, f, shift)
-    eng = engine or engine_setting()
     warn = None
-    if eng in ("auto", "adt-str") and advanced_available(install_dir):
+    if eng == "adt-str" and advanced_available(install_dir):
         try:
             res, cached = advanced_onsets(f, install_dir)
             out = from_advanced(a, res, shift)
@@ -455,7 +457,7 @@ def detect_drums(a: Analysis, items=None, engine: str | None = None, install_dir
 def _file_sig(f) -> list:
     try:
         st = Path(f).stat()
-        return [str(f), st.st_size, int(st.st_mtime)]
+        return [str(Path(f).resolve()), st.st_size, st.st_mtime_ns]
     except (OSError, TypeError):
         return [str(f), None, None]
 
@@ -465,11 +467,11 @@ def drums_cache_key(a: Analysis, items) -> str:
     import json
     src = _drum_source(a, items)
     eng = engine_setting()
-    model = [ENGINE, ADTOF_REV, MODEL_CACHE_VERSION] if eng == "auto" and available() else None
+    model = [ENGINE, ADTOF_REV, MODEL_CACHE_VERSION] if eng in ("auto", "adtof", "adt-str") and available() else None
     return hashlib.md5(json.dumps([src and _file_sig(src[0]), src and round(src[1], 4),
                                    [round(float(x), 4) for x in a.downbeats], a.beats_per_bar,
                                    a.denominator, [(s.start_bar, s.end_bar, s.name) for s in a.sections],
-                                   VERSION, model, eng, advanced_stamp() if eng in ("auto", "adt-str") else None]).encode()).hexdigest()
+                                   VERSION, model, eng, advanced_stamp() if eng == "adt-str" else None]).encode()).hexdigest()
 
 
 # --------------------------------------------------------------------------- #
@@ -501,14 +503,14 @@ def available(install_dir: Path | None = None) -> bool:
 def engine_setting() -> str:
     """« auto » (ADTOF s'il est installé) | « reacue » (règles seules) ; REACUE_DRUMS_ENGINE l'emporte."""
     env = os.environ.get("REACUE_DRUMS_ENGINE", "").lower()
-    if env in ("auto", "reacue", "adtof", "adt-str"):
+    if env in ("auto", "reacue", "adtof", "adt-str", "off"):
         return env
     try:
         from .settings import load_settings
-        v = str(load_settings().get("drums_engine") or "auto").lower()
+        v = str(load_settings().get("drums_engine") or "adtof").lower()
     except Exception:
-        v = "auto"
-    return v if v in ("auto", "reacue", "adtof", "adt-str") else "auto"
+        v = "adtof"
+    return v if v in ("auto", "reacue", "adtof", "adt-str", "off") else "adtof"
 
 
 def run_model(audio: str, out_json: Path, install_dir: Path | None = None, timeout: float = TIMEOUT_S,
@@ -809,6 +811,8 @@ def cached_drums(a: Analysis, items=None, cache=None) -> dict:
     """detect_drums avec cache disque (un seul morceau mémorisé, comme cached_chords)."""
     import json
     from pathlib import Path
+    if engine_setting() == "off":
+        return {"engine": "off", "bars": [], "lanes": [], "sections": [], "version": VERSION}
     if cache is None:
         from .bridge import BRIDGE_DIR
         cache = BRIDGE_DIR / "prompter_drums.json"

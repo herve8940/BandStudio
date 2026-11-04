@@ -107,6 +107,14 @@ def test_upper_handles_french_accents():
     _, U = ui()
     assert U.upper("élan à l'œuvre, déjà vu ça ? ïle ÿ") == "ÉLAN À L'ŒUVRE, DÉJÀ VU ÇA ? ÏLE Ÿ"
     assert U.upper("Pré-refrain 2") == "PRÉ-REFRAIN 2"
+    assert U.upper("Paroles — à revoir → ✓") == "PAROLES — À REVOIR → ✓"
+
+
+def test_paragraph_preserves_utf8_in_mac_locale():
+    L, U = ui()
+    text = "Les changements s'appliquent à la prochaine préparation."
+    U.para(text, 0, 0, 900, 12, U.INK)
+    assert [line[1] for line in L.globals().DRAW.values()] == [text]
 
 
 def test_button_styles_use_theme():

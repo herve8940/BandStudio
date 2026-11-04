@@ -97,7 +97,9 @@ local UP = { ["à"] = "À", ["â"] = "Â", ["ä"] = "Ä", ["á"] = "Á", ["ç"] 
   ["ë"] = "Ë", ["î"] = "Î", ["ï"] = "Ï", ["í"] = "Í", ["ô"] = "Ô", ["ö"] = "Ö", ["ó"] = "Ó", ["ù"] = "Ù", ["û"] = "Û",
   ["ü"] = "Ü", ["ú"] = "Ú", ["ÿ"] = "Ÿ", ["ñ"] = "Ñ", ["æ"] = "Æ", ["œ"] = "Œ" }
 function U.upper(s)
-  s = tostring(s or ""):upper()
+  -- string.upper/%s dépendent de la locale C et peuvent traiter séparément les octets UTF-8.
+  -- Sur certains macOS, upper("—") corrompt le tiret et %s coupe le second octet de « à ».
+  s = tostring(s or ""):gsub("[a-z]", function(c) return string.char(c:byte() - 32) end)
   return (s:gsub("[\xC3\xC5][\x80-\xBF]", function(c) return UP[c] or c end))
 end
 
@@ -386,7 +388,7 @@ function U.para(s, x, y, w, size, col, max_lines)
   local n = 0
   for line in (tostring(s or "") .. "\n"):gmatch("(.-)\n") do
     local words, cur = {}, ""
-    for word in line:gmatch("%S+") do
+    for word in line:gmatch("[^ \t\r\n\v\f]+") do
       -- ponctuation française : « » : ; ! ? jamais seuls en début ou en fin de ligne
       local prev = words[#words]
       if prev and (word:sub(1, 2) == "»" or word:match("^[:;!?%)]") or prev:sub(-2) == "«" or prev:sub(-1) == "(") then

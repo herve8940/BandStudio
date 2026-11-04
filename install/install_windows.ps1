@@ -178,7 +178,7 @@ if ($Mode -eq "ask") {
     Write-Host "     • $(T "Structure :" "Structure:") SongFormer (MuQ + MusicFM)"
     Write-Host "     • $(T "Accords & Batterie :" "Chords & Drums:") ISMIR 2019 + ADTOF"
     if ($suite.install_words) {
-      Write-Host "     • $(T "Paroles & Chant :" "Lyrics & Vocals:") Whisper + wav2vec2"
+      Write-Host "     • $(T "Paroles & Chant :" "Lyrics & Vocals:") Whisper small (Essentiel / Essential)"
     }
   }
   Write-Host ""
@@ -370,12 +370,12 @@ if (Test-Path -LiteralPath $wordsPy) {
   if ($Words -eq "ask") { $Words = "no" }
 }
 if ($Words -eq "ask") {
-  Write-Host (T "  Paroles mot-à-mot et transcription automatique (Whisper + wav2vec2, en local) :" `
-                "  Word-by-word lyrics and auto-transcription (Whisper + wav2vec2, local):")
-  Write-Host (T "  Calage synchronisé mot-à-mot pour le prompteur chant et transcription automatique du texte." `
-                "  Synchronized word-by-word lyrics for vocal prompter and auto-transcription.")
-  $A = Read-Host (T "  Installer les modèles de paroles (environ 1,5 Go) ? [o/N]" `
-                    "  Install lyrics models (about 1.5 GB)? [y/N]")
+  Write-Host (T "  Paroles Essentiel : Whisper small en local, calage par ligne." `
+                "  Essential lyrics: local Whisper small, line timing.")
+  Write-Host (T "  Profil Avancé facultatif : large-v3-turbo et calage mot-à-mot wav2vec2." `
+                "  Optional Advanced profile: large-v3-turbo and wav2vec2 word alignment.")
+  $A = Read-Host (T "  Installer les paroles Essentiel ? [o/N]" `
+                    "  Install Essential lyrics? [y/N]")
   $Words = if ($A -and ($A.ToLower().StartsWith("o") -or $A.ToLower().StartsWith("y"))) { "yes" } else { "no" }
 }
 if ($Words -eq "yes") {

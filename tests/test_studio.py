@@ -146,6 +146,75 @@ def test_placed_items_uses_plan_positions():
     assert one[0]["position"] == 3.0
 
 
+def test_peaks_cache_reuses_audio_but_refreshes_metadata(tmp_path, monkeypatch):
+    f = _wav(tmp_path / "drums.wav", np.ones(SR, np.float32) * 0.25)
+    items = [{"file": f, "position": 0.0, "length": 1.0, "track": "Drums", "guid": "{D}"}]
+    www = tmp_path / "www"
+    assert not studio.publish_peaks(items, {"id": "first", "bar_times": [0, 2]}, www)["cached"]
+    before = json.loads((www / studio.PEAKS_NAME).read_text())
+    monkeypatch.setattr(studio, "_read_mono", lambda *a: pytest.fail("unchanged audio decoded again"))
+    monkeypatch.setattr(studio, "tc_info", lambda: {"fps": 30, "offset_s": 3600})
+    assert studio.publish_peaks(items, {"id": "renamed", "bar_times": [0, 2]}, www)["cached"]
+    after = json.loads((www / studio.PEAKS_NAME).read_text())
+    assert before["tracks"] == after["tracks"]
+    assert after["song_id"] == "renamed" and after["tc"]["fps"] == 30
+
+
+@pytest.mark.parametrize("change", [
+    {"position": 0.1}, {"offset": 0.1}, {"rate": 1.1}, {"length": 0.5},
+    {"track": "New name"}, {"guid": "{OTHER}"},
+])
+def test_peaks_cache_invalidates_placement(tmp_path, change):
+    f = _wav(tmp_path / "drums.wav", np.ones(SR, np.float32) * 0.25)
+    item = {"file": f, "position": 0.0, "length": 1.0, "track": "Drums", "guid": "{D}"}
+    song = {"id": "same", "bar_times": [0, 2]}
+    studio.publish_peaks([item], song, tmp_path / "www")
+    result = studio.publish_peaks([{**item, **change}], song, tmp_path / "www")
+    assert result["cached"] is False
+
+
+def test_peaks_cache_invalidates_replaced_source_same_size_and_mtime(tmp_path):
+    import os
+    f = Path(_wav(tmp_path / "drums.wav", np.ones(SR, np.float32) * 0.25))
+    items, song = [{"file": str(f), "length": 1.0}], {"id": "same", "bar_times": [0, 2]}
+    www = tmp_path / "www"
+    studio.publish_peaks(items, song, www)
+    st = f.stat()
+    replacement = Path(_wav(tmp_path / "new.wav", np.ones(SR, np.float32) * 0.75))
+    os.utime(replacement, ns=(st.st_atime_ns, st.st_mtime_ns))
+    replacement.replace(f)
+    assert f.stat().st_size == st.st_size and f.stat().st_mtime_ns == st.st_mtime_ns
+    assert not studio.publish_peaks(items, song, www)["cached"]
+    data = json.loads((www / studio.PEAKS_NAME).read_text())
+    assert data["tracks"][0]["peak"] == pytest.approx(0.75)
+
+
+def test_peaks_cache_never_retains_failed_decode(tmp_path, monkeypatch):
+    source = tmp_path / "drums.wav"
+    source.write_bytes(b"broken audio")
+    calls = []
+    def fail(path):
+        calls.append(path)
+        raise OSError("cannot decode")
+    monkeypatch.setattr(studio, "_read_mono", fail)
+    for _ in range(2):
+        assert not studio.publish_peaks([{"file": str(source)}], {"bar_times": [0, 2]}, tmp_path / "www")["cached"]
+    assert len(calls) == 2
+
+
+def test_peaks_cache_rebuilds_corrupt_payload_and_changed_duration(tmp_path):
+    f = _wav(tmp_path / "drums.wav", np.ones(SR, np.float32))
+    items = [{"file": f, "length": 1.0}]
+    www = tmp_path / "www"
+    studio.publish_peaks(items, {"bar_times": [0, 2]}, www)
+    p = www / studio.PEAKS_NAME
+    data = json.loads(p.read_text())
+    data["tracks"][0]["data"] = "broken"
+    p.write_text(json.dumps(data))
+    assert not studio.publish_peaks(items, {"bar_times": [0, 2]}, www)["cached"]
+    assert not studio.publish_peaks(items, {"bar_times": [0, 4]}, www)["cached"]
+
+
 # --------------------------------------------------------------------------- exports
 BPM, BPB, CI = 120.0, 4, 2          # mesure = 2 s ; count-in 2 mesures (0-4 s), mesure 1 à 4 s
 

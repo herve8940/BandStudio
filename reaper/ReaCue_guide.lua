@@ -304,9 +304,10 @@ return function(ctx)
   end
   G.open_path = open_path
 
-  function G.installer(kind)          -- "main" | "stems" | "structure"
+  function G.installer(kind)          -- "main" | "stems" | "structure" | "words"
     local dir = R.install_dir(ctx.dir)
-    local base = ({ main = "Install ReaCue", stems = "Install ReaCue Stems", structure = "Install ReaCue Structure" })[kind]
+    local base = ({ main = "Install ReaCue", stems = "Install ReaCue Stems", structure = "Install ReaCue Structure",
+      words = "Install ReaCue Words" })[kind]
     local f = dir .. SEP .. base .. (R.is_windows() and ".bat" or ".command")
     if L.exists(f) then return open_path(f) end
     return open_path(dir)
@@ -332,7 +333,7 @@ return function(ctx)
     if kind == "bridge" then return G.start_bridge()
     elseif kind == "install" then return open_path(R.install_dir(ctx.dir))
     elseif kind == "old_bridge" then return G.installer("main")
-    elseif kind == "stems" or kind == "structure" then return G.installer(kind)
+    elseif kind == "stems" or kind == "structure" or kind == "words" then return G.installer(kind)
     elseif kind == "offline" then reaper.Main_OnCommand(40101, 0) return true      -- médias en ligne
     elseif kind == "unsaved" then return G.save_project()
     elseif kind == "timeout" or kind == "generic" then

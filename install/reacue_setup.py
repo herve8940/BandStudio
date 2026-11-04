@@ -45,8 +45,11 @@ SETTINGS_DEFAULTS = {
     "language": "fr", "announce_voice": None, "count_voice": None, "count_lang": "en",
     "count_in_bars": 2, "cue_lead_bars": 2, "voice_cues": True, "voice_count_in": True,
     "voice_count_each": True, "voice_volume": 0.8, "click_volume": 0.5, "click_to_master": True,
-    "click_hw_output": None, "tempo_mode": "auto", "count_rate": 240, "stems_model": "htdemucs_6s",
+    "click_hw_output": None, "tempo_mode": "auto", "count_rate": 240, "stems_model": "htdemucs",
     "structure_engine": "auto", "projects_dir": None, "concert_dir": None,
+    "chords_engine": "auto", "drums_engine": "adtof", "lyrics_auto": "auto",
+    "lyrics_model": "small", "words_engine": "off", "words_language": "auto",
+    "performance_profile": "standard", "cpu_threads": 0,
     "gma3_export": True, "gma3_fps": 25, "gma3_tc_start": "00:00:00:00", "gma3_song_gap": None, "gma3_song_slot": 0,
     "gma3_ltc_output": None, "gma3_mtc_output": None, "gma3_tc_slot": 1,
 }
@@ -496,15 +499,8 @@ def write_settings(path: Path, lang: str) -> bool:
             "index_url": gpu_info.get("index_url"),
             "recommended_stems_model": rec_model,
         }
-        if created:
-            d["stems_model"] = rec_model
-        else:
-            if not gpu_info.get("has_gpu") or not gpu_info.get("is_dedicated"):
-                if d.get("stems_model") == "htdemucs_6s":
-                    d["stems_model"] = "htdemucs"
-            elif gpu_info.get("is_dedicated") and gpu_info.get("vram_mb", 0) >= 7500:
-                if d.get("stems_model") == "htdemucs":
-                    d["stems_model"] = "htdemucs_6s"
+        # Le matériel informe le choix ; une réinstallation ne change jamais
+        # le modèle sélectionné par le musicien ni le profil équilibré initial.
     except Exception:
         pass
 

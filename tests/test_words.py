@@ -78,7 +78,7 @@ def test_settings_validated(tmp_path):
     p = tmp_path / "s.json"
     p.write_text(json.dumps({"words_engine": "bogus", "words_language": "EN"}), encoding="utf-8")
     s = load_settings(p)
-    assert s["words_engine"] == "auto" and s["words_language"] == "en"
+    assert s["words_engine"] == "off" and s["words_language"] == "en"
 
 
 # --------------------------------------------------------------------------- fenêtres
@@ -142,7 +142,7 @@ def fake_engine(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(words, "available", lambda d=None: True)
     monkeypatch.setattr(words, "write_voice", lambda a, items, wav: Path(wav))
-    monkeypatch.delenv("REACUE_WORDS_ENGINE", raising=False)
+    monkeypatch.setenv("REACUE_WORDS_ENGINE", "auto")
     monkeypatch.setenv("REACUE_WORDS_LANG", "auto")
 
     def run(wav, jobs, lang, workdir, install_dir=None, **kw):
@@ -167,6 +167,71 @@ def test_add_words_with_cache(fake_engine, tmp_path):
     lyr = [dict(LYR[0], text="la lune danse toujours")] + LYR[1:]             # texte changé : recalcul
     words.add_words(a, None, lyr, cache=cache)
     assert len(calls) == 2
+    assert [job["id"] for job in calls[-1][0]] == [0]  # autres phrases réutilisées
+    assert words.LAST_INFO["reused_lines"] == 2
+
+
+def test_word_lines_survive_another_song(fake_engine, tmp_path):
+    calls, _ = fake_engine
+    a = analysis(tmp_path)
+    cache = tmp_path / "words.json"
+    words.add_words(a, None, LYR, cache=cache)
+    first_key = json.loads(cache.read_text())["key"]
+    other = analysis(tmp_path / "other")
+    words.add_words(other, None, LYR, cache=cache)
+    assert json.loads(cache.read_text())["key"] != first_key
+    words.add_words(a, None, LYR, cache=cache)
+    assert len(calls) == 2 and words.LAST_INFO["cached"]
+
+
+def test_failed_words_retry_after_delay(fake_engine, tmp_path, monkeypatch):
+    calls, run = fake_engine
+    run.fail = "transient"
+    cache = tmp_path / "words.json"
+    words.add_words(analysis(), None, LYR, cache=cache)
+    failed = json.loads(cache.read_text())
+    failed["at"] = 0
+    cache.write_text(json.dumps(failed))
+    run.fail = None
+    assert all(o.get("words") for o in words.add_words(analysis(), None, LYR, cache=cache))
+    assert len(calls) == 2
+
+
+def test_corrupt_cached_line_is_recomputed_without_losing_other_lines(fake_engine, tmp_path):
+    calls, _ = fake_engine
+    a, cache = analysis(tmp_path), tmp_path / "words.json"
+    words.add_words(a, None, LYR, cache=cache)
+    paths = words._line_paths(a, None, words.make_jobs(LYR), "fr", None, cache)
+    broken = {"id": 0, "score": .9, "words": [{"w": "la"}]}
+    paths[0].write_text(json.dumps(broken))
+    stored = json.loads(cache.read_text())
+    stored["result"]["lines"][0] = broken
+    cache.write_text(json.dumps(stored))
+    out = words.add_words(a, None, LYR, cache=cache)
+    assert all(o.get("words") for o in out)
+    assert len(calls) == 2 and [j["id"] for j in calls[-1][0]] == [0]
+
+
+def test_partial_worker_failure_expires_per_line(fake_engine, tmp_path, monkeypatch):
+    attempts = []
+    clock = [1000.0]
+    monkeypatch.setattr(words.time, "time", lambda: clock[0])
+    def run(wav, jobs, *args, **kwargs):
+        attempts.append(jobs)
+        result = fake_result()
+        if len(attempts) == 1:
+            result["lines"][0] = {"id": 0, "error": "temporary"}
+        return result
+    monkeypatch.setattr(words, "run_engine", run)
+    a, cache = analysis(tmp_path), tmp_path / "words.json"
+    first = words.add_words(a, None, LYR, cache=cache)
+    assert "words" not in first[0] and all(o.get("words") for o in first[1:])
+    words.add_words(a, None, LYR, cache=cache)
+    assert len(attempts) == 1
+    clock[0] += words.RETRY_AFTER_S + 1
+    result = words.add_words(a, None, LYR, cache=cache)
+    assert all(o.get("words") for o in result)
+    assert len(attempts) == 2 and [j["id"] for j in attempts[-1]] == [0]
 
 
 def test_add_words_failure_falls_back_and_is_remembered(fake_engine, tmp_path):
@@ -360,7 +425,7 @@ def test_requirements_words_same_torch_as_stems():
     for pin in ('torch==2.2.2 ; sys_platform == "darwin" and platform_machine == "x86_64"',
                 'torchaudio==2.2.2 ; sys_platform == "darwin" and platform_machine == "x86_64"',
                 'numpy<2 ; sys_platform == "darwin" and platform_machine == "x86_64"',
-                "torch==2.5.1", "torchaudio==2.5.1"):
+                "torch>=2.5.1,<2.9", "torchaudio>=2.5.1,<2.9"):
         assert pin in req and pin in stems, pin
     assert not [ln for ln in req.splitlines() if ln.strip().startswith("transformers")]
 
@@ -374,7 +439,9 @@ def test_installers_words():
         assert os.access(ROOT / f, os.X_OK), f
     sh = (ROOT / "install" / "install_words_mac.sh").read_text(encoding="utf-8")
     ps = (ROOT / "install" / "install_words_windows.ps1").read_bytes()
-    assert ps.startswith(b"\xef\xbb\xbf") and b"\n" not in ps.replace(b"\r\n", b"")
+    # Windows PowerShell 5.1 needs the BOM for accented text; LF is also valid.
+    assert ps.startswith(b"\xef\xbb\xbf")
+    assert b"\r" not in ps.replace(b"\r\n", b"")
     bat = (ROOT / "Install ReaCue Words.bat").read_bytes()
     assert b"install_words_windows.ps1" in bat and b"\n" not in bat.replace(b"\r\n", b"")
     for txt in (sh, ps.decode("utf-8-sig")):
@@ -392,8 +459,9 @@ def test_installers_words():
         assert r.stdout.strip() == "0", (r.stdout, r.stderr)
 
 
-def test_mac_installer_sandbox(tmp_path):
-    """Faux macOS : uv enregistre ses appels ; le test final (faux python) écrit WORDS_OK."""
+@pytest.mark.parametrize("words_engine, lyrics_model", [("off", "small"), ("auto", "large-v3-turbo")])
+def test_mac_installer_sandbox(tmp_path, words_engine, lyrics_model):
+    """Installer checks the selected model and downloads alignment only when enabled."""
     import os
     import shutil
     import subprocess
@@ -405,22 +473,35 @@ def test_mac_installer_sandbox(tmp_path):
     bin_.mkdir()
     calls = tmp_path / "calls.txt"
     venv_py = inst / ".venv-words" / "bin" / "python"
+    fake_python = tmp_path / "fake-python"
+    fake_python.write_text(
+        f'#!/bin/bash\necho py "$@" >> "{calls}"\n'
+        'if [ "$1" = -c ]; then\n'
+        '  case "$2" in\n'
+        '    *selected_model*) echo "$REACUE_LYRICS_MODEL" ;;\n'
+        '    *) echo "$REACUE_WORDS_ENGINE" ;;\n'
+        '  esac\n'
+        'else\n  echo WORDS_OK\nfi\n'
+    )
     for name, body in (("uname", 'if [ "$1" = -m ]; then echo x86_64; else echo Darwin; fi'),
                        ("uv", f'echo uv "$@" >> "{calls}"; if [ "$1" = venv ]; then mkdir -p "{venv_py.parent}"; '
-                              f'printf \'#!/bin/bash\\necho py "$@" >> "{calls}"; echo WORDS_OK\\n\' > "{venv_py}"; '
-                              f'chmod +x "{venv_py}"; fi')):
+                              f'cp "{fake_python}" "{venv_py}"; chmod +x "{venv_py}"; fi')):
         f = bin_ / name
         f.write_text("#!/bin/bash\n" + body + "\n")
         f.chmod(0o755)
-    env = dict(os.environ, PATH=f"{bin_}:/usr/bin:/bin", HOME=str(tmp_path), REACUE_WORDS_LANGS="fr")
+    env = dict(os.environ, PATH=f"{bin_}:/usr/bin:/bin", HOME=str(tmp_path), REACUE_WORDS_LANGS="fr",
+               REACUE_WORDS_ENGINE=words_engine, REACUE_LYRICS_MODEL=lyrics_model, REACUE_WHISPER="1")
     r = subprocess.run(["bash", str(inst / "install" / "install_words_mac.sh"), "en"], env=env,
                        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stdout + r.stderr
     log = calls.read_text()
     assert "uv venv .venv-words --python 3.12" in log
     assert "--only-binary :all: -r requirements-words.txt" in log
-    assert "py reacue_words.py check --lang en --langs fr" in log
-    assert "Word-by-word lyrics installed" in r.stdout
+    assert ("py reacue_words.py check --lang en --langs fr" in log) == (words_engine == "auto")
+    assert f"py reacue_transcribe.py check --download --lang en --model {lyrics_model}" in log
+    assert "Automatic lyrics installed" in r.stdout
+    if words_engine == "off":
+        assert "Word alignment disabled" in r.stdout
 
 
 # --------------------------------------------------------------------------- reacue_words.py (avec torch)

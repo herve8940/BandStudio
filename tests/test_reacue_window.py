@@ -198,6 +198,8 @@ def test_window_tabs_auto_and_handoff(concert, tmp_path, lang):
     assert ("Précédent" if lang == "fr" else "Previous") in T and ("MORCEAU 1 / 3" if lang == "fr" else "SONG 1 / 3") in T
     assert ("Batterie" if lang == "fr" else "Drums") in T                 # rangée Instruments
     press_text(L, g, names[3], exact=True); frame(L, g)
+    assert ("Modèles" if lang == "fr" else "Models") in TL.texts(g)
+    press_text(L, g, "Live et système" if lang == "fr" else "Live and system", exact=True); frame(L, g)
     assert ("Langue" if lang == "fr" else "Language") in TL.texts(g)
     press_text(L, g, names[1], exact=True); frame(L, g)
     assert ("Concerts existants" if lang == "fr" else "Existing concerts") in TL.texts(g)
@@ -567,8 +569,10 @@ def test_assistant_first_launch_and_settings_simple_advanced(concert, tmp_path):
     g.state.ext["concert_dir"] = ""
     # Réglages simples / avancés
     press_text(L, g, "Réglages", exact=True); frame(L, g)
+    assert "Détection de structure" in TL.texts(g)
+    press_text(L, g, "Live et système", exact=True); frame(L, g)
     T = TL.texts(g)
-    assert "Décompte avant le morceau" in T and "Détection de structure" in T and "Licences" in T, T
+    assert "Décompte avant le morceau" in T and "Licences" in T, T
     assert "Volume du click" not in T and "Code PIN de la Régie" not in T and "Dossier des projets" not in T
     press_text(L, g, "Réglages avancés", exact=True); frame(L, g)
     T = TL.texts(g)
@@ -688,6 +692,11 @@ def test_settings_tab_writes_json(concert, tmp_path):
     gx = open_window(L, g)
     frame(L, g)
     press_text(L, g, "Réglages", exact=True); frame(L, g)
+    # La séparation reste accessible en vue simple, avant toute préparation.
+    g.state.menu = 1
+    press_text(L, g, "4 stems · équilibré", exact=False); frame(L, g)
+    assert json.loads(sp.read_text(encoding="utf-8"))["stems_model"] == "htdemucs"
+    press_text(L, g, "Live et système", exact=True); frame(L, g)
     T = TL.texts(g)
     assert "Langue" in T and "Décompte avant le morceau" in T and "2 mes." in T, T
     # décompte 2 → 3 mesures
@@ -701,9 +710,6 @@ def test_settings_tab_writes_json(concert, tmp_path):
     press_text(L, g, "Réglages avancés", exact=True); frame(L, g)
     press_text(L, g, "fixe", exact=True)
     assert json.loads(sp.read_text(encoding="utf-8"))["tempo_mode"] == "constant"
-    frame(L, g)
-    press_text(L, g, "4 stems (rap", exact=False)
-    assert json.loads(sp.read_text(encoding="utf-8"))["stems_model"] == "htdemucs"
     # sortie click + voix : menu (aucune, 1/2, 3/4)
     L.execute("NOUT = 4")
     g.state.menu = 3
@@ -752,6 +758,7 @@ def test_window_english_views(concert, tmp_path):
     T = TL.texts(g)
     assert "1. Second Demo" in T and "Build" in T, T
     press_text(L, g, "Settings", exact=True); frame(L, g)
+    press_text(L, g, "Live and system", exact=True); frame(L, g)
     T = TL.texts(g)
     assert "Language" in T and "Count-in before the song" in T and "Spoken count-in" in T, T
     press_text(L, g, "Stage", exact=True); frame(L, g)
@@ -792,6 +799,7 @@ def test_english_new_views(concert, tmp_path):
     press_text(L, g, "Start the bridge", exact=True)
     assert g.state.added_script.endswith("ReaCue_Bridge.lua") and 55555 in list(g.state.cmds.values())
     press_text(L, g, "Settings", exact=True); frame(L, g)
+    press_text(L, g, "Live and system", exact=True); frame(L, g)
     press_text(L, g, "Advanced settings", exact=True); frame(L, g)
     T = TL.texts(g)
     assert "Click volume" in T and "Count speed" in T and "Simple settings" in T and "Check the installation" in T, T
@@ -891,6 +899,7 @@ def test_performance_controls_keep_other_settings(concert, tmp_path):
     frame(L, g)
     press_text(L, g, "Réglages", exact=True)
     frame(L, g)
+    press_text(L, g, "Live et système", exact=True); frame(L, g)
     press_text(L, g, "Réglages avancés", exact=True)
     frame(L, g)
     press_text(L, g, "Rapide", exact=True)

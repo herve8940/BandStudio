@@ -13,6 +13,7 @@ directement sur la position de lecture. Format compact : par piste, une chaîne 
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import math
 import shutil
@@ -26,6 +27,7 @@ STATIC_DIR = "reacue_studio"              # CSS, JS et polices (sous-dossier de 
 PEAKS_NAME = "reacue_peaks.json"
 HOP = 0.04                                # s par valeur (25 valeurs / s)
 MAX_SECONDS = 3 * 3600                    # garde-fou (projet anormalement long)
+PEAKS_CACHE_VERSION = 1
 
 
 # --------------------------------------------------------------------------- fichiers statiques
@@ -120,7 +122,8 @@ def decode_peaks(s: str) -> tuple[np.ndarray, np.ndarray]:
 
 
 def build_peaks(items: list[dict], duration: float, song_id: str = "", hop: float = HOP,
-                roles: list[str] | None = None, tc: dict | None = None) -> dict:
+                roles: list[str] | None = None, tc: dict | None = None,
+                failures: list[str] | None = None) -> dict:
     """items : [{file, position (timeline, après calage), offset, rate, length, track, guid}].
     Une entrée par piste REAPER (plusieurs items sur une même piste : réunis)."""
     from .analysis import assign_roles
@@ -139,6 +142,8 @@ def build_peaks(items: list[dict], duration: float, song_id: str = "", hop: floa
         try:
             y, sr = _read_mono(d["file"])
         except Exception:
+            if failures is not None:
+                failures.append(str(d.get("file", "")))
             continue
         rate0 = rate0 or sr
         rate = float(d.get("rate") or 1.0)
@@ -198,12 +203,60 @@ def write_json(path: Path, data: dict):
     tmp.replace(path)
 
 
+def peaks_cache_key(items: list[dict], duration: float) -> str | None:
+    """Identity of audio and placement, independent of section labels and song metadata.
+
+    Nanosecond modification/change times and inode detect in-place edits and replacements,
+    including a replacement whose size and modification time were preserved. Missing files
+    never produce a reusable key. The digest alone is stored on the web server.
+    """
+    sources = []
+    try:
+        for d in items:
+            p = Path(d["file"]).resolve()
+            st = p.stat()
+            sources.append([str(p), st.st_size, st.st_mtime_ns, st.st_ctime_ns, st.st_ino, st.st_dev,
+                            {k: d.get(k) for k in ("file", "position", "offset", "rate", "length", "track", "guid")}])
+        raw = [PEAKS_CACHE_VERSION, HOP, MAX_SECONDS, duration, sources]
+        return hashlib.sha256(json.dumps(raw, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()).hexdigest()
+    except (OSError, KeyError, TypeError, ValueError):
+        return None
+
+
+def _cached_peaks(path: Path, key: str | None, duration: float) -> dict | None:
+    if key is None:
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        n = int(math.ceil(max(HOP, min(float(duration), MAX_SECONDS)) / HOP))
+        if (data.get("_cache_key") != key or data.get("version") != 1 or data.get("hop") != HOP
+                or data.get("n") != n or not isinstance(data.get("tracks"), list)):
+            return None
+        for tr in data["tracks"]:
+            if not isinstance(tr.get("name"), str) or len(base64.b64decode(tr["data"], validate=True)) != 2 * n:
+                return None
+        return data
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return None
+
+
 def publish_peaks(items: list[dict], song: dict, www: Path | None = None) -> dict:
     """Calcule et publie reacue_peaks.json pour le morceau publié (song : reacue_song.json)."""
     from .prompter import WWW_DIR
     www = Path(www or WWW_DIR)
     bt = song.get("bar_times") or [0.0]
     end = max([float(bt[-1])] + [float(d.get("position", 0)) + float(d.get("length") or 0) for d in items])
-    data = build_peaks(items, end + 1.0, song.get("id", ""), tc=tc_info())
+    duration = end + 1.0
+    key = peaks_cache_key(items, duration)
+    data = _cached_peaks(www / PEAKS_NAME, key, duration)
+    cached = data is not None
+    if data is None:
+        failures = []
+        data = build_peaks(items, duration, song.get("id", ""), failures=failures)
+        # Never retain a partial decode or a result built while source files changed.
+        if key is not None and not failures and peaks_cache_key(items, duration) == key:
+            data["_cache_key"] = key
+    data["song_id"] = song.get("id", "")
+    data["tc"] = tc_info()
     write_json(www / PEAKS_NAME, data)
-    return {"peaks": str(www / PEAKS_NAME), "tracks": [t["name"] for t in data["tracks"]]}
+    return {"peaks": str(www / PEAKS_NAME), "tracks": [t["name"] for t in data["tracks"]], "cached": cached}

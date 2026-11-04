@@ -12,7 +12,7 @@ de référence, comme "t" / "end" de la ligne) ; la concaténation des "w" (sép
 de la ligne. Une ligne non calée automatiquement (ancre exacte de paroles_calage.json) garde son début et sa fin ;
 sinon ils sont resserrés sur le premier et le dernier mot.
 
-Réglages : `words_engine` "auto" (défaut : mot par mot si le composant est installé) | "off" ;
+Réglages : `words_engine` "off" (défaut : lignes seules) | "auto" (mot par mot si installé) ;
 `words_language` "auto" (déduite du texte) | "fr" | "en". Variables d'environnement REACUE_WORDS_ENGINE et
 REACUE_WORDS_LANG (prioritaires, tests). Tout échec garde le calage par ligne : jamais bloquant.
 """
@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -34,7 +35,8 @@ MODELS = {                                             # mêmes valeurs que reac
     "fr": "jonatasgrosman/wav2vec2-large-xlsr-53-french",
     "en": "jonatasgrosman/wav2vec2-large-xlsr-53-english",
 }
-CACHE_VERSION = 1
+CACHE_VERSION = 2
+RETRY_AFTER_S = 300
 TIMEOUT_S = 900                  # 15 min (CPU lent, 1er lancement) ; au-delà, paroles par ligne
 SR = 16000
 PAD_MIN, PAD_MAX = 0.15, 0.8     # marge (s) autour de chaque ligne : moitié de l'écart avec la voisine
@@ -74,7 +76,7 @@ def _setting(key: str, env: str, allowed: tuple, default: str) -> str:
 
 
 def engine_setting() -> str:
-    return _setting("words_engine", "REACUE_WORDS_ENGINE", ("auto", "off"), "auto")
+    return _setting("words_engine", "REACUE_WORDS_ENGINE", ("auto", "off"), "off")
 
 
 def language_setting() -> str:
@@ -221,6 +223,7 @@ def run_engine(wav: Path, jobs: list[dict], lang: str, workdir: Path, install_di
             el = time.time() - t0
             if el > timeout:
                 proc.kill()
+                proc.wait()
                 raise RuntimeError(t("words_timeout", min=max(1, int(timeout // 60))))
             if el - last >= 5:
                 last = el
@@ -275,7 +278,7 @@ def _install_stamp(install_dir: Path | None = None) -> str:
     out = []
     for p in (d / "reacue_words.py", d / ".venv-words" / "pyvenv.cfg"):
         try:
-            out.append(str(int(p.stat().st_mtime)))
+            out.append(str(p.stat().st_mtime_ns))
         except OSError:
             out.append("-")
     return ":".join(out)
@@ -290,11 +293,45 @@ def cache_key(a, items: list[dict] | None, jobs: list[dict], lang: str, install_
         p = Path(src[0])
         try:
             st = p.stat()
-            h.update(f"{p.resolve()}|{st.st_size}|{int(st.st_mtime)}|{round(src[1], 4)}".encode())
+            h.update(f"{p.resolve()}|{st.st_size}|{st.st_mtime_ns}|{round(src[1], 4)}".encode())
         except OSError:
             h.update(f"{p}|missing".encode())
     h.update(json.dumps(jobs, ensure_ascii=False, sort_keys=True).encode())
     return h.hexdigest()
+
+
+def _line_paths(a, items, jobs, lang, install_dir, cache):
+    """Cache par source et phrase : un autre morceau n'évince pas les lignes déjà alignées."""
+    if cache is None:
+        return {}
+    base = cache_key(a, items, [], lang, install_dir)
+    folder = Path(cache).parent / "word_lines" / base
+    paths = {}
+    for job in jobs:
+        # L'identifiant est une position d'affichage ; l'audio, le texte et la
+        # fenêtre de normalisation définissent le résultat acoustique.
+        data = {k: v for k, v in job.items() if k != "id"}
+        key = hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        paths[job["id"]] = folder / (key + ".json")
+    return paths
+
+
+def _valid_cached_line(line):
+    """Reject truncated cache records; transient per-line errors expire as well."""
+    if not isinstance(line, dict):
+        return False
+    try:
+        if line.get("error"):
+            return float(line.get("retry_at", 0)) > time.time()
+        if not math.isfinite(float(line.get("score", 0))):
+            return False
+        ws = line.get("words")
+        return isinstance(ws, list) and all(
+            isinstance(w, dict) and isinstance(w.get("w"), str)
+            and math.isfinite(float(w["t"])) and math.isfinite(float(w["end"]))
+            and float(w["end"]) >= float(w["t"]) for w in ws)
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return False
 
 
 def add_words(a, items: list[dict] | None, lyrics: list[dict] | None, cache=None,
@@ -323,23 +360,54 @@ def add_words(a, items: list[dict] | None, lyrics: list[dict] | None, cache=None
         if cpath:
             try:
                 c = json.loads(cpath.read_text(encoding="utf-8"))
-                if c.get("key") == key:
-                    if c.get("error"):
+                if isinstance(c, dict) and c.get("key") == key:
+                    if c.get("error") and time.time() - float(c.get("at", 0)) < RETRY_AFTER_S:
                         raise RuntimeError(c["error"])
-                    res = c.get("result")
-            except (OSError, ValueError):
+                    candidate = c.get("result")
+                    if (isinstance(candidate, dict) and isinstance(candidate.get("lines"), list)
+                            and {line.get("id") for line in candidate["lines"] if isinstance(line, dict)} == {j["id"] for j in jobs}
+                            and all(_valid_cached_line(line) for line in candidate["lines"])):
+                        res = candidate
+            except (OSError, ValueError, TypeError):
                 pass
         cached = res is not None
         if res is None:
-            _progress(t("words_running", s=0))
-            with tempfile.TemporaryDirectory(prefix="reacue_words_") as tmp:
-                wav = write_voice(a, items, Path(tmp) / "voice16k.wav")
+            paths = _line_paths(a, items, jobs, lang, install_dir, cpath)
+            reused, pending = [], []
+            for job in jobs:
                 try:
-                    res = run_engine(wav, jobs, lang, Path(tmp), install_dir)
-                except Exception as e:                       # mémorisé : pas de nouvel essai à chaque publication
-                    if cpath:
-                        _write_cache(cpath, {"key": key, "error": str(e)})
-                    raise
+                    line = json.loads(paths[job["id"]].read_text(encoding="utf-8"))
+                    if not _valid_cached_line(line):
+                        raise ValueError("invalid cached line")
+                    reused.append(dict(line, id=job["id"]))
+                except (KeyError, OSError, ValueError):
+                    pending.append(job)
+            res = {"engine": ENGINE, "lang": lang, "lines": []}
+            if pending:
+                _progress(t("words_running", s=0))
+                with tempfile.TemporaryDirectory(prefix="reacue_words_") as tmp:
+                    wav = write_voice(a, items, Path(tmp) / "voice16k.wav")
+                    try:
+                        res = run_engine(wav, pending, lang, Path(tmp), install_dir)
+                    except Exception as e:
+                        if cpath:
+                            _write_cache(cpath, {"key": key, "error": str(e), "at": time.time()})
+                        raise
+                by_id = {line.get("id"): line for line in res.get("lines", []) if isinstance(line, dict)}
+                fresh = []
+                for job in pending:
+                    line = by_id.get(job["id"])
+                    if not _valid_cached_line(line):
+                        line = {"id": job["id"], "error": (line or {}).get("error") or "Invalid alignment result",
+                                "retry_at": time.time() + RETRY_AFTER_S}
+                    fresh.append(line)
+                res["lines"] = fresh
+                for line in res["lines"]:
+                    if line["id"] in paths:
+                        _write_cache(paths[line["id"]], line)
+            cached = not pending
+            res["lines"] = reused + res["lines"]
+            LAST_INFO["reused_lines"] = len(reused)
             if cpath:
                 _write_cache(cpath, {"key": key, "result": res})
         out, n = merge(a, lyrics, res)
@@ -353,8 +421,18 @@ def add_words(a, items: list[dict] | None, lyrics: list[dict] | None, cache=None
 
 
 def _write_cache(path: Path, data: dict):
+    tmp = None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as f:
+            tmp = Path(f.name)
+            json.dump(data, f, ensure_ascii=False)
+        os.replace(tmp, path)
     except OSError:
         pass
+    finally:
+        if tmp is not None:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass

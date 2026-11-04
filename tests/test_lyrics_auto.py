@@ -144,7 +144,7 @@ def fake_install(d: Path, model=True, package=True):
     if model:
         m = d / "words" / "whisper"
         m.mkdir(parents=True, exist_ok=True)
-        (m / "large-v3-turbo.pt").write_bytes(b"0" * 2000)
+        (m / (LA.model_setting() + ".pt")).write_bytes(b"0" * 2000)
     return d
 
 
@@ -157,8 +157,8 @@ def test_missing_reason(tmp_path, monkeypatch):
     assert LA.missing_reason(tmp_path) == "model"
     fake_install(tmp_path)
     assert LA.missing_reason(tmp_path) is None and LA.available(tmp_path)
-    (tmp_path / "words" / "whisper" / "large-v3-turbo.pt").unlink()
-    (tmp_path / "words" / "whisper" / "large-v3-turbo-hf.pt").write_bytes(b"0" * 2000)   # converti (repli HF)
+    (tmp_path / "words" / "whisper" / (LA.model_setting() + ".pt")).unlink()
+    (tmp_path / "words" / "whisper" / (LA.model_setting() + "-hf.pt")).write_bytes(b"0" * 2000)   # converti (repli HF)
     assert LA.available(tmp_path)
 
 
@@ -179,6 +179,7 @@ def test_setting(monkeypatch, tmp_path):
 @pytest.fixture
 def engine(monkeypatch, tmp_path):
     """Whisper simulé : composant « installé » dans tmp_path/inst, run_engine renvoie SEGS."""
+    monkeypatch.setenv("REACUE_LYRICS_MODEL", "small")
     inst = fake_install(tmp_path / "inst")
     monkeypatch.setattr(LA, "ROOT", inst)
     monkeypatch.delenv("REACUE_WORDS_DIR", raising=False)
@@ -192,7 +193,7 @@ def engine(monkeypatch, tmp_path):
         calls.append(lang)
         if state["error"]:
             raise RuntimeError(state["error"])
-        return {"engine": "whisper", "model": "large-v3-turbo", "language": "fr", "seconds": 1.0,
+        return {"engine": "whisper", "model": kw.get("model", LA.model_setting()), "language": "fr", "seconds": 1.0,
                 "segments": state["segments"]}
     monkeypatch.setattr(LA, "run_engine", run)
     song = tmp_path / "song"
@@ -241,9 +242,10 @@ def test_ensure_off_missing_no_voice(engine, monkeypatch, tmp_path):
     a2 = analysis(song)
     a2.stems = {}
     assert LA.ensure_auto_lyrics(a2, None, cache=tmp_path / "m.json") is None and LA.LAST_INFO["state"] == "no_voice"
-    (LA.ROOT / "words" / "whisper" / "large-v3-turbo.pt").unlink()
+    (LA.ROOT / "words" / "whisper" / (LA.model_setting() + ".pt")).unlink()
     assert LA.ensure_auto_lyrics(a, None, cache=tmp_path / "m.json") is None
-    assert LA.LAST_INFO == {"state": "missing", "missing": "model"} and calls == []
+    assert LA.LAST_INFO["state"] == "missing" and LA.LAST_INFO["missing"] == "model" and calls == []
+    assert LA.LAST_INFO["selected_model"] in LA.LAST_INFO["message"]
 
 
 def test_cached_lyrics_uses_draft_then_user_file(engine, tmp_path, monkeypatch):
@@ -364,7 +366,7 @@ def test_model_file_and_load_never_downloads(tmp_path):
     assert RT.model_file("large-v3-turbo", tmp_path) == tmp_path / "large-v3-turbo-hf.pt"
     (tmp_path / "large-v3-turbo.pt").write_bytes(b"0" * 2000)
     assert RT.model_file("large-v3-turbo", tmp_path) == tmp_path / "large-v3-turbo.pt"   # officiel d'abord
-    assert RT.DEFAULT_MODEL == LA.MODEL == "large-v3-turbo"
+    assert RT.DEFAULT_MODEL == LA.MODEL == "small"
     assert RT.DECODE["condition_on_previous_text"] is False and RT.DECODE["word_timestamps"] is True
 
 
@@ -583,3 +585,90 @@ def test_legacy_error_without_timestamp_is_retried(engine, tmp_path):
     memo.write_text(json.dumps({key: {"state": "error", "error": "old timeout"}}))
     assert LA.ensure_auto_lyrics(a, None, cache=memo) is not None
     assert len(calls) == 1
+
+
+def test_model_selection_follows_live_settings_and_environment(monkeypatch):
+    import reacue_performance
+    from reacue_mcp import settings
+    config = {"lyrics_model": "small"}
+    monkeypatch.delenv("REACUE_LYRICS_MODEL", raising=False)
+    monkeypatch.setattr(settings, "load_settings", lambda: config)
+    monkeypatch.setattr(reacue_performance, "settings", lambda: config)
+    assert LA.model_setting() == RT.selected_model() == "small"
+    config["lyrics_model"] = "large-v3-turbo"
+    assert LA.model_setting() == RT.selected_model() == "large-v3-turbo"
+    monkeypatch.setenv("REACUE_LYRICS_MODEL", "medium")  # preserve existing environment overrides
+    assert LA.model_setting() == RT.selected_model() == "medium"
+
+
+def test_offline_load_passes_local_path_even_for_official_name(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    path = tmp_path / "small.pt"
+    path.write_bytes(b"x" * 2000)
+    calls = []
+    model = SimpleNamespace(eval=lambda: None, set_alignment_heads=lambda heads: calls.append(heads))
+    def load_model(name, **kw):
+        assert name == str(path)  # a model name could trigger an automatic download
+        calls.append(name)
+        return model
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: False)))
+    monkeypatch.setitem(sys.modules, "whisper", SimpleNamespace(load_model=load_model,
+                                                                _ALIGNMENT_HEADS={"small": b"heads"}))
+    assert RT.load("small", tmp_path) is model
+    assert calls == [str(path), b"heads"]
+
+
+def test_model_and_language_changes_never_relabel_or_overwrite_draft(engine, tmp_path, monkeypatch):
+    calls, _, song = engine
+    a = analysis(song)
+    path = LA.ensure_auto_lyrics(a, None)
+    original = path.read_bytes()
+    metadata = LA.timing_path(path).read_bytes()
+    assert LA.read_timing(path)["model"] == "small"
+    monkeypatch.setenv("REACUE_LYRICS_MODEL", "large-v3-turbo")
+    assert LA.ensure_auto_lyrics(a, None) == path
+    assert len(calls) == 1 and path.read_bytes() == original
+    assert LA.timing_path(path).read_bytes() == metadata
+    assert LA.LAST_INFO["model"] == "small"
+    assert LA.LAST_INFO["selected_model"] == "large-v3-turbo"
+    assert "small" in LA.LAST_INFO["warning"] and "large-v3-turbo" in LA.LAST_INFO["warning"]
+    assert "paroles (auto).txt" in LA.LAST_INFO["warning"]
+    monkeypatch.setenv("REACUE_LYRICS_MODEL", "small")
+    monkeypatch.setenv("REACUE_WORDS_LANG", "en")
+    assert LA.ensure_auto_lyrics(a, None) == path
+    assert len(calls) == 1 and "langue en" in LA.LAST_INFO["warning"]
+
+
+def test_success_cache_is_per_song_and_repairs_missing_sidecar(engine, tmp_path):
+    calls, _, song = engine
+    a = analysis(song)
+    path = LA.ensure_auto_lyrics(a, None)
+    assert (song / ".reacue" / "lyrics_auto.json").is_file()
+    LA.timing_path(path).unlink()
+    assert LA.ensure_auto_lyrics(a, None) == path and len(calls) == 1
+    assert LA.LAST_INFO["cached"] is True
+    assert LA.timed_draft(a, None, path, lyrics.read_lyrics(path)) is not None
+
+
+def test_selected_model_missing_does_not_fall_back_to_other_weights(engine, monkeypatch):
+    calls, _, song = engine
+    monkeypatch.setenv("REACUE_LYRICS_MODEL", "large-v3-turbo")
+    assert LA.model_file() is None  # small is installed, turbo is not
+    assert LA.ensure_auto_lyrics(analysis(song), None) is None
+    assert calls == [] and LA.LAST_INFO["state"] == "missing"
+    assert LA.LAST_INFO["model"] == "large-v3-turbo"
+    assert "large-v3-turbo" in LA.LAST_INFO["message"]
+
+
+def test_transcription_cache_separates_model_language_and_source(engine, monkeypatch):
+    _, _, song = engine
+    a = analysis(song)
+    first = LA.memo_key(a, None, "auto")
+    assert first != LA.memo_key(a, None, "fr")
+    monkeypatch.setenv("REACUE_LYRICS_MODEL", "large-v3-turbo")
+    assert first != LA.memo_key(a, None, "auto")
+    monkeypatch.setenv("REACUE_LYRICS_MODEL", "small")
+    audio = Path(a.file)
+    stat = audio.stat()
+    os.utime(audio, ns=(stat.st_atime_ns, stat.st_mtime_ns + 100))
+    assert first != LA.memo_key(a, None, "auto")

@@ -46,7 +46,7 @@ if [ "$(uname -m)" = "arm64" ]; then
 fi
 
 echo
-t "== 2/6 uv (gestionnaire Python d'Astral)" "== 2/6 uv (Astral's Python manager)"
+t "== 2/9 uv (gestionnaire Python d'Astral)" "== 2/9 uv (Astral's Python manager)"
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 if ! command -v uv >/dev/null 2>&1; then
   t "  installation de uv (https://astral.sh/uv)…" "  installing uv (https://astral.sh/uv)…"
@@ -56,7 +56,7 @@ fi
 echo "  $(uv --version)"
 
 echo
-t "== 3/6 Environnement Python 3.12 (.venv) et dépendances" "== 3/6 Python 3.12 environment (.venv) and dependencies"
+t "== 3/9 Environnement Python 3.12 (.venv) et dépendances" "== 3/9 Python 3.12 environment (.venv) and dependencies"
 rm -rf .venv
 uv venv .venv --python 3.12 || fail "création du .venv impossible." "could not create .venv."
 # --no-build : paquets précompilés uniquement (pas de compilateur nécessaire)
@@ -67,7 +67,7 @@ uv pip install --no-build --python .venv/bin/python -r requirements.txt \
 command -v say >/dev/null 2>&1 || t "  ! commande say absente : pas d'annonces vocales." "  ! say command missing: no spoken cues."
 
 echo
-t "== 4/6 Configuration de REAPER" "== 4/6 REAPER configuration"
+t "== 4/9 Configuration de REAPER" "== 4/9 REAPER configuration"
 REAPER_RESOURCE_PATH="$REAPER_DIR" .venv/bin/python install/reacue_setup.py install --lang "$L" --install-dir "$HERE" \
   --reaper-dir "$REAPER_DIR" ${REACUE_MCP:+--mcp "$REACUE_MCP"} || fail "configuration incomplète." "configuration incomplete."
 
@@ -227,12 +227,12 @@ if [ "$WORDS" = ask ] && [ -x .venv-words/bin/python ]; then
   t "  Modèles de paroles déjà installés dans .venv-words." "  Lyrics models already installed in .venv-words."
 fi
 if [ "$WORDS" = ask ]; then
-  t "  Paroles mot-à-mot et transcription automatique (Whisper + wav2vec2, en local) :" \
-    "  Word-by-word lyrics and auto-transcription (Whisper + wav2vec2, local):"
-  t "  Calage synchronisé mot-à-mot pour le prompteur chant et transcription automatique du texte." \
-    "  Synchronized word-by-word lyrics for vocal prompter and auto-transcription."
-  read -r -p "$(t '  Installer les modèles de paroles (environ 1,5 Go) ? [o/N] ' \
-                  '  Install lyrics models (about 1.5 GB)? [y/N] ')" A || true
+  t "  Paroles Essentiel : Whisper small en local, calage par ligne." \
+    "  Essential lyrics: local Whisper small, line timing."
+  t "  Profil Avancé facultatif : large-v3-turbo et calage mot-à-mot wav2vec2." \
+    "  Optional Advanced profile: large-v3-turbo and wav2vec2 word alignment."
+  read -r -p "$(t '  Installer les paroles Essentiel ? [o/N] ' \
+                  '  Install Essential lyrics? [y/N] ')" A || true
   case "$(echo "${A:-n}" | tr '[:upper:]' '[:lower:]')" in
     o*|y*) WORDS=yes ;;
     *) WORDS=no ;;

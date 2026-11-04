@@ -55,14 +55,14 @@ def available(install_dir: Path | None = None) -> bool:
 
 def engine_setting() -> str:
     env = os.environ.get("REACUE_CHORDS_ENGINE", "").lower()
-    if env in ("auto", "reacue"):
+    if env in ("auto", "reacue", "off"):
         return env
     try:
         from .settings import load_settings
         v = str(load_settings().get("chords_engine") or "auto").lower()
     except Exception:
         v = "auto"
-    return v if v in ("auto", "reacue") else "auto"
+    return v if v in ("auto", "reacue", "off") else "auto"
 
 
 def wanted(install_dir: Path | None = None) -> bool:

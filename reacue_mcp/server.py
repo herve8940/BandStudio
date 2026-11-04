@@ -278,25 +278,34 @@ def _export_lighting(song: dict, project: str | None) -> tuple[dict | None, str 
 
 def _publish_prompter(analysis, item, timeline, items, project: str | None = None,
                       plan_items: list[dict] | None = None, plan_item: dict | None = None):
+    from . import chord_model
+    chord_model.LAST.clear()
     act = prompter.stem_activity(analysis, items)
     grid, chord_warn = None, None
     names = [d["file"] for d in items] if items else [item.get("file", "")]
     try:                                # les accords ne doivent jamais bloquer le prompteur
         grid = chords.cached_chords(analysis, items, prompter.key_from_names(names))
+        chord_warn = chord_model.LAST.get("warning")
+        if not chord_warn and (chord_model.LAST.get("fallback") or chord_model.LAST.get("error")):
+            chord_warn = chord_model.LAST.get("message")
     except Exception as e:
         chord_warn = t("chords_failed", e=e)
-    words, lyr_warn = None, None
+    from . import lyrics_auto, words as word_alignment
+    lyrics_auto.LAST_INFO.clear()
+    word_alignment.LAST_INFO.clear()
+    lyric_lines, lyr_warn = None, None
     try:                                # les paroles non plus
-        words = lyrics.cached_lyrics(analysis, items)
+        lyric_lines = lyrics.cached_lyrics(analysis, items)
     except Exception as e:
         lyr_warn = t("lyrics_failed", e=e)
     kit, drum_warn = None, None
     try:                                # la batterie non plus
         if any(r == "drums" for r in assign_roles([d["file"] for d in items or []])) or "drums" in (analysis.stems or {}):
             kit = drums.cached_drums(analysis, items)
+            drum_warn = (kit or {}).get("warning")
     except Exception as e:
         drum_warn = t("drums_failed", e=e)
-    song = prompter.build_song(analysis, item, timeline, items, act, chords=grid, lyrics=words, drums=kit)
+    song = prompter.build_song(analysis, item, timeline, items, act, chords=grid, lyrics=lyric_lines, drums=kit)
     from . import library
     library.attach(song, project)        # projet + notes de section (écran GROUPE de ReaCue Studio)
     light, light_warn = _export_lighting(song, project)     # lumière grandMA3 (onglet Lumière du prompteur)
@@ -311,9 +320,13 @@ def _publish_prompter(analysis, item, timeline, items, project: str | None = Non
         peaks_warn = t("studio_peaks_failed", e=e)
     out["chords"] = bool(song.get("chords"))
     out["lyrics"] = len(song.get("lyrics") or [])
-    if lyrics:
-        from . import words
-        alignment = dict(words.LAST_INFO)
+    auto_info = dict(lyrics_auto.LAST_INFO)
+    out["lyrics_auto"] = auto_info
+    auto_warn = auto_info.get("warning")
+    if not auto_warn and (auto_info.get("error") or auto_info.get("missing")):
+        auto_warn = auto_info.get("message")
+    if lyric_lines:
+        alignment = dict(word_alignment.LAST_INFO)
         out["lyrics_alignment"] = alignment
         if alignment.get("error"):
             lyr_warn = alignment.get("message") or t("words_failed", e=alignment["error"])
@@ -332,7 +345,7 @@ def _publish_prompter(analysis, item, timeline, items, project: str | None = Non
             out["pdf"] = str(sheet.write_sheet(song, folder))
     except Exception as e:
         pdf_warn = t("sheet_failed", e=e)
-    warns = [w for w in (chord_warn, lyr_warn, drum_warn, light_warn, pdf_warn, peaks_warn) if w]
+    warns = [w for w in (chord_warn, lyr_warn, auto_warn, drum_warn, light_warn, pdf_warn, peaks_warn) if w]
     if warns:
         out["warning"] = " ; ".join(warns)
     out["url"] = t("prompter_url", page=prompter.PAGE_NAME)

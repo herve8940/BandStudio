@@ -70,7 +70,17 @@ return function(ctx)
         if state == "done" and ctx.refresh then ctx.refresh(true) end
         cb(state, msg)
       end, true)
-    elseif s.id == "prepare" then ok = ctx.start_cli("prepare", R.tr("prepare"), cb, true)
+    elseif s.id == "prepare" then ok = ctx.start_cli("prepare", R.tr("prepare"), function(state, msg)
+        -- New CLI versions report publication explicitly. Older versions or a failed
+        -- publication retain the existing publish/retry step.
+        local st, _, cmd, _, published = R.status()
+        if state == "done" and st == "done" and cmd == "prepare" and published == true then
+          for _, step in ipairs(run.steps) do
+            if step.id == "publish" and step.status == "pending" then step.status = "skipped" end
+          end
+        end
+        cb(state, msg)
+      end, true)
     elseif s.id == "publish" then ok = ctx.start_cli("publish", R.tr("publish"), cb, true)
     elseif s.id == "save" then
       if (ctx.proj_file or "") == "" then cb("error", "not_saved") return end

@@ -298,7 +298,15 @@ def test_pinned_revisions_consistent():
 def test_requirements_structure_pins():
     req = (ROOT / "requirements-structure.txt").read_text(encoding="utf-8")
     assert 'torch==2.2.2 ; sys_platform == "darwin" and platform_machine == "x86_64"' in req
-    assert re.search(r"numpy<2", req) and "torch==2.4.1" in req
+    assert re.search(r"numpy<2", req)
+    from packaging.requirements import Requirement
+    torch_reqs = [Requirement(line) for line in req.splitlines() if line.startswith("torch")]
+    intel = {"sys_platform": "darwin", "platform_machine": "x86_64"}
+    windows = {"sys_platform": "win32", "platform_machine": "AMD64"}
+    assert all("2.2.2" in r.specifier for r in torch_reqs if r.name in ("torch", "torchaudio") and r.marker.evaluate(intel))
+    for r in torch_reqs:
+        if r.name in ("torch", "torchaudio") and r.marker.evaluate(windows):
+            assert "2.4.1" in r.specifier and "2.4.0" not in r.specifier and "2.9" not in r.specifier
     assert not any(p.suffix in (".safetensors", ".ckpt", ".pt", ".bin") for p in ROOT.rglob("*")
                    if ".venv" not in p.parts and "structure" not in p.parts[:len(ROOT.parts) + 1])
 
@@ -314,12 +322,16 @@ def test_installer_scripts_syntax():
     assert b"\r\n" in bat and b"install_structure_windows.ps1" in bat
     for f in ("install/install_mac.sh", "install/install_windows.ps1"):
         txt = (ROOT / f).read_text(encoding="utf-8-sig")
-        assert "6/6" in txt and "5/5" not in txt and "install_structure_" in txt
+        assert "install_structure_" in txt
+        steps = [(int(n), int(total)) for n, total in re.findall(r"== (\d+)/(\d+)", txt)]
+        assert steps and len({total for _, total in steps}) == 1
+        assert {n for n, _ in steps} == set(range(1, steps[0][1] + 1))
         # SongFormer proposé par défaut (réponse vide = oui), « J'accepte » reste exigé par install_structure_*
         assert "[O/n]" in txt and "[Y/n]" in txt and "[o/N] ' \\\n                  '  Install structure" not in txt
         assert "J'accepte" in txt
     sh = (ROOT / "install" / "install_mac.sh").read_text(encoding="utf-8")
-    assert 'case "$(echo "${A:-o}"' in sh.split("6/6")[-1]
+    structure_block = sh.split('if [ "$STRUCT" = ask ]; then', 1)[1].split('if [ "$STRUCT" = yes ]; then', 1)[0]
+    assert 'case "$(echo "${A:-o}"' in structure_block
     ps1 = (ROOT / "install" / "install_windows.ps1").read_text(encoding="utf-8-sig")
     assert 'StartsWith("n")) { "no" } else { "yes" }' in ps1
     # modèles déjà téléchargés réutilisés avant le test (qui télécharge le reste)

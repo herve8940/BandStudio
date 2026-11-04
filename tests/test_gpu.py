@@ -191,7 +191,13 @@ def test_recommended_stems_model():
     suite_cpu = reacue_gpu.recommend_ai_suite({"vendor": "cpu", "is_dedicated": False, "has_gpu": False})
     assert suite_cpu["profile"] == "standard_cpu"
     assert suite_cpu["stems_model"] == "htdemucs"
-    assert suite_cpu["install_words"] is False
+    assert suite_cpu["install_words"] is True
+    for suite in (suite_high, suite_mid, suite_apple, suite_cpu):
+        assert suite["install_words"] is True
+        lyrics = next(model for model in suite["models"] if model["id"] == "words")
+        assert lyrics["selected_model"] == "Whisper small"
+        assert "calage par ligne" in lyrics["role_fr"] and "line timing" in lyrics["role_en"]
+        assert "facultatif" in lyrics["why_fr"] and "Optional" in lyrics["why_en"]
 
 
 def test_audit_venv_missing(tmp_path):
@@ -247,10 +253,12 @@ def test_sync_settings(tmp_path):
     }
     res = reacue_gpu.sync_settings(sf, gpu_info=gpu_bw)
     assert res["changed"] is True
-    assert res["stems_model"] == "htdemucs_6s"
+    assert res["stems_model"] == "htdemucs"
     assert res["hardware"]["vendor"] == "nvidia"
+    assert res["hardware"]["recommended_stems_model"] == "htdemucs_6s"
+    assert reacue_gpu.sync_settings(sf, gpu_info=gpu_bw)["changed"] is False
 
-    # Réalignement sur CPU
+    # Seules les informations matérielles changent sur CPU.
     gpu_cpu = {
         "has_gpu": False,
         "vendor": "cpu",
@@ -262,5 +270,42 @@ def test_sync_settings(tmp_path):
     }
     res2 = reacue_gpu.sync_settings(sf, gpu_info=gpu_cpu)
     assert res2["changed"] is True
-    assert res2["stems_model"] == "htdemucs"  # repli CPU
+    assert res2["stems_model"] == "htdemucs"
+
+
+@pytest.mark.parametrize("model", ["htdemucs", "htdemucs_ft", "htdemucs_6s"])
+def test_sync_settings_preserves_explicit_model_across_hardware(tmp_path, model):
+    sf = tmp_path / "reacue_settings.json"
+    sf.write_text(json.dumps({"stems_model": model, "language": "en"}), encoding="utf-8")
+    for gpu_info in (
+        {"has_gpu": False, "is_dedicated": False, "backend": "cpu", "vram_mb": 0},
+        {"has_gpu": True, "is_dedicated": True, "backend": "cuda", "vram_mb": 16384},
+    ):
+        result = reacue_gpu.sync_settings(sf, gpu_info=gpu_info)
+        assert result["stems_model"] == model
+        saved = json.loads(sf.read_text(encoding="utf-8"))
+        assert saved["stems_model"] == model and saved["language"] == "en"
+        before = sf.stat().st_mtime_ns
+        assert reacue_gpu.sync_settings(sf, gpu_info=gpu_info)["changed"] is False
+        assert sf.stat().st_mtime_ns == before
+
+
+@pytest.mark.parametrize("model", [None, "", "unknown", [], {}])
+def test_sync_settings_repairs_invalid_model_with_balanced_default(tmp_path, model):
+    sf = tmp_path / "reacue_settings.json"
+    sf.write_text(json.dumps({"stems_model": model}), encoding="utf-8")
+    result = reacue_gpu.sync_settings(sf, gpu_info={"has_gpu": True, "is_dedicated": True, "vram_mb": 16384})
+    assert result["changed"] is True
+    assert result["stems_model"] == "htdemucs"
+    assert result["hardware"]["recommended_stems_model"] == "htdemucs_6s"
+
+
+def test_sync_settings_explicit_force_applies_recommendation(tmp_path):
+    sf = tmp_path / "reacue_settings.json"
+    sf.write_text(json.dumps({"stems_model": "htdemucs"}), encoding="utf-8")
+    gpu = {"has_gpu": True, "is_dedicated": True, "vram_mb": 16384}
+    result = reacue_gpu.sync_settings(sf, gpu_info=gpu, force_model=True)
+    assert result["changed"] is True
+    assert result["stems_model"] == "htdemucs_6s"
+    assert reacue_gpu.sync_settings(sf, gpu_info=gpu, force_model=True)["changed"] is False
 
