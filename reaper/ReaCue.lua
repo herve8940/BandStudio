@@ -78,6 +78,28 @@ function ctx.tr(tbl, k)       -- textes d'un module : tbl = {fr = {...}, en = {.
   return v
 end
 
+function ctx.is_locked() return R.show_locked() end
+function ctx.require_edit()
+  if not ctx.is_locked() then return true end
+  ctx.last_error = R.lock_message()
+  if ctx.show_result then ctx.show_result(T("error_title"), ctx.last_error, false) end
+  return false
+end
+function ctx.set_locked(on)
+  if on and (ctx.job or ctx.tc_test or L.reh.on or R.active_job() or (ctx.jobs and ctx.jobs.busy())) then
+    ctx.last_error = ctx.lang() == "fr" and "Termine les traitements et quitte la répétition avant de verrouiller."
+      or "Finish active tasks and leave rehearsal before locking."
+    if ctx.show_result then ctx.show_result(T("error_title"), ctx.last_error, false) end
+    return false
+  end
+  reaper.RecursiveCreateDirectory(R.DIR, 0)
+  if not R.write_atomic(R.DIR .. SEP .. "show_lock.json", R.json_encode({locked=on==true, time=os.time()})) then
+    ctx.last_error = ctx.lang() == "fr" and "Impossible d’enregistrer le verrou." or "Could not save the show lock."
+    return false
+  end
+  return true
+end
+
 local TAB_ORDER = { "song", "concert", "stage", "lighting", "settings" }
 ctx.guide = dofile(script_dir .. "ReaCue_guide.lua")(ctx)          -- aide au survol, erreurs expliquées
 local tabs = {}
@@ -86,6 +108,8 @@ for _, k in ipairs(TAB_ORDER) do
 end
 ctx.tabs = tabs
 ctx.newsong = dofile(script_dir .. "ReaCue_newsong.lua")(ctx)      -- « + Nouveau morceau »
+ctx.jobs = dofile(script_dir .. "ReaCue_jobs.lua")(ctx)
+ctx.overlays.jobs = ctx.jobs.draw
 ctx.flow = dofile(script_dir .. "ReaCue_flow.lua")(ctx)            -- « Tout faire », lot
 dofile(script_dir .. "ReaCue_assistant.lua")(ctx)                  -- assistant (ctx.assistant)
 
@@ -142,18 +166,21 @@ end
 -- on_done(state, message) ; la fenêtre affiche la progression dans l'onglet
 -- quiet : en cas d'échec au lancement, pas de message (ctx.last_error ; « Tout faire » l'affiche)
 function ctx.start_cli(cmd, label, on_done, quiet)
+  if not ctx.require_edit() then return false end
   if ctx.job then ctx.last_error = R.tr("busy") return false end
-  local ok, err = R.start(cmd, script_dir, cmd ~= "concert" and not cmd:match("^concert"))
+  local ok, err, data = R.start(cmd, script_dir, not cmd:match("^concert") and not cmd:match("^import%-audio"))
   if not ok then
     ctx.last_error = err
     if not quiet then ctx.show_result(T("error_title"), err, false) end
     return false
   end
-  ctx.job = { kind = "cli", cmd = cmd:match("^(%S+)"), label = label, t0 = reaper.time_precise(), on_done = on_done }
+  ctx.job = { kind = "cli", id = data and data.id, project = ctx.proj_file, cmd = cmd:match("^(%S+)"),
+    label = label, t0 = reaper.time_precise(), on_done = on_done }
   return true
 end
 
 function ctx.start_stems(on_done, quiet)
+  if not ctx.require_edit() then return false end
   if ctx.job then ctx.last_error = R.tr("busy") return false end
   local job, err = S.start(R, script_dir)
   if not job then
@@ -166,7 +193,7 @@ function ctx.start_stems(on_done, quiet)
     if on_done then on_done(msg and "done" or "error", msg or finish_err) end
     return true
   end
-  ctx.job = { kind = "stems", sj = job, label = S.tr(R, "starting"), t0 = reaper.time_precise(), on_done = on_done }
+  ctx.job = { kind = "stems", id=job.id, sj = job, label = S.tr(R, "starting"), t0 = reaper.time_precise(), on_done = on_done }
   return true
 end
 
@@ -201,9 +228,20 @@ local function poll_job()
     end
     return
   end
-  local state, msg, cmd, step = R.status()
-  if (state == "done" or state == "error") and (cmd == nil or cmd == j.cmd) then
+  local state, msg, cmd, step, _, data = R.status(j.id)
+  if j.id and data and data.id and data.id ~= j.id then return end
+  -- The concert can open as soon as its RPP is ready; expensive extras keep their
+  -- durable running record and worker lease, visible from Tasks.
+  if state=="running" and j.cmd=="concert" and data and data.reported_state=="done" then state="done" end
+  if state == "running" and data and now - (j.alive_checked or -1e9) > 3 then
+    j.alive_checked=now; j.alive=R.job_active(data)
+  end
+  if state == "running" and data and j.alive==false then
+    state, msg = "error", ctx.lang() == "fr" and "Traitement interrompu. Tu peux reprendre cette étape." or "Task interrupted. You can resume this step."
+  end
+  if (state == "done" or state == "error" or state == "cancelled") and (cmd == nil or cmd == j.cmd) then
     ctx.job = nil
+    ctx.last_job_result = data
     if tabs.song.cli_done then tabs.song.cli_done(j.cmd, state, msg) end
     if j.on_done then j.on_done(state, msg) end
   elseif state == "running" and step and step ~= "" and (cmd == nil or cmd == j.cmd) then
@@ -479,9 +517,12 @@ local function draw_header(w)
   local caption = U.upper(L.tr("state")[state] or state)
   U.led(30, by + 17, 4, statecol, true)
   U.text(caption, 42, by + 10, 10, statecol, true)
+  local tasks_label = ctx.lang() == "fr" and "Traitements" or "Tasks"
+  if U.button("activity", tasks_label, w - 124, by + 5, 100, 24) then ctx.overlay = "jobs" end
+  if ctx.is_locked() then U.text(ctx.lang() == "fr" and "VERROUILLÉ" or "LOCKED", 126, by + 10, 10, U.WARN, true) end
   local pos = math.max(0, L.pos())
   local bpm = reaper.TimeMap2_GetDividedBpmAtTime and reaper.TimeMap2_GetDividedBpmAtTime(0, pos)
-  local readouts = available >= 600 and 240 or 0
+  local readouts = available >= 700 and 352 or 0
   local title = ctx.proj_name ~= "" and ctx.proj_name or T("project")
   U.title(U.fit(U.upper(title), math.max(40, available - readouts - 32), 24, true, "cond"), 28, by + 30, 24)
   if readouts > 0 then
@@ -539,6 +580,20 @@ end
 local function background(now)
   ctx.refresh(false)
   poll_job()
+  ctx.flow.restore()
+  if not ctx.job and now - (ctx.recovery_checked or -1e9) > 3 then
+    ctx.recovery_checked=now
+    local job=R.active_job()
+    if job and job.project==ctx.proj_file and job.project~="" and not (job.cmd=="concert" and job.reported_state=="done") then
+      ctx.job={kind="cli",id=job.id,cmd=job.cmd,project=job.project,label=job.step or job.cmd,
+        t0=now-math.max(0,os.time()-(job.started or os.time())),recovered=true,
+        on_done=function(state,msg)
+          -- Rebuild the recovery offer from the completed durable job, without launching another stage.
+          if ctx.flow.run and ctx.flow.run.finished then ctx.flow.run=nil; ctx.flow.checked=nil end
+          ctx.flow.restore()
+        end}
+    end
+  end
   ctx.flow.tick()
   poll_remote(now)
   local c = ctx.c

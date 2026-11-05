@@ -128,6 +128,9 @@ return function(ctx)
   }
   local function t(k) return ctx.tr(TXT, k) end
   local M = {}
+  local function can_edit()
+    return not (ctx.require_edit and not ctx.require_edit()) and not (ctx.is_locked and ctx.is_locked())
+  end
   M.TEST_S = 10
   local TRACK_LTC, TRACK_MTC = "TIMECODE LTC", "TIMECODE MTC"
   local TC_NAMES = { [TRACK_LTC] = "ltc", [TRACK_MTC] = "mtc" }
@@ -142,7 +145,10 @@ return function(ctx)
     if v == nil then v = DEF[k] end
     return v
   end
-  local function set(k, v) local st = ST(); if st and st.set then return st.set(k, v) end return false end
+  local function set(k, v)
+    if not can_edit() then return false end
+    local st = ST(); if st and st.set then return st.set(k, v) end return false
+  end
   M.get, M.set = get, set
 
   -- validation : comme reacue_mcp/lighting.py et timecode.py ---------------------------------------------
@@ -571,10 +577,12 @@ return function(ctx)
   end
 
   function M.make_tracks()
+    if not can_edit() then return false end
     return ctx.start_cli("timecode", t("job_tracks"), done_cb())
   end
 
   function M.export_now()
+    if not can_edit() then return false end
     if get("gma3_export") == false then ctx.show_result(T("error_title"), t("export_disabled"), true) return false end
     if ctx.is_concert and ctx.c and ctx.c.setlist then
       local q = R.is_windows() and R.winq(ctx.c.setlist) or R.shq(ctx.c.setlist)
@@ -607,6 +615,7 @@ return function(ctx)
   -- from_start : début du morceau (concert : du morceau en cours), sinon position actuelle
   function M.test_start(from_start)
     if test then return M.test_stop("user") end
+    if not can_edit() then return false end
     local st = reaper.GetPlayState()
     if (st & 4) == 4 then return false, t("t_rec") end
     if L.reh and L.reh.on then return false, t("t_reh") end

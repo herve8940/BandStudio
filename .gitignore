@@ -62,6 +62,7 @@ demucs_status.json
 
 # Paroles mot par mot (modèles wav2vec2 téléchargés par l'installateur) / Word-by-word lyrics
 .venv-words/
+.venv-import/
 /words/
 # Reconnaissance d'accords (modèle téléchargé par l'installateur) / Chord recognition
 .venv-chords/

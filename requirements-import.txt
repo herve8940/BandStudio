@@ -1,0 +1,3 @@
+# Optional .venv-import only. The default extra includes matching yt-dlp-ejs scripts.
+# Deno >= 2.3, ffmpeg and ffprobe are external executables; no runtime downloads.
+yt-dlp[default]>=2025.11.12

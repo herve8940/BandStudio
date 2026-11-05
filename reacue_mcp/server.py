@@ -1,6 +1,8 @@
 """Serveur MCP ReaCue : prépare automatiquement un morceau dans REAPER."""
 from __future__ import annotations
 
+from .jobs import managed_job
+
 import asyncio
 import json
 import os
@@ -87,6 +89,9 @@ def _common_title(files: list[str]) -> str:
 
 
 async def _apply(analysis: Analysis, item: dict, opts: Options, items: list[dict] | None = None) -> dict:
+    from . import show_lock
+    if show_lock.locked():
+        return {"error": show_lock.message()}
     render, render_count, vwarn = None, None, []
     info = None
     if items or opts.voice_cues or opts.voice_count_in:
@@ -224,8 +229,12 @@ async def _publish_only(analysis, item, opts, items) -> dict:
             "sections": [{"name": s.name, "bars": f"{s.start_bar + 1}-{s.end_bar}"} for s in analysis.sections]}
 
 
+@managed_job
 async def export_audio(request: dict) -> dict:
     """Export audio des stems du projet ouvert (items lus par le pont) ; voir export.py."""
+    from . import show_lock
+    if show_lock.locked():
+        return {"error": show_lock.message()}
     from . import export
     info = await bridge.call("ping")
     found = (await bridge.call("get_audio_items")).get("items") or []
@@ -242,10 +251,14 @@ async def export_audio(request: dict) -> dict:
     return {"export": res, "warnings": []}
 
 
+@managed_job
 async def update_timecode_tracks() -> dict:
     """Pistes TIMECODE LTC / MTC seules (bouton de l'onglet Lumière de la fenêtre ReaCue, CLI « timecode ») :
     même plan et même suivi que la préparation (timecode.plan_block / handle_result), sans toucher au reste
     du projet. Réglages vides : les pistes timecode existantes sont retirées. Pont ≥ 1.5."""
+    from . import show_lock
+    if show_lock.locked():
+        return {"error": show_lock.message()}
     use_settings_lang()
     cfg = timecode.config()
     info = await bridge.call("ping")
@@ -364,6 +377,7 @@ async def reaper_status() -> dict:
 
 
 @mcp.tool()
+@managed_job
 async def prepare_song(
     file_path: str | None = None,
     count_in_bars: int | None = None,
@@ -402,6 +416,9 @@ async def prepare_song(
     renommées, ajoutées, supprimées) : ces régions deviennent la structure, sans réanalyse
     (résultat : structure_from_regions). reanalyse=True, bpm_hint ou beats_per_bar : analyse complète.
     """
+    from . import show_lock
+    if show_lock.locked():
+        return {"error": show_lock.message()}
     use_settings_lang()
     if not (file_path or reanalyse or bpm_hint or beats_per_bar):
         try:
@@ -483,8 +500,12 @@ async def prepare_song(
 
 
 @mcp.tool()
+@managed_job
 async def analyze_audio(file_path: str, beats_per_bar: int | None = None, bpm_hint: float | None = None) -> dict:
     """Analyse seulement (sans toucher à REAPER) : BPM, mesure, stabilité du tempo, sections proposées."""
+    from . import show_lock
+    if show_lock.locked():
+        return {"error": show_lock.message()}
     use_settings_lang()
     a = await asyncio.to_thread(analyze, str(Path(file_path).expanduser()), beats_per_bar, 4, bpm_hint)
     localize_analysis(a)
@@ -495,6 +516,7 @@ async def analyze_audio(file_path: str, beats_per_bar: int | None = None, bpm_hi
 
 
 @mcp.tool()
+@managed_job
 async def set_sections(sections: list[dict]) -> dict:
     """Corrige la structure du dernier morceau préparé et reconstruit régions, cues et click.
     Prioritaire : la liste donnée remplace la structure, y compris les régions modifiées à la main.
@@ -519,6 +541,9 @@ async def set_sections(sections: list[dict]) -> dict:
     "from": 9, "to": 24} | {"kind": "song"}, "mode": "separate" | "mix", "click": false}} ; stems vides =
     tous. Fichiers dans <dossier du projet>/exports/ (et téléchargeables depuis la page studio.html).
     """
+    from . import show_lock
+    if show_lock.locked():
+        return {"error": show_lock.message()}
     use_settings_lang()
     exp = next((d["export"] for d in sections if isinstance(d, dict) and isinstance(d.get("export"), dict)), None)
     if exp is not None:
@@ -577,6 +602,7 @@ def _impose_grid(a, opts, bpm, bar1_s, n_bars=None, beats_per_bar=None):
 
 
 @mcp.tool()
+@managed_job
 async def set_grid(
     bpm: float,
     bar1_s: float,
@@ -592,6 +618,9 @@ async def set_grid(
     sections : nouvelle structure dans la numérotation de CETTE grille (même format que set_sections) ;
     fortement conseillé, car les anciennes mesures ne correspondent plus.
     """
+    from . import show_lock
+    if show_lock.locked():
+        return {"error": show_lock.message()}
     use_settings_lang()
     a, item, opts, items = _load()
     n_bars = _impose_grid(a, opts, bpm, bar1_s, n_bars, beats_per_bar)
@@ -605,8 +634,12 @@ async def set_grid(
 
 
 @mcp.tool()
+@managed_job
 async def rename_section(index: int, name: str) -> dict:
     """Renomme la section n° index (1 = première) du dernier morceau préparé."""
+    from . import show_lock
+    if show_lock.locked():
+        return {"error": show_lock.message()}
     use_settings_lang()
     a, item, opts, items = _load()
     a, changed, warns = await _from_regions(a, item, opts, items)     # numéros = régions actuelles
@@ -621,6 +654,7 @@ async def rename_section(index: int, name: str) -> dict:
 
 
 @mcp.tool()
+@managed_job
 async def update_options(
     count_in_bars: int | None = None,
     tempo_mode: Literal["auto", "constant", "beatmap"] | None = None,
@@ -640,6 +674,9 @@ async def update_options(
 ) -> dict:
     """Change des réglages (appels vocaux et voix compris, count-in, mode de tempo, click…) et reconstruit sans réanalyser l'audio.
     Les régions modifiées à la main dans REAPER sont reprises comme structure (structure_from_regions)."""
+    from . import show_lock
+    if show_lock.locked():
+        return {"error": show_lock.message()}
     use_settings_lang()
     a, item, opts, items = _load()
     for k, v in locals().copy().items():
@@ -685,6 +722,7 @@ def _spawn_concert_extras(setlist: Path):
 
 
 @mcp.tool()
+@managed_job
 async def build_concert(name: str, songs: list[str], gap_s: float = 4.0, live: list[str] | None = None,
                         live_exceptions: dict | None = None) -> dict:
     """Mode concert : enchaîne plusieurs morceaux DÉJÀ PRÉPARÉS dans un seul projet REAPER.
@@ -703,6 +741,9 @@ async def build_concert(name: str, songs: list[str], gap_s: float = 4.0, live: l
     reste en stem sur ce morceau) ou {"Song C": ["keys"]} (inverse le profil pour ces instruments).
     Sans live : le profil déjà enregistré pour ce concert est gardé (reconstruction).
     """
+    from . import show_lock
+    if show_lock.locked():
+        return {"error": show_lock.message()}
     use_settings_lang()
     from . import concert as conc
     try:
@@ -720,6 +761,7 @@ async def build_concert(name: str, songs: list[str], gap_s: float = 4.0, live: l
 
 
 @mcp.tool()
+@managed_job
 async def set_live_profile(concert: str, live: list[str] | None = None, exceptions: dict | None = None,
                            replace_exceptions: bool = False) -> dict:
     """Mode concert : choisit quels stems sont coupés (« joué en live ») SANS reconstruire le concert.
@@ -732,6 +774,9 @@ async def set_live_profile(concert: str, live: list[str] | None = None, exceptio
     replace_exceptions : True = remplace toutes les exceptions au lieu de les compléter.
     La fenêtre ReaCue (onglet Scène) applique le profil tout de suite ; il est gardé à la reconstruction.
     """
+    from . import show_lock
+    if show_lock.locked():
+        return {"error": show_lock.message()}
     use_settings_lang()
     from . import concert as conc
     try:
@@ -741,6 +786,7 @@ async def set_live_profile(concert: str, live: list[str] | None = None, exceptio
 
 
 @mcp.tool()
+@managed_job
 async def new_song(files: list[str], title: str | None = None) -> dict:
     """Nouveau morceau : copie un fichier audio (MP3, WAV…), plusieurs stems ou un dossier de stems dans
     <dossier des projets>/<Titre>/ et crée le projet REAPER <Titre>.RPP (une piste par fichier, à 0 s).
@@ -750,6 +796,9 @@ async def new_song(files: list[str], title: str | None = None) -> dict:
     Un projet existant n'est jamais écrasé. Ensuite : ouvrir le projet dans REAPER (fenêtre ReaCue, onglet
     Concert : clic sur le nom du morceau), puis « Séparer stems » (un seul fichier) et « Préparer ».
     """
+    from . import show_lock
+    if show_lock.locked():
+        return {"error": show_lock.message()}
     use_settings_lang()
     from . import newsong as ns
     try:

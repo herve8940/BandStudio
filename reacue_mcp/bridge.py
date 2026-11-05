@@ -83,6 +83,9 @@ class Bridge:
         return True, "ok"
 
     async def call(self, cmd: str, args: dict | None = None, timeout: float = 30.0):
+        if cmd in {"import_file", "apply_plan", "timecode_tracks"}:
+            from .show_lock import require_edit
+            require_edit(self.dir)
         ok, why = self.alive()
         if not ok:
             raise BridgeError(why)
@@ -90,7 +93,8 @@ class Bridge:
             rid = uuid.uuid4().hex
             self.res.unlink(missing_ok=True)
             tmp = self.req.with_suffix(".tmp")
-            tmp.write_text(to_lua({"id": rid, "cmd": cmd, "args": args or {}}), encoding="utf-8")
+            tmp.write_text(to_lua({"id": rid, "cmd": cmd, "args": args or {},
+                                   "expected_project": os.environ.get("REACUE_EXPECTED_PROJECT")}), encoding="utf-8")
             os.replace(tmp, self.req)
             t_end = time.monotonic() + timeout
             while time.monotonic() < t_end:

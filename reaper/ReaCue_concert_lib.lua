@@ -177,6 +177,16 @@ function L.load_file(path)
   if not chunk then return nil end
   local ok, d = pcall(chunk)
   if ok and type(d) == "table" and type(d.songs) == "table" and #d.songs > 0 then
+    local base=path:match("^(.*)[/\\]") or "."
+    local function resolve(value)
+      if type(value)~="string" or value=="" or value:match("^[/\\]") or value:match("^%a:[/\\]") then return value end
+      return base .. SEP .. value
+    end
+    for _,key in ipairs({"rpp","setlist","prompter","package_web"}) do d[key]=resolve(d[key]) end
+    for _,song in ipairs(d.songs) do
+      if type(song)~="table" then return nil end
+      song.project=resolve(song.project)
+    end
     d.sidecar = path
     return d
   end
@@ -292,6 +302,7 @@ function L.list_setlists()
 end
 
 function L.open_concert(d)
+  if R.show_locked() then return false, R.lock_message() end
   reaper.Main_OnCommand(40859, 0)            -- nouvel onglet de projet : le projet en cours reste ouvert
   reaper.Main_openProject(d.rpp)
 end
@@ -304,12 +315,24 @@ function L.publish_prompter(c)
   local www = reaper.GetResourcePath() .. SEP .. "reaper_www_root"
   reaper.RecursiveCreateDirectory(www, 0)
   local dst = www .. SEP .. "reacue_song.json"
+  if c.package_web then
+    local data=R.json_decode(src)
+    if type(data)~="table" then return false end
+    local files=data and data.lighting and data.lighting.files or {}
+    local copies={}
+    for _,entry in ipairs(files) do
+      local name=entry.url
+      if type(name)~="string" or name=="" or name:find("[/\\]") or name=="." or name==".." then return false end
+      local content=L.read(c.package_web .. SEP .. name)
+      if not content then return false end
+      copies[#copies+1]={path=www .. SEP .. name,content=content}
+    end
+    for _,copy in ipairs(copies) do
+      if L.read(copy.path)~=copy.content and not R.write_atomic(copy.path,copy.content) then return false end
+    end
+  end
   if L.read(dst) == src then return true end
-  local tmp = dst .. ".tmp"
-  local f = io.open(tmp, "wb"); if not f then return false end
-  f:write(src); f:close()
-  os.remove(dst)
-  return os.rename(tmp, dst) and true or false
+  return R.write_atomic(dst,src)
 end
 
 -- ReaCue Studio : page et ressources copiées à côté du prompteur (même liste que reacue_mcp/web/,
@@ -467,6 +490,11 @@ function L.run_cli(cmd, arg_path, flag)
   local py = R.python(dir, windows)
   if not L.exists(py) then return false, string.format(L.tr("not_found"), py) end
   local full = cmd .. (arg_path and (" " .. (flag or "--setlist") .. " " .. (windows and R.winq(arg_path) or R.shq(arg_path))) or "")
+  local verb=cmd:match("^(%S+)")
+  if verb~="library" and verb~="notes" and verb~="open-song" and verb~="concert-extras" then
+    return R.start(full, LIB_DIR, false)
+  end
+  if R.show_locked() and verb~="library" then return false,R.lock_message() end
   local log = reaper.GetResourcePath() .. SEP .. "ReaCueMCP" .. SEP .. "cli.log"
   local line = R.command(full, dir, py, windows, log)
   if windows then
@@ -834,6 +862,7 @@ function L.publish_reh()
 end
 
 function L.set_rate(r)
+  if R.show_locked() then return false, R.lock_message() end
   r = tonumber(r)
   if not r or r < 0.5 or r > 1.0 then return false end
   if r < 0.999 and reaper.GetToggleCommandState and reaper.GetToggleCommandState(PRESERVE_PITCH) == 0 then
@@ -856,6 +885,7 @@ function L.loop_off()
 end
 
 function L.set_rehearsal(on)
+  if on and R.show_locked() then return false, R.lock_message() end
   local R_ = L.reh
   if on and not R_.on then
     local s0, s1 = 0, 0
@@ -896,6 +926,7 @@ function L.loop_restart()
 end
 
 function L.loop_set(c, a, b)
+  if R.show_locked() then return false, R.lock_message() end
   local R_ = L.reh
   if not R_.on then L.set_rehearsal(true) end
   local i = L.song_index(c, a.start + 0.01)
@@ -914,6 +945,7 @@ end
 -- appui sur la section commençant au temps t : 1er appui = boucle sur cette section,
 -- 2e appui sur une autre section du même morceau = boucle de l'une à l'autre (plage)
 function L.loop_tap(c, t)
+  if R.show_locked() then return false, R.lock_message() end
   t = tonumber(t)
   if not t then return false end
   local i = L.song_index(c, t + 0.01)
@@ -974,6 +1006,7 @@ function L.remote_pin()
 end
 
 function L.set_remote_pin(p)
+  if R.show_locked() then return false, R.lock_message() end
   if type(p) ~= "string" or not p:match("^%d%d%d%d$") then return false end
   reaper.SetExtState(REMOTE, "remote_pin", p, true)
   return true
@@ -992,6 +1025,11 @@ end
 L.remote_ext = L.remote_ext or {}
 
 function L.remote_exec(c, cmd, arg)
+  if R.show_locked() then
+    local live={toggle=true,play=true,pause=true,stop=true,prev=true,next=true,home=true,song=true,seek=true,
+      mute=true,solo=true,hearall=true,loopoff=true}
+    if not live[cmd] then return false end
+  end
   local ext = L.remote_ext[cmd]
   if ext then return ext(c, arg) and true or false end
   if cmd == "toggle" then L.toggle_play()
@@ -1320,6 +1358,7 @@ local function save_profile(c)
 end
 
 function L.live_toggle(c, role)
+  if R.show_locked() then return false, R.lock_message() end
   role = L.norm_role(role)
   if not c or not role then return false end
   L.load_live(c, true)
@@ -1331,6 +1370,7 @@ end
 
 -- exception du morceau k pour le rôle : nil (profil) → inverse du profil → … (cycle)
 function L.live_exc_cycle(c, k, role)
+  if R.show_locked() then return false, R.lock_message() end
   role = L.norm_role(role)
   local s = c and c.songs[k]
   if not s or not role then return false end
@@ -1351,6 +1391,7 @@ end
 -- État publié pour la page : ExtState ReaCue/studio = vitesse|transposition|passage|passages|de|à
 -- ---------------------------------------------------------------------------------------
 function L.loop_section(c, t)
+  if R.show_locked() then return false, R.lock_message() end
   t = tonumber(t)
   if not c or not t then return false end
   local i = L.song_index(c, t + 0.01)
@@ -1371,6 +1412,7 @@ function L.ramp_rate(rp, pass)
 end
 
 function L.set_ramp(c, arg)
+  if R.show_locked() then return false, R.lock_message() end
   arg = arg or ""
   local R_ = L.reh
   if arg == "" then
@@ -1422,6 +1464,7 @@ end
 -- transposition des stems par REAPER (D_PITCH de chaque prise, mode de pitch par défaut du projet) ;
 -- relative : les écarts déjà réglés à la main entre prises sont gardés. Bornée à ±12 demi-tons.
 function L.transpose(c, arg)
+  if R.show_locked() then return false, R.lock_message() end
   local takes = L.music_takes(c)
   if #takes == 0 then return false end
   local cur = L.transpose_get(c)
@@ -1508,6 +1551,7 @@ end
 -- export audio demandé par la page : la demande (JSON) est dans ReaCue/export_req, `id` doit correspondre ;
 -- la tâche complète (pistes, items, sélection) est écrite dans ReaCueMCP/export_job.json puis la CLI la traite
 function L.studio_export(c, id)
+  if R.show_locked() then return false, R.lock_message() end
   if type(id) ~= "string" or not id:match("^%w+$") then return false end
   local req = R.json_decode(reaper.GetExtState(REMOTE, "export_req"))
   if type(req) ~= "table" or req.id ~= id then return false end
@@ -1589,6 +1633,7 @@ end
 
 -- note de section : arg = « <n° du morceau>:<mesure de début>:<texte urlencodé> » (texte vide = effacer)
 function L.set_note(c, arg)
+  if R.show_locked() then return false, R.lock_message() end
   local i, bar, txt = tostring(arg or ""):match("^(%d+):(%d+):(.*)$")
   i, bar = tonumber(i), tonumber(bar)
   if not i or not bar or bar < 1 then return false end
@@ -1610,6 +1655,7 @@ end
 
 -- étape du parcours réglée à la main : arg = « <clé ou chemin urlencodé>:<new|solo|band|stage|auto> »
 function L.set_stage(arg)
+  if R.show_locked() then return false, R.lock_message() end
   local key, st = tostring(arg or ""):match("^(.+):(%a+)$")
   if not key or not (L.STAGES[st] or st == "auto") then return false end
   key = L.song_key(L.url_decode(key))
@@ -1773,6 +1819,7 @@ end
 
 -- ouvrir un projet de la bibliothèque (comme l'onglet Concert : nouvel onglet, sauf si c'est le projet en cours)
 function L.open_project(p)
+  if R.show_locked() then return false, R.lock_message() end
   p = tostring(p or "")
   if not L.lower_utf8(p):match("%.rpp$") or not L.exists(p) then return false end
   if L.song_key(L.project_file()) == L.song_key(p) then return true end

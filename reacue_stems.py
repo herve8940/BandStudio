@@ -169,11 +169,17 @@ class FlushingStream:
 
 
 
+_JOB = None
+
 def _write_status(path: Path, state: str, **kw):
 
     """Écriture atomique du statut avec plusieurs essais (évite les conflits d'accès sous Windows avec REAPER)."""
 
     d = {"state": state, "time": time.time(), "pid": os.getpid(), **kw}
+
+    if _JOB is not None:
+        _JOB.update(state, **kw)
+        d.update({k: _JOB.data[k] for k in ("id", "project", "started")})
 
     content = json.dumps(d, ensure_ascii=False)
 
@@ -488,6 +494,10 @@ def main(argv=None) -> int:
 
     s.add_argument("--repo", help="dossier de modèles locaux (hors ligne) / local models folder (offline)")
 
+    s.add_argument("--resource-dir")
+    s.add_argument("--origin-project", default="")
+    s.add_argument("--job-id")
+
     c = sub.add_parser("check")
 
     c.add_argument("--lang", default="fr", choices=["fr", "en"])
@@ -498,7 +508,33 @@ def main(argv=None) -> int:
 
     if a.cmd == "separate":
 
-        return separate(a.input, a.out, a.model, a.repo)
+        if not a.resource_dir:
+            return separate(a.input, a.out, a.model, a.repo)
+        from reacue_mcp.jobs import Job, WorkerLease
+        from reacue_mcp import show_lock
+        global _JOB
+        directory = Path(a.resource_dir) / "ReaCueMCP"
+        _JOB = Job(directory, "stems", job_id=a.job_id, project=a.origin_project,
+                   input=str(a.input), model=a.model, status_file=str(Path(a.out) / "demucs_status.json"))
+        lease = WorkerLease(directory)
+        code = 1
+        try:
+            if show_lock.locked(directory):
+                raise RuntimeError(show_lock.message())
+            if not lease.acquire():
+                raise RuntimeError("Un traitement est déjà en cours. Attends sa fin.")
+            code = separate(a.input, a.out, a.model, a.repo)
+            return code
+        except Exception as exc:
+            _JOB.update("error", message=str(exc))
+            if lease.file is not None:
+                Path(a.out).mkdir(parents=True, exist_ok=True)
+                _write_status(Path(a.out) / "demucs_status.json", "error", model=a.model, input=a.input, message=str(exc))
+            return 1
+        finally:
+            _JOB.update("done" if code == 0 else "error")
+            _JOB = None
+            lease.release()
 
     return check(a.lang, a.seconds)
 

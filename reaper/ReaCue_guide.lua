@@ -305,6 +305,7 @@ return function(ctx)
   G.open_path = open_path
 
   function G.installer(kind)          -- "main" | "stems" | "structure" | "words"
+    if ctx.require_edit and not ctx.require_edit() then return false end
     local dir = R.install_dir(ctx.dir)
     local base = ({ main = "Install ReaCue", stems = "Install ReaCue Stems", structure = "Install ReaCue Structure",
       words = "Install ReaCue Words" })[kind]
@@ -324,12 +325,14 @@ return function(ctx)
   end
 
   function G.save_project()
+    if ctx.require_edit and not ctx.require_edit() then return false end
     if (ctx.proj_file or "") == "" then reaper.Main_OnCommand(40022, 0)       -- Enregistrer sous…
     elseif reaper.Main_SaveProject then reaper.Main_SaveProject(0, false) end
     return true
   end
 
   function G.do_action(kind)
+    if kind~="timeout" and kind~="generic" and kind~="install" and ctx.require_edit and not ctx.require_edit() then return false end
     if kind == "bridge" then return G.start_bridge()
     elseif kind == "install" then return open_path(R.install_dir(ctx.dir))
     elseif kind == "old_bridge" then return G.installer("main")

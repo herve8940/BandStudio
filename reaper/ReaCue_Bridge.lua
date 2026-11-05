@@ -565,11 +565,29 @@ end
 -- Boucle -----------------------------------------------------------------------
 local last_beat = 0
 
+local lock_reader
 local function handle(src)
   local chunk, perr = load("return " .. src, "request", "t", {}) -- données pures, aucun accès à l'API
   if not chunk then return { ok = false, error = "requête illisible : " .. tostring(perr) } end
   local okr, req = pcall(chunk)
   if not okr or type(req) ~= "table" then return { ok = false, error = "requête invalide" } end
+  if req.expected_project and req.expected_project ~= "" then
+    local _, current = reaper.EnumProjects(-1, "")
+    if current ~= req.expected_project then
+      return { id = req.id, ok = false, error = "Le projet a changé. Reviens au projet qui a lancé le traitement." }
+    end
+  end
+  if req.cmd == "import_file" or req.cmd == "apply_plan" or req.cmd == "timecode_tracks" then
+    local lock = read_file(reaper.GetResourcePath() .. "/ReaCueMCP/show_lock.json")
+    if lock and not lock_reader then
+      local base=debug.getinfo(1,"S").source:match("^@?(.*[/\\])") or ""
+      local ok,module=pcall(dofile,base .. "ReaCue_run.lua")
+      if ok then lock_reader=module end
+    end
+    if lock and (not lock_reader or lock_reader.show_locked()) then
+      return { id = req.id, ok = false, error = "Concert verrouillé : modifications désactivées." }
+    end
+  end
   local fn = H[req.cmd]
   if not fn then return { id = req.id, ok = false, error = "commande inconnue : " .. tostring(req.cmd) } end
   local ok, res = pcall(fn, req.args or {})
