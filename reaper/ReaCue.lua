@@ -162,8 +162,8 @@ function ctx.start_stems(on_done, quiet)
     return false
   end
   if job.ready then
-    local msg = S.finish(R, job)
-    if on_done then on_done("done", msg) end
+    local msg, finish_err = S.finish(R, job)
+    if on_done then on_done(msg and "done" or "error", msg or finish_err) end
     return true
   end
   ctx.job = { kind = "stems", sj = job, label = S.tr(R, "starting"), t0 = reaper.time_precise(), on_done = on_done }
@@ -194,8 +194,8 @@ local function poll_job()
     end
     ctx.job = nil
     if st == "ready" then
-      local msg = S.finish(R, j.sj)
-      if j.on_done then j.on_done("done", msg) end
+      local msg, finish_err = S.finish(R, j.sj)
+      if j.on_done then j.on_done(msg and "done" or "error", msg or finish_err) end
     else
       if j.on_done then j.on_done("error", v) end
     end
