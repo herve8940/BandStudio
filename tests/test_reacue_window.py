@@ -122,6 +122,29 @@ def mutes(g):
     return {t.name: t.mute or 0 for t in g.TRACKS.values() if t.name not in ("CUES", "VOIX", "CLICK")}
 
 
+@pytest.mark.parametrize("cached", [True, False])
+def test_stems_import_refusal_is_reported_to_flow(concert, cached):
+    L, g = rt(concert)
+    open_window(L, g)
+    g.cached = cached
+    L.execute('''
+      local ctx = REACUE_CTX
+      ctx.S.start = function() return {ready = cached} end
+      ctx.S.poll = function() return "ready" end
+      ctx.S.finish = function() return nil, "source item is no longer in this project" end
+      results = {}
+      started = ctx.start_stems(function(state, message)
+        results[#results + 1] = {state, message}
+      end, true)
+    ''')
+    assert g.started
+    if not cached:
+        frame(L, g)
+    assert len(g.results) == 1
+    assert list(g.results[1].values()) == ["error", "source item is no longer in this project"]
+    assert g.REACUE_CTX.job is None
+
+
 # ------------------------------------------------------------------------------- instruments (lib)
 def test_mix_profile_exceptions_solo_hearall_and_rehearsal(concert, tmp_path):
     res = concert[0]

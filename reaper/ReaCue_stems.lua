@@ -31,6 +31,10 @@ local TXT = {
     no_file = "Fichier audio introuvable pour cet item :\n%s\n\nSi l'item est marqué OFFLINE, REAPER n'a pas accès au fichier : déplace-le dans le dossier du projet (voir la FAQ).",
     not_installed = "La séparation de stems n'est pas installée :\n%s\n\nLance « Install ReaCue Stems » dans le dossier de ReaCue (ou relance l'installation de ReaCue et réponds oui à la séparation de stems).",
     busy = "Une séparation est déjà en cours pour ce morceau. Attends qu'elle se termine.",
+    busy_other = "Une séparation utilise actuellement ce dossier avec une autre source ou un autre modèle (%s). Attends sa fin avant de relancer avec ces réglages.",
+    changed = "L'état de la séparation a changé. Relance l'action pour reprendre le traitement correspondant au morceau.",
+    invalid_item = "L'item d'origine a été retiré ou le projet actif a changé. Les stems restent sur le disque ; reviens au bon projet avant de les importer.",
+    changed_item = "La source audio de l'item a changé pendant la séparation. Les stems restent sur le disque ; rétablis l'item d'origine avant de les importer.",
     launch_failed = "Impossible de lancer la séparation :\n%s",
     no_start = "La séparation n'a pas démarré. Voir le journal :\n%s",
     failed = "La séparation a échoué :\n%s\n\nFin du journal :\n%s\n\n(%s)",
@@ -49,6 +53,10 @@ local TXT = {
     no_file = "Audio file not found for this item:\n%s\n\nIf the item shows OFFLINE, REAPER cannot access the file: move it into the project folder (see the FAQ).",
     not_installed = "Stem separation is not installed:\n%s\n\nRun “Install ReaCue Stems” in the ReaCue folder (or run the ReaCue installer again and answer yes to stem separation).",
     busy = "A separation is already running for this song. Wait until it finishes.",
+    busy_other = "A separation is currently using this folder with another source or model (%s). Wait for it to finish before starting with these settings.",
+    changed = "The separation status changed. Run the action again to follow the process for this song.",
+    invalid_item = "The original item was removed or the active project changed. The stems remain on disk; return to the correct project before importing them.",
+    changed_item = "The item's audio source changed during separation. The stems remain on disk; restore the original item before importing them.",
     launch_failed = "Could not start the separation:\n%s",
     no_start = "The separation did not start. See the log:\n%s",
     failed = "The separation failed:\n%s\n\nEnd of the log:\n%s\n\n(%s)",
@@ -188,6 +196,11 @@ end
 
 -- séparation sans fenêtre (fenêtre ReaCue) : renvoie un « job », ou nil + message
 --   job.ready = true : stems déjà séparés (import immédiat avec S.finish)
+local function valid_pid(value)
+  local pid = tonumber(value)
+  return pid and pid > 0 and pid % 1 == 0 and pid or nil
+end
+
 function S.start(R, script_dir, item)
   item = item or S.pick_item()
   if not item then return nil, S.tr(R, "no_item") end
@@ -196,44 +209,86 @@ function S.start(R, script_dir, item)
   if file == "" or not exists(file) then return nil, string.format(S.tr(R, "no_file"), file) end
   local model = S.model(R)
   local p = S.paths(file, model)
-  local job = { item = item, p = p, model = model, t0 = reaper.time_precise and reaper.time_precise() or os.clock() }
-  if S.ready(p) then job.ready = true return job end
+  local job = { item = item, file = file, p = p, model = model,
+                t0 = reaper.time_precise and reaper.time_precise() or os.clock() }
   local windows = R.is_windows()
   local dir = R.install_dir(script_dir)
   local py = S.python(dir, windows)
-  if not exists(py) then return nil, string.format(S.tr(R, "not_installed"), py) end
-  local st = read(p.status)
-  if st and R.jfield(st, "state") == "running" and os.time() - (R.jfield(st, "time") or 0) < 3600 then
-    return nil, S.tr(R, "busy")
+  for _ = 1, 3 do
+    local st = read(p.status)
+    local state = st and R.jfield(st, "state")
+    local pid = st and valid_pid(R.jfield(st, "pid"))
+    local alive = state == "running" and S.pid_alive(pid, windows)
+    -- Demucs peut terminer pendant le contrôle du PID : relire avant toute décision/destruction.
+    if read(p.status) == st then
+      if state == "running" and alive ~= false then
+        local other_model, input = R.jfield(st, "model"), R.jfield(st, "input")
+        if other_model ~= model or type(input) ~= "string" or input:gsub("\\", "/") ~= file:gsub("\\", "/") then
+          return nil, string.format(S.tr(R, "busy_other"), tostring(other_model or "?"))
+        end
+        -- Un contrôle indisponible est conservateur : suivre le statut, jamais lancer un doublon.
+        job.resumed, job.pid, job.status_since = true, pid, tonumber(R.jfield(st, "time"))
+        return job
+      end
+      -- Des fichiers existent déjà pendant leur écriture ou après un crash : seul un cache terminé
+      -- (ou ancien, sans statut) peut être importé sans attendre le worker.
+      local cached_model = st and R.jfield(st, "model")
+      local cached_input = st and R.jfield(st, "input")
+      local cache_done = state == "done" and cached_model == model and
+        (cached_input == nil or (type(cached_input) == "string" and cached_input:gsub("\\", "/") == file:gsub("\\", "/")))
+      if (not st or cache_done) and S.ready(p) then job.ready = true return job end
+      if st and state ~= "running" and state ~= "done" and state ~= "error" then return nil, S.tr(R, "changed") end
+      if not exists(py) then return nil, string.format(S.tr(R, "not_installed"), py) end
+      reaper.RecursiveCreateDirectory(p.outroot, 0)
+      if read(p.status) == st then
+        if st and not os.remove(p.status) then return nil, S.tr(R, "changed") end
+        local line = S.command(R, dir, py, windows, file, p.outroot, model)
+        job.status_since = os.time()
+        if windows then
+          if reaper.ExecProcess(line, -1) == nil then return nil, string.format(S.tr(R, "launch_failed"), line) end
+        else
+          os.execute(line)
+        end
+        return job
+      end
+    end
   end
-  reaper.RecursiveCreateDirectory(p.outroot, 0)
-  os.remove(p.status)
-  local line = S.command(R, dir, py, windows, file, p.outroot, model)
-  if windows then
-    if reaper.ExecProcess(line, -1) == nil then return nil, string.format(S.tr(R, "launch_failed"), line) end
-  else
-    os.execute(line)
-  end
-  return job
+  return nil, S.tr(R, "changed")
 end
 
 local function pid_alive(pid, windows)
-  if not pid or pid == 0 then return true end
+  pid = valid_pid(pid)
+  if not pid then return true end
   if not reaper.ExecProcess then return true end
   if windows then
-    local out = reaper.ExecProcess('tasklist /FI "PID eq ' .. tostring(pid) .. '" /NH', 1000)
-    if not out then return true end
-    if out:find("aucun") or out:find("No tasks") or out:find("INFO:") then return false end
-    return out:find(tostring(pid)) ~= nil
+    local ok, out = pcall(reaper.ExecProcess, 'tasklist /FI "PID eq ' .. tostring(pid) .. '" /NH', 1000)
+    if not ok or type(out) ~= "string" or tonumber(out:match("^(%-?%d+)")) ~= 0 then return true end
+    if out:find("aucun", 1, true) or out:find("No tasks", 1, true) then return false end
+    return true -- sortie inattendue : ne pas conclure que le worker est mort
   else
-    local r = reaper.ExecProcess('/bin/kill -0 ' .. tostring(pid), 500)
-    if not r then return true end
+    local ok, r = pcall(reaper.ExecProcess, '/bin/kill -0 ' .. tostring(pid), 500)
+    if not ok or type(r) ~= "string" then return true end
     local code = tonumber(r:match("^(%-?%d+)"))
-    if code == nil then return true end
-    return code == 0
+    if code == 0 then return true end
+    -- Un timeout, une commande indisponible ou EPERM ne prouve pas l'absence du processus.
+    if code == 1 and r:find("No such process", 1, true) then return false end
+    return true
   end
 end
 S.pid_alive = pid_alive
+
+local function matching_status(R, s, job)
+  if not s then return true end
+  local model, input = R.jfield(s, "model"), R.jfield(s, "input")
+  if job.file and model ~= job.model then return false end
+  if model and model ~= job.model then return false end
+  if job.file and R.jfield(s, "state") == "running" and type(input) ~= "string" then return false end
+  if input and job.file and (type(input) ~= "string" or input:gsub("\\", "/") ~= job.file:gsub("\\", "/")) then return false end
+  local pid, since = valid_pid(R.jfield(s, "pid")), tonumber(R.jfield(s, "time"))
+  if job.pid and pid and job.pid ~= pid then return false end
+  if job.status_since and since and since < job.status_since then return false end
+  return true
+end
 
 -- état du job : "running", pct | "ready" | "error", message
 function S.poll(R, job)
@@ -243,6 +298,7 @@ function S.poll(R, job)
   local el = now - job.t0
   local s = read(p.status)
   local state = s and R.jfield(s, "state")
+  if not matching_status(R, s, job) then return "error", S.tr(R, "changed") end
   if state == "done" and S.ready(p) then job.ready = true return "ready" end
   if state == "error" or state == "done" then
     local lg = read(p.log) or ""
@@ -251,13 +307,15 @@ function S.poll(R, job)
   if not s and el > 90 then return "error", string.format(S.tr(R, "no_start"), p.log) end
   if el > 3600 then return "error", string.format(S.tr(R, "timeout"), p.log) end
 
-  local pid = s and tonumber(R.jfield(s, "pid"))
+  local pid = s and valid_pid(R.jfield(s, "pid"))
+  if pid then job.pid = job.pid or pid end
   job.last_alive_check = job.last_alive_check or now
   if pid and (now - job.last_alive_check >= 3) then
     job.last_alive_check = now
-    if not pid_alive(pid, R.is_windows()) then
+    if not S.pid_alive(pid, R.is_windows()) then
       s = read(p.status)
       state = s and R.jfield(s, "state")
+      if not matching_status(R, s, job) then return "error", S.tr(R, "changed") end
       if state == "done" and S.ready(p) then job.ready = true return "ready" end
       local lg = read(p.log) or ""
       return "error", string.format(S.tr(R, "crashed"), lg:sub(-700), p.log)
@@ -269,8 +327,21 @@ end
 
 -- import des stems séparés ; renvoie le message de fin
 function S.finish(R, job)
+  if job.finished then return job.message end
+  if reaper.ValidatePtr2 and not reaper.ValidatePtr2(0, job.item, "MediaItem*") then
+    return nil, S.tr(R, "invalid_item")
+  end
+  if job.file then
+    local take = reaper.GetActiveTake(job.item)
+    if not take or (reaper.TakeIsMIDI and reaper.TakeIsMIDI(take)) or
+        source_file(take):gsub("\\", "/") ~= job.file:gsub("\\", "/") then
+      return nil, S.tr(R, "changed_item")
+    end
+  end
   local made = S.import(R, job.item, job.p)
-  return string.format(S.tr(R, "done"), job.model, table.concat(made, ", "), job.p.outdir)
+  job.message = string.format(S.tr(R, "done"), job.model, table.concat(made, ", "), job.p.outdir)
+  job.finished = true
+  return job.message
 end
 
 function S.run(script_dir)
@@ -279,14 +350,14 @@ function S.run(script_dir)
   local function box(msg) reaper.ShowMessageBox(msg, title, 0) end
   local job, err = S.start(R, script_dir)
   if not job then box(err) return end
-  if job.ready then box(S.finish(R, job)) return end
+  if job.ready then local msg, why = S.finish(R, job); box(msg or why) return end
   local win = true
   gfx.init(title, 500, 120)
   local function close() if win then gfx.quit(); win = false end end
   local function loop()
     local el = reaper.time_precise() - job.t0
     local state, v = S.poll(R, job)
-    if state == "ready" then close() box(S.finish(R, job)) return end
+    if state == "ready" then close(); local msg, why = S.finish(R, job); box(msg or why) return end
     if state == "error" then close() box(v) return end
     if win then
       if gfx.getchar() < 0 then win = false else

@@ -360,3 +360,193 @@ def test_explicit_model_is_preserved_in_python_and_lua(tmp_path, monkeypatch, mo
     (settings_dir / "reacue_settings.json").write_text(json.dumps({"stems_model": model}), encoding="utf-8")
     _, S, R = lua(tmp_path)
     assert S.model(R) == model
+
+
+@pytest.fixture
+def start_env(tmp_path):
+    resource = tmp_path / "ReaCueMCP"
+    resource.mkdir()
+    install = tmp_path / "install"
+    python = install / ".venv-demucs/bin/python"
+    python.parent.mkdir(parents=True)
+    python.touch()
+    (resource / "reacue_install.txt").write_text(str(install))
+    source = tmp_path / "Song.mp3"
+    source.write_bytes(b"audio")
+    L, S, R = lua(tmp_path)
+    g = L.globals()
+    g["items"][1].take.file = str(source)
+    g.make_dir = lambda path: Path(path).mkdir(parents=True, exist_ok=True)
+    L.execute('''
+      now = 1000; launches = 0
+      reaper.time_precise = function() return now end
+      reaper.RecursiveCreateDirectory = function(path) make_dir(path); return 1 end
+      reaper.ExecProcess = function() return "0\\n" end
+      os.time = function() return 10000 end
+      os.execute = function() launches = launches + 1; return true end
+    ''')
+    paths = S.paths(str(source), "htdemucs")
+    Path(paths.outroot).mkdir()
+    return L, S, R, str(install), source, paths
+
+
+def _status(start_env, **changes):
+    _, _, _, _, source, paths = start_env
+    data = {"state": "running", "model": "htdemucs", "input": str(source), "pid": 4242, "time": 10000}
+    data.update(changes)
+    Path(paths.status).write_text(json.dumps(data))
+
+
+def _stem_cache(paths):
+    for stem in paths.stems.values():
+        path = Path(stem.file)
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(b"RIFF")
+
+
+def test_start_resumes_old_worker_and_waits_for_done_even_if_files_exist(start_env):
+    L, S, R, install, _, paths = start_env
+    _status(start_env, time=1)  # more than one hour old, still alive
+    _stem_cache(paths)  # includes the last WAV, which may still be in writing
+    Path(paths.log).write_text(" 75%| progress")
+    original = Path(paths.status).read_bytes()
+    job = S.start(R, install)
+    assert job.resumed and not job.ready and L.globals().launches == 0
+    assert Path(paths.status).read_bytes() == original
+    assert S.poll(R, job) == ("running", 75)
+    _status(start_env, state="done", time=10001)
+    assert S.poll(R, job) == "ready"
+    assert len(L.globals().calls) == 0
+
+
+def test_dead_worker_restarts_without_accepting_partial_cache(start_env):
+    L, S, R, install, _, paths = start_env
+    _status(start_env)
+    _stem_cache(paths)
+    L.execute('reaper.ExecProcess = function() return "1\\nkill: No such process" end')
+    job = S.start(R, install)
+    assert job is not None and not job.ready and not job.resumed
+    assert L.globals().launches == 1
+    assert not Path(paths.status).exists()
+    assert len(L.globals().calls) == 0
+
+
+@pytest.mark.parametrize("probe", [
+    'reaper.ExecProcess = nil',
+    'reaper.ExecProcess = function() return nil end',
+    'reaper.ExecProcess = function() error("unavailable") end',
+    'reaper.ExecProcess = function() return "-1\\ntimeout" end',
+    'reaper.ExecProcess = function() return "1\\nkill: Operation not permitted" end',
+])
+def test_unavailable_pid_check_adopts_without_duplicate_launch(start_env, probe):
+    L, S, R, install, _, paths = start_env
+    _status(start_env)
+    L.execute(probe)
+    job = S.start(R, install)
+    assert job.resumed and not job.ready and L.globals().launches == 0
+    assert Path(paths.status).exists()
+
+
+@pytest.mark.parametrize("pid", [None, 0, -1, "unknown"])
+def test_unknown_pid_adopts_compatible_status_conservatively(start_env, pid):
+    L, S, R, install, _, _ = start_env
+    _status(start_env, pid=pid)
+    job = S.start(R, install)
+    assert job.resumed and job.pid is None and L.globals().launches == 0
+
+
+@pytest.mark.parametrize("changes", [{"model": "htdemucs_6s"}, {"input": "/another/song.mp3"}, {"input": None}])
+def test_conflicting_active_worker_is_never_overwritten_or_imported(start_env, changes):
+    L, S, R, install, _, paths = start_env
+    _status(start_env, **changes)
+    _stem_cache(paths)
+    original = Path(paths.status).read_bytes()
+    job, message = S.start(R, install)
+    assert job is None and "autre source ou un autre modèle" in message
+    assert Path(paths.status).read_bytes() == original
+    assert L.globals().launches == 0 and len(L.globals().calls) == 0
+
+
+def test_completed_status_for_other_model_does_not_certify_partial_cache(start_env):
+    L, S, R, install, _, paths = start_env
+    _status(start_env, state="done", model="htdemucs_6s")
+    _stem_cache(paths)
+    job = S.start(R, install)
+    assert not job.ready and L.globals().launches == 1
+
+
+def test_completion_during_pid_check_is_re_read_before_relaunch(start_env):
+    L, S, R, install, _, paths = start_env
+    _status(start_env)
+    _stem_cache(paths)
+
+    def probe(*args):
+        _status(start_env, state="done", time=10001)
+        return "1\nkill: No such process"
+
+    L.globals().reaper.ExecProcess = probe
+    job = S.start(R, install)
+    assert job.ready and L.globals().launches == 0
+    assert json.loads(Path(paths.status).read_text())["state"] == "done"
+
+
+def test_new_foreign_worker_during_pid_check_is_not_overwritten(start_env):
+    L, S, R, install, _, paths = start_env
+    _status(start_env)
+    checked = []
+
+    def probe(*args):
+        checked.append(True)
+        if len(checked) == 1:
+            _status(start_env, model="htdemucs_6s", pid=4343)
+            return "1\nkill: No such process"
+        return "0\n"
+
+    L.globals().reaper.ExecProcess = probe
+    job, message = S.start(R, install)
+    assert job is None and "autre modèle" in message
+    assert json.loads(Path(paths.status).read_text())["pid"] == 4343
+    assert L.globals().launches == 0
+
+
+@pytest.mark.parametrize("changes", [
+    {"model": "htdemucs_6s"}, {"input": "/another/song.mp3"}, {"pid": 4343}, {"time": 9999},
+])
+def test_poll_refuses_status_from_another_job(start_env, changes):
+    L, S, R, install, _, paths = start_env
+    _status(start_env)
+    job = S.start(R, install)
+    _stem_cache(paths)
+    _status(start_env, state="done", **changes)
+    state, message = S.poll(R, job)
+    assert state == "error" and "état de la séparation a changé" in message
+    assert len(L.globals().calls) == 0
+
+
+@pytest.mark.parametrize("change,expected", [
+    ('reaper.ValidatePtr2 = function() return false end', "projet actif a changé"),
+    ('items[1].take.file = "/another/song.mp3"', "source audio"),
+    ('items[1].take = nil', "source audio"),
+    ('items[1].take.midi = true', "source audio"),
+])
+def test_finish_refuses_removed_or_changed_source_without_mutation(start_env, change, expected):
+    L, S, R, install, _, paths = start_env
+    _status(start_env, state="done")
+    _stem_cache(paths)
+    job = S.start(R, install)
+    L.execute(change)
+    message, error = S.finish(R, job)
+    assert message is None and expected in error
+    assert len(L.globals().calls) == 0
+
+
+def test_finish_is_idempotent_for_same_job(start_env):
+    L, S, R, install, _, paths = start_env
+    _status(start_env, state="done")
+    _stem_cache(paths)
+    job = S.start(R, install)
+    message = S.finish(R, job)
+    calls = list(L.globals().calls.values())
+    assert S.finish(R, job) == message
+    assert list(L.globals().calls.values()) == calls
+    assert len([call for call in calls if call.startswith("delete|")]) == 1
