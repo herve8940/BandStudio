@@ -8,16 +8,45 @@ return function(ctx)
       open_concert = "Ouvrir un concert (nouvel onglet) :", song_only = "Morceau seul",
       live_btn = "Joué en live…", live_none = "Ouvre ou construis d'abord un concert.",
       rebuilt = "Concert reconstruit.", song_hint = "Morceau seul : pas d'arrêt automatique ni de setlist.",
+      lock = "Verrouiller la scène", unlock = "Déverrouiller…", locked = "Scène verrouillée · transport et mix disponibles",
+      unlock_q = "Déverrouiller la scène et autoriser de nouveau les modifications ?",
+      lock_reh = "Quitte la répétition et arrête le test timecode avant de verrouiller.",
+      jobs = "Traitements",
     },
     en = {
       no_project = "No concert or song open", go_concert = "Prepare a concert", go_song = "Prepare the song",
       open_concert = "Open a concert (new tab):", song_only = "Single song",
       live_btn = "Played live…", live_none = "Open or build a concert first.",
       rebuilt = "Concert rebuilt.", song_hint = "Single song: no automatic stop and no setlist.",
+      lock = "Lock the stage", unlock = "Unlock…", locked = "Stage locked · transport and mix available",
+      unlock_q = "Unlock the stage and allow edits again?",
+      lock_reh = "Exit rehearsal and stop the timecode test before locking.",
+      jobs = "Tasks",
     },
   }
   local function t(k) return ctx.tr(TXT, k) end
   local M = {}
+  local function can_edit()
+    return not (ctx.require_edit and not ctx.require_edit()) and not (ctx.is_locked and ctx.is_locked())
+  end
+  function M.toggle_lock()
+    local locked = ctx.is_locked and ctx.is_locked()
+    if locked then
+      if reaper.ShowMessageBox(t("unlock_q"), T("title"), 1) ~= 1 then return false end
+    elseif (L.reh and L.reh.on) or ctx.tc_test then
+      if ctx.show_result then ctx.show_result(T("error_title"), t("lock_reh"), false) end
+      return false
+    end
+    return ctx.set_locked and ctx.set_locked(not locked) or false
+  end
+  function M.set_rehearsal(on)
+    if not can_edit() then return false end
+    L.set_rehearsal(on); ctx.reset_loop(); return true
+  end
+  function M.set_rate(rate)
+    if not can_edit() then return false end
+    return L.set_rate(rate)
+  end
   local ROW = 26
   local keys = {}
   local secs_cache = { i = nil, t = 0, list = {} }
@@ -78,6 +107,7 @@ return function(ctx)
 
   -- ouvre le concert construit : dans l'onglet en cours s'il y est déjà, sinon dans un nouvel onglet
   function ctx.open_built(rpp)
+    if not can_edit() then return false end
     local cur = ctx.proj_file or ""
     if cur:lower() ~= tostring(rpp):lower() then reaper.Main_OnCommand(40859, 0) end
     reaper.Main_openProject(rpp)
@@ -85,6 +115,7 @@ return function(ctx)
   end
 
   function M.rebuild(no_confirm, target)
+    if not can_edit() then return false end
     local d = target or (ctx.is_concert and ctx.c)
     if not d or not d.setlist then return end
     if not no_confirm then
@@ -104,8 +135,10 @@ return function(ctx)
 
   -- code PIN ------------------------------------------------------------------------------
   function ctx.change_pin()
+    if not can_edit() then return false end
     local ok, v = reaper.GetUserInputs(L.tr("pin_title"), 1, L.tr("pin_field") .. ",extrawidth=40", L.remote_pin())
     if not ok then return end
+    if not can_edit() then return false end
     v = (v or ""):gsub("%s", "")
     if not L.set_remote_pin(v) then reaper.ShowMessageBox(L.tr("pin_bad"), T("title"), 0) end
   end
@@ -157,6 +190,7 @@ return function(ctx)
   -- vue « Joué en live » : profil du concert + exceptions par morceau ------------------------------
   local live_c = nil
   function ctx.open_live(c)
+    if not can_edit() then return false end
     if not c or not c.setlist then ctx.show_result(T("error_title"), t("live_none"), false) return end
     live_c = c
     L.load_live(c, true)
@@ -184,7 +218,7 @@ return function(ctx)
     for _, role in ipairs(roles) do
       local on = L.mix.live[role] == true
       local bx, by = x + col * (bw + gap), y + row * 34
-      if U.button("live_" .. role, (on and "✓ " or "") .. L.role_label(role), bx, by, bw, 28, on and "on" or nil, 13) then
+      if U.button("live_" .. role, (on and "✓ " or "") .. L.role_label(role), bx, by, bw, 28, on and "on" or nil, 13) and can_edit() then
         L.live_toggle(c, role)
         ctx.flash = { txt = L.tr("live_saved"), t = reaper.time_precise() }
       end
@@ -210,7 +244,7 @@ return function(ctx)
         local m = e[r]
         local lab = m == "stem" and L.tr("live_exc_stem") or (m == "live" and L.tr("live_exc_live") or L.tr("live_exc_def"))
         local style = m and "warn" or "ghost"
-        if U.button("exc_" .. i .. "_" .. r, lab, x + name_w + (k - 1) * cw, y, cw - 4, 24, style, 12) then
+        if U.button("exc_" .. i .. "_" .. r, lab, x + name_w + (k - 1) * cw, y, cw - 4, 24, style, 12) and can_edit() then
           L.live_exc_cycle(c, i, r)
         end
       end
@@ -332,15 +366,15 @@ return function(ctx)
       y = y + 32
       local bx = x
       local lw = U.text_w(L.tr("loop_off"), 13) + 22
-      if U.button("loopoff", L.tr("loop_off"), bx, y, lw, 26) then L.loop_off() end
+      if U.button("loopoff", L.tr("loop_off"), bx, y, lw, 26) and can_edit() then L.loop_off() end
       bx = bx + lw + 10
       for _, r in ipairs({ 1.0, 0.9, 0.8, 0.7 }) do
         local lab = string.format(L.tr("rate"), math.floor(r * 100 + 0.5))
-        if U.button("rate" .. r, lab, bx, y, 54, 26, math.abs(RH.rate - r) < 0.001 and "primary" or nil) then L.set_rate(r) end
+        if U.button("rate" .. r, lab, bx, y, 54, 26, math.abs(RH.rate - r) < 0.001 and "primary" or nil) then M.set_rate(r) end
         bx = bx + 58
       end
       local qw = U.text_w(L.tr("reh_exit"), 13) + 20
-      if U.button("rehexit", L.tr("reh_exit"), x + w - qw, y, qw, 26) then L.set_rehearsal(false) end
+      if U.button("rehexit", L.tr("reh_exit"), x + w - qw, y, qw, 26) then M.set_rehearsal(false) end
       y = y + 36
     end
 
@@ -368,7 +402,7 @@ return function(ctx)
       U.text(lab, sx + 9, y + 9, 12, cur and U.INK or (done and U.MUTED or U.INK2), cur)
       if over then U.hover = "sec" .. k end
       if over and U.clicked then
-        if RH.on then L.loop_tap(c, sec.start); ctx.reset_loop() else L.seek(c, sec.start) end
+        if RH.on then if can_edit() then L.loop_tap(c, sec.start); ctx.reset_loop() end else L.seek(c, sec.start) end
       end
       sx = sx + pw2 + 4
     end
@@ -415,7 +449,7 @@ return function(ctx)
     end
     local rw = U.text_w(L.tr("reh"), 13) + 20
     bx = bx - 6 - rw
-    if U.button("reh", L.tr("reh"), bx, y, rw, tb, RH.on and "on" or nil) then L.set_rehearsal(not RH.on); ctx.reset_loop() end
+    if U.button("reh", L.tr("reh"), bx, y, rw, tb, RH.on and "on" or nil) then M.set_rehearsal(not RH.on) end
     local cw = U.text_w(L.tr("check"), 13) + 20
     bx = bx - 6 - cw
     if U.button("check", L.tr("check"), bx, y, cw, tb) then ctx.open_check() return y end
@@ -470,8 +504,7 @@ return function(ctx)
       y = y + 20
       for k, d in ipairs(available) do
         if U.button("open" .. k, string.format(L.tr("n_songs"), d.name, #d.songs), x, y, w, ROW - 4) then
-          L.open_concert(d)
-          ctx.refresh(true)
+          if can_edit() then L.open_concert(d); ctx.refresh(true) end
         end
         y = y + ROW
       end
@@ -500,7 +533,10 @@ return function(ctx)
     if U.tbutton("stop", "stop", "", nextx(), by, bw, bh, U.armed_style("stop"), AG) then do_stop() end
     if ctx.is_concert and U.tbutton("next", "next", "", nextx(), by, bw, bh, U.armed_style("next"), AG) then do_next(c) end
     if U.button("qr", "QR", bx + nb * (bw + gap), by, 50, bh) then ctx.open_qr() end
-    local left_w = bx - 26
+    local locked = ctx.is_locked and ctx.is_locked()
+    local lock_fits = ctx.set_locked and bx > 200
+    if lock_fits and U.button("stage_lock_compact", locked and t("unlock") or t("lock"), bx-110, by, 104, bh, locked and "on" or nil, 11) then M.toggle_lock() end
+    local left_w = bx - (lock_fits and 136 or 26)
     U.set(STATE_COL[S.st]); gfx.circle(20, h / 2 - (h >= 58 and 8 or 0), 5, 1, 1)
     local head = ctx.is_concert and string.format("%d / %d · %s", S.i, #c.songs, S.s.title) or S.s.title
     U.text(U.fit(head, left_w - 16, 17, true), 32, h / 2 - (h >= 58 and 17 or 9), 17, U.INK, true)
@@ -514,6 +550,20 @@ return function(ctx)
   function M.enter() available = nil end
 
   function M.draw(x, y, w)
+    if ctx.set_locked then
+      local locked = ctx.is_locked and ctx.is_locked()
+      local lab = locked and t("unlock") or t("lock")
+      local bw = math.min(w, U.text_w(lab, 12) + 26)
+      if U.button("stage_lock", lab, x, y, bw, 28, locked and "on" or nil, 12) then M.toggle_lock() end
+      if ctx.jobs then
+        local jw = math.min(w-bw-6, U.text_w(t("jobs"), 12) + 26)
+        if U.button("stage_jobs", t("jobs"), x+w-jw, y, jw, 28, nil, 12) then ctx.overlay = "jobs" end
+      end
+      y = y+36
+      if locked then
+        y = y+U.para(t("locked"), x, y, w, 11, U.ACCENT)+8
+      end
+    end
     if ctx.job and not ctx.c then y = y + ctx.draw_job(x, y, w) end
     if not ctx.c then return draw_empty(x, y, w) end
     if ctx.job then y = y + ctx.draw_job(x, y, w) end

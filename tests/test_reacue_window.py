@@ -72,6 +72,12 @@ def rt(concert, lang="fr", proj=None, tracks=True, heartbeat=True):
     g.MKDIR = lambda d: os.makedirs(str(d), exist_ok=True)
     rdir = Path(g.RES)
     (rdir / "reaper_www_root").mkdir(exist_ok=True)
+    # Each simulated runtime is a fresh test session: captured shell commands never
+    # start a worker, so a pending launch from an earlier test cannot stay live.
+    for path in (rdir / "ReaCueMCP").glob("flow-*.json"):
+        path.unlink()
+    for name in ("cli_status.json", "show_lock.json"):
+        (rdir / "ReaCueMCP" / name).unlink(missing_ok=True)
     if heartbeat:
         (rdir / "ReaCueMCP" / "heartbeat.txt").write_text(str(int(time.time())), encoding="utf-8")
     if tracks:

@@ -1014,9 +1014,25 @@ def load_setlist(path) -> dict:
 def build_from_setlist(path, publish: bool = True) -> ConcertResult:
     d = load_setlist(path)
     out_dir = Path(path).expanduser().parent
-    return build_concert(d.get("name") or Path(path).stem.replace(".setlist", ""), d["songs"],
+    return build_concert(d.get("name") or Path(path).stem.replace(".setlist", ""), _setlist_songs(d, path),
                          float(d.get("gap_s", 4.0)), out_dir=out_dir, publish=publish,
                          live=d.get("live") or [], live_exceptions=d.get("live_exceptions") or {})
+
+
+def _setlist_songs(data: dict, path) -> list:
+    """Portable setlists resolve project paths beside the setlist, independent of cwd."""
+    out = []
+    for entry in data["songs"]:
+        e = dict(entry) if isinstance(entry, dict) else entry
+        ref = (e.get("project") or e.get("path") or e.get("name")) if isinstance(e, dict) else e
+        relative = Path(path).expanduser().resolve().parent / str(ref)
+        if not Path(str(ref)).is_absolute() and relative.is_file():
+            if isinstance(e, dict):
+                e["project"] = str(relative.resolve())
+            else:
+                e = str(relative.resolve())
+        out.append(e)
+    return out
 
 
 def extras_from_setlist(path, log=None) -> dict:
@@ -1038,7 +1054,7 @@ def _reload(setlist_path) -> ConcertResult:
     slug = _slug(d.get("name") or "Concert")
     layout = concert_layout(gap_s=float(d.get("gap_s", 4.0)), stored=d.get("layout") or {"gap_s": d.get("gap_s", 4.0)})
     srcs, side, warnings = [], [], []
-    for k, e in enumerate(d["songs"]):
+    for k, e in enumerate(_setlist_songs(d, setlist_path)):
         p = find_project(e["project"] if isinstance(e, dict) else e)
         s = load_song(p, e.get("title") if isinstance(e, dict) else None)
         _plan_song_span(s, layout["gap_s"])

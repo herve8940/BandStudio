@@ -112,13 +112,19 @@ function S.python(dir, windows)
   return dir .. "/.venv-demucs/bin/python"
 end
 
-function S.command(R, dir, py, windows, file, outroot, model)
+function S.command(R, dir, py, windows, file, outroot, model, tracking)
+  local extra=""
+  if tracking then
+    local q=windows and R.winq or R.shq
+    extra=" --resource-dir " .. q(reaper.GetResourcePath()) .. " --origin-project " .. q(tracking.project or "")
+      .. " --job-id " .. q(tracking.id)
+  end
   if windows then
     return table.concat({ R.winq(py), R.winq(dir .. "\\reacue_stems.py"), "separate", "--input", R.winq(file),
-      "--out", R.winq(outroot), "--model", model }, " ")
+      "--out", R.winq(outroot), "--model", model }, " ") .. extra
   end
-  return string.format("cd %s && nohup %s reacue_stems.py separate --input %s --out %s --model %s > /dev/null 2>&1 &",
-    R.shq(dir), R.shq(py), R.shq(file), R.shq(outroot), model)
+  return string.format("cd %s && nohup %s reacue_stems.py separate --input %s --out %s --model %s%s > /dev/null 2>&1 &",
+    R.shq(dir), R.shq(py), R.shq(file), R.shq(outroot), model, extra)
 end
 
 -- pourcentage de la dernière barre tqdm du journal (« 37%|█▌ … »)
@@ -202,6 +208,7 @@ local function valid_pid(value)
 end
 
 function S.start(R, script_dir, item)
+  if R.show_locked and R.show_locked() then return nil, R.lock_message() end
   item = item or S.pick_item()
   if not item then return nil, S.tr(R, "no_item") end
   local take = reaper.GetActiveTake(item)
@@ -209,7 +216,7 @@ function S.start(R, script_dir, item)
   if file == "" or not exists(file) then return nil, string.format(S.tr(R, "no_file"), file) end
   local model = S.model(R)
   local p = S.paths(file, model)
-  local job = { item = item, file = file, p = p, model = model,
+  local job = { item = item, file = file, p = p, model = model, project=R.project_file and R.project_file() or "",
                 t0 = reaper.time_precise and reaper.time_precise() or os.clock() }
   local windows = R.is_windows()
   local dir = R.install_dir(script_dir)
@@ -228,6 +235,7 @@ function S.start(R, script_dir, item)
         end
         -- Un contrôle indisponible est conservateur : suivre le statut, jamais lancer un doublon.
         job.resumed, job.pid, job.status_since = true, pid, tonumber(R.jfield(st, "time"))
+        job.id=R.jfield(st,"id")
         return job
       end
       -- Des fichiers existent déjà pendant leur écriture ou après un crash : seul un cache terminé
@@ -242,7 +250,9 @@ function S.start(R, script_dir, item)
       reaper.RecursiveCreateDirectory(p.outroot, 0)
       if read(p.status) == st then
         if st and not os.remove(p.status) then return nil, S.tr(R, "changed") end
-        local line = S.command(R, dir, py, windows, file, p.outroot, model)
+        job.id="stems-" .. tostring(os.time()) .. "-" .. tostring(math.floor(job.t0*1000000))
+        job.project=R.project_file and R.project_file() or ""
+        local line = S.command(R, dir, py, windows, file, p.outroot, model, job)
         job.status_since = os.time()
         if windows then
           if reaper.ExecProcess(line, -1) == nil then return nil, string.format(S.tr(R, "launch_failed"), line) end
@@ -293,6 +303,10 @@ end
 -- état du job : "running", pct | "ready" | "error", message
 function S.poll(R, job)
   local p = job.p
+  if R.DIR and job.id and tostring(job.id):match("^[%w_-]+$") then
+    local record=R.read(R.DIR .. SEP .. "jobs" .. SEP .. job.id .. ".json")
+    if record and R.jfield(record,"state")=="error" then return "error",R.jfield(record,"message") or S.tr(R,"changed") end
+  end
   if job.ready then return "ready" end
   local now = reaper.time_precise and reaper.time_precise() or os.clock()
   local el = now - job.t0
@@ -328,6 +342,8 @@ end
 -- import des stems séparés ; renvoie le message de fin
 function S.finish(R, job)
   if job.finished then return job.message end
+  if R.show_locked and R.show_locked() then return nil,R.lock_message() end
+  if job.project and job.project~="" and R.project_file and R.project_file()~=job.project then return nil,S.tr(R,"changed_item") end
   if reaper.ValidatePtr2 and not reaper.ValidatePtr2(0, job.item, "MediaItem*") then
     return nil, S.tr(R, "invalid_item")
   end

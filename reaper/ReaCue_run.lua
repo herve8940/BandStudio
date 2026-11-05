@@ -161,7 +161,7 @@ function M.json_decode(s)
     error("json: value at " .. i)
   end
   local ok, v = pcall(value)
-  if ok then return v end
+  if ok then ws(); if i > #s then return v end end
   return nil
 end
 
@@ -231,6 +231,7 @@ M.read = read
 M.exists = exists
 M.SETTINGS = SETTINGS
 M.STATUS = STATUS
+M.DIR = DIR
 
 -- Langue ------------------------------------------------------------------------
 local TXT = {
@@ -266,6 +267,55 @@ end
 
 function M.tr(key)
   return TXT[M.lang()][key] or TXT.fr[key]
+end
+
+-- Shared lock protects ReaCue edits/calculations; native REAPER transport remains usable.
+function M.show_locked()
+  local raw = read(DIR .. SEP .. "show_lock.json")
+  if raw == nil then return false end
+  local data = M.json_decode(raw)
+  return type(data) ~= "table" or data.locked ~= false
+end
+function M.lock_message()
+  return M.lang() == "fr" and "Concert verrouillé. Déverrouille les modifications dans l’onglet Scène."
+    or "Show locked. Unlock editing in the Stage tab."
+end
+function M.project_file()
+  if not reaper.EnumProjects then return "" end
+  local _, path = reaper.EnumProjects(-1, "")
+  return path or ""
+end
+-- nil means unknown: it never permits a duplicate worker.
+function M.pid_alive(pid)
+  pid = tonumber(pid)
+  if not pid or pid <= 0 or pid % 1 ~= 0 or not reaper.ExecProcess then return nil end
+  local cmd = is_windows() and ('tasklist /FI "PID eq ' .. tostring(pid) .. '" /NH')
+    or ('/bin/kill -0 ' .. tostring(pid))
+  local ok, out = pcall(reaper.ExecProcess, cmd, 500)
+  if not ok or type(out) ~= "string" then return nil end
+  local code = tonumber(out:match("^(%-?%d+)"))
+  if is_windows() then
+    if code ~= 0 then return nil end
+    if out:find("aucun", 1, true) or out:find("No tasks", 1, true) then return false end
+    return out:find(tostring(pid), 1, true) and true or nil
+  end
+  if code == 0 then return true end
+  if code == 1 and out:find("No such process", 1, true) then return false end
+  return nil
+end
+function M.job_active(data)
+  if type(data) ~= "table" or data.state ~= "running" then return false end
+  if data.launching and not data.pid then return os.time() - (data.time or 0) < 15 end
+  return M.pid_alive(data.pid) ~= false
+end
+function M.active_job()
+  local d = M.json_decode(read(STATUS))
+  if M.job_active(d) then return d end
+  -- Concert extras can continue after the usable result was published.
+  if d and d.id and tostring(d.id):match("^[%w_-]+$") then
+    local record = M.json_decode(read(DIR .. SEP .. "jobs" .. SEP .. d.id .. ".json"))
+    if M.job_active(record) then return record end
+  end
 end
 
 -- Installation --------------------------------------------------------------------
@@ -340,26 +390,40 @@ function M.start(cmd, script_dir, need_bridge)
   local py = M.python(dir, windows)
   if not exists(py) then return false, string.format(M.tr("not_found"), py) end
   if need_bridge ~= false and not bridge_alive() then return false, M.tr("no_bridge") end
-  local st = read(STATUS)
-  if st and jfield(st, "state") == "running" and os.time() - (jfield(st, "time") or 0) < 600 then
+  if M.show_locked() then return false, M.lock_message() end
+  local current = M.active_job()
+  local project = M.project_file()
+  if current then
+    if project ~= "" and current.project == project and current.launch_command == cmd then
+      return true, nil, current -- resume monitoring, never spawn the same job twice
+    end
     return false, M.tr("busy")
   end
-  os.remove(STATUS)
+  local id = tostring(os.time()) .. "-" .. tostring(math.floor(reaper.time_precise() * 1000000))
+  local pending = {id=id, cmd=cmd:match("^(%S+)"), launch_command=cmd, project=project,
+    state="running", launching=true, time=os.time(), started=os.time()}
+  reaper.RecursiveCreateDirectory(DIR, 0)
+  if not M.write_atomic(STATUS, M.json_encode(pending)) then return false, M.tr("error") end
+  local quote = windows and M.winq or M.shq
+  local full = cmd .. " --job-id " .. quote(id) .. " --origin-project " .. quote(project)
+    .. " --launch-command " .. quote(cmd)
   local log = DIR .. SEP .. "cli.log"
-  local line = M.command(cmd, dir, py, windows, log)
+  local line = M.command(full, dir, py, windows, log)
   if windows then
     if reaper.ExecProcess(line, -1) == nil then return false, string.format(M.tr("launch_failed"), line) end
   else
     os.execute(line)
   end
-  return true
+  return true, nil, pending
 end
 
 -- état de la dernière commande : state ("running" | "done" | "error" | nil), message, cmd
-function M.status()
-  local s = read(STATUS)
+function M.status(id)
+  local s
+  if id and tostring(id):match("^[%w_-]+$") then s=read(DIR .. SEP .. "jobs" .. SEP .. id .. ".json") end
+  s = s or read(STATUS)
   if not s then return nil end
-  return jfield(s, "state"), jfield(s, "message"), jfield(s, "cmd"), jfield(s, "step"), jfield(s, "prompter_published")
+  return jfield(s, "state"), jfield(s, "message"), jfield(s, "cmd"), jfield(s, "step"), jfield(s, "prompter_published"), M.json_decode(s)
 end
 
 function M.run(cmd, label, script_dir)

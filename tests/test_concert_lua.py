@@ -301,6 +301,8 @@ def test_lib_run_cli_mac_and_windows(concert, tmp_path):
     assert ok is True or (isinstance(ok, tuple) and ok[0])
     sh = list(g.state.shell.values())[0]
     assert "-m reacue_mcp.cli concert --setlist '/a b/it'\\''s.setlist.json'" in sh and "nohup" in sh
+    # This fake POSIX launch never spawned a worker; Windows uses a fresh simulated session.
+    (Path(g.RES) / "ReaCueMCP" / "cli_status.json").unlink(missing_ok=True)
     calls = []
     L2, g2 = runtime(concert, os_name="Win64", exec_fn=lambda cmd: calls.append(cmd) or "0\n")
     Path(str(inst) + "\\.venv\\Scripts\\pythonw.exe").write_text("")   # chemin « Windows » simulé

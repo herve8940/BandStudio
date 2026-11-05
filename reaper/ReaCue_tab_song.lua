@@ -51,7 +51,7 @@ return function(ctx)
       new_name_field = "Nom du concert :", added = "« %s » ajouté au concert « %s » Construis-le dans l'onglet Concert.",
       not_saved = "Enregistre d'abord le projet du morceau (Cmd+S / Ctrl+S).",
       after_stems = "",
-      analysis_options = "Options d'analyse",
+      analysis_options = "Options d'analyse", tracks = "Pistes…", publication_dirty = "Pistes modifiées : mets à jour les téléphones.",
       propose = "Morceau créé. Tout préparer maintenant (stems, structure, click, téléphones) ?", later = "Plus tard",
       steps = "Tout faire", cancel = "Arrêter", resume = "Reprendre", close = "Fermer", summary = "Résumé",
       st_skipped = "déjà fait", st_cancelled = "annulé", st_pending = "", ready_in = "Morceau prêt ✓  (%s)",
@@ -98,7 +98,7 @@ return function(ctx)
       new_name_field = "Concert name:", added = "“%s” added to the concert “%s”. Build it in the Concert tab.",
       not_saved = "Save the song's project first (Cmd+S / Ctrl+S).",
       after_stems = "",
-      analysis_options = "Analysis options",
+      analysis_options = "Analysis options", tracks = "Tracks…", publication_dirty = "Tracks changed: update the phones.",
       propose = "Song created. Prepare everything now (stems, structure, click, phones)?", later = "Later",
       steps = "Do everything", cancel = "Stop", resume = "Resume", close = "Close", summary = "Summary",
       st_skipped = "already done", st_cancelled = "cancelled", st_pending = "", ready_in = "Song ready ✓  (%s)",
@@ -114,6 +114,17 @@ return function(ctx)
   local hist, redo = {}, {} -- historique de la structure (instantanés des régions)
   local last_summary = nil  -- message de la dernière préparation (bouton « Résumé »)
   local GEN = { CLICK = true, CUES = true, VOIX = true, VOICE = true, ["TIMECODE LTC"] = true, ["TIMECODE MTC"] = true }
+  local function can_edit()
+    return not (ctx.require_edit and not ctx.require_edit()) and not (ctx.is_locked and ctx.is_locked())
+  end
+  function M.tracks()
+    if not M.track_manager then M.track_manager = dofile(ctx.dir .. "ReaCue_tracks.lua")(ctx) end
+    return M.track_manager
+  end
+  function M.tracks_changed()
+    info = nil
+    if not ctx.is_concert then ctx.c = M.pseudo_concert() end
+  end
 
   -- projet ---------------------------------------------------------------------------------
   -- état gardé dans le projet (.RPP) : moteur de structure, débuts de sections douteux
@@ -310,7 +321,7 @@ return function(ctx)
     for b, why in (M.proj_get("doubts") or ""):gmatch("(%d+):(%a+)") do info.doubts[tonumber(b)] = why end
     for _, r in ipairs(regs) do r.doubt = info.doubts[r.bar] end
     info.lyrics = read_lyrics(dirs)
-    info.pub = published(titles)
+    info.pub = M.proj_get("publication_dirty") ~= "1" and published(titles) or nil
     info.sheet = info.pub and find_sheet(dirs, info.pub.title) or nil
     info.t = reaper.time_precise()
     return info
@@ -337,7 +348,10 @@ return function(ctx)
     return info.pub
   end
 
-  function M.project_changed() info = nil; dirty = false; sel = nil; hist, redo = {}, {}; last_summary = nil end
+  function M.project_changed()
+    info = nil; dirty = false; sel = nil; hist, redo = {}, {}; last_summary = nil
+    if M.track_manager then M.track_manager.close() end
+  end
   function M.enter() info = nil end
 
   -- état pour « Tout faire » et le lot
@@ -383,6 +397,7 @@ return function(ctx)
   end
 
   function M.undo()
+    if not can_edit() then return false end
     if #hist == 0 then return false end
     redo[#redo + 1] = snapshot()
     restore(table.remove(hist))
@@ -391,6 +406,7 @@ return function(ctx)
   end
 
   function M.redo()
+    if not can_edit() then return false end
     if #redo == 0 then return false end
     hist[#hist + 1] = snapshot()
     restore(table.remove(redo))
@@ -402,9 +418,11 @@ return function(ctx)
   function M.can_redo() return #redo > 0 end
 
   local function rename(k)
+    if not can_edit() then return false end
     local r = info.regions[k]
     local ok, v = reaper.GetUserInputs(t("rename_title"), 1, t("rename_field") .. ",extrawidth=120", r.name)
     if not ok or not v or v == r.name then return end
+    if not can_edit() then return false end
     v = v:gsub("^%s+", ""):gsub("%s+$", "")
     if v == "" then return end
     push()
@@ -415,6 +433,7 @@ return function(ctx)
   end
 
   local function move(k, d)
+    if not can_edit() then return false end
     local regs = info.regions
     local r, prev = regs[k], regs[k - 1]
     local nt = bar_time(measure_of(r.start) + d)
@@ -430,6 +449,7 @@ return function(ctx)
   end
 
   local function delete(k)
+    if not can_edit() then return false end
     local regs = info.regions
     if #regs <= 1 then reaper.ShowMessageBox(t("del_last"), T("title"), 0) return end
     local r, prev, nx = regs[k], regs[k - 1], regs[k + 1]
@@ -445,6 +465,7 @@ return function(ctx)
 
   -- fusionner la section k avec la suivante (le nom de la 1re est gardé)
   local function merge(k)
+    if not can_edit() then return false end
     local regs = info.regions
     local r, nx = regs[k], regs[k + 1]
     if not nx then return end
@@ -458,12 +479,14 @@ return function(ctx)
 
   -- couper la section k en deux, sur la mesure du milieu
   local function split(k)
+    if not can_edit() then return false end
     local r = info.regions[k]
     if r.len < 2 then reaper.ShowMessageBox(t("split_short"), T("title"), 0) return end
     local mid = bar_time(measure_of(r.start) + math.floor(r.len / 2))
     if not mid or mid <= r.start + 0.01 or mid >= r.stop - 0.01 then return end
     local ok, v = reaper.GetUserInputs(t("split_title"), 1, t("split_field") .. ",extrawidth=120", r.name)
     if not ok or not v or v:gsub("%s", "") == "" then return end
+    if not can_edit() then return false end
     push()
     reaper.Undo_BeginBlock()
     local stop = r.stop
@@ -474,6 +497,7 @@ return function(ctx)
   end
 
   local function add_at_cursor()
+    if not can_edit() then return false end
     local regs = info.regions
     local tb = bar_time(measure_of(reaper.GetCursorPosition()))
     if not tb then return end
@@ -485,6 +509,7 @@ return function(ctx)
     if not host then reaper.ShowMessageBox(t("add_outside"), T("title"), 0) return end
     local ok, v = reaper.GetUserInputs(t("add_title"), 1, t("add_field") .. ",extrawidth=120", t("add_default"))
     if not ok or not v or v:gsub("%s", "") == "" then return end
+    if not can_edit() then return false end
     push()
     reaper.Undo_BeginBlock()
     local stop = host.stop
@@ -508,10 +533,17 @@ return function(ctx)
 
   -- ajoute le projet à la setlist <dossier des concerts>/<nom>.setlist.json (créée si besoin)
   function ctx.add_to_setlist(name, project, title)
+    if not can_edit() then return false end
     local dir = L.concert_dir()
     reaper.RecursiveCreateDirectory(dir, 0)
     local path = dir .. SEP .. slug(name) .. ".setlist.json"
-    local d = R.json_decode(L.read(path) or "") or {}
+    local raw = L.read(path)
+    local d = raw and R.json_decode(raw) or nil
+    if (raw and (type(d) ~= "table" or R.is_array(d))) or (not raw and L.exists(path)) then
+      ctx.show_result(T("error_title"), L.lang() == "fr" and "Setlist illisible : fichier conservé." or "Unreadable setlist: file kept.", false)
+      return false
+    end
+    d = d or {}
     d.name = d.name or name
     d.gap_s = d.gap_s or 4
     d.songs = d.songs or R.json_array({})
@@ -519,11 +551,15 @@ return function(ctx)
     d.songs[#d.songs + 1] = { project = project, title = title }
     d.live = d.live or R.json_array({})
     d.live_exceptions = d.live_exceptions or {}
-    R.write_atomic(path, R.json_encode(d, "  ", { "name", "gap_s", "songs", "live", "live_exceptions" }))
+    if not R.write_atomic(path, R.json_encode(d, "  ", { "name", "gap_s", "songs", "live", "live_exceptions" })) then
+      ctx.show_result(T("error_title"), L.lang() == "fr" and "Setlist non enregistrée : fichier précédent conservé." or "Setlist not saved: previous file kept.", false)
+      return false
+    end
     return path
   end
 
   local function add_to_concert()
+    if not can_edit() then return false end
     if (ctx.proj_file or "") == "" then reaper.ShowMessageBox(t("not_saved"), T("title"), 0) return end
     local names = {}
     local dir = L.concert_dir()
@@ -550,8 +586,9 @@ return function(ctx)
       name = names[choice - 1]
     end
     if not name then return end
-    ctx.add_to_setlist(name, ctx.proj_file, ctx.proj_name)
-    if ctx.tabs.concert.load_setlist then ctx.tabs.concert.load_setlist(L.concert_dir() .. SEP .. slug(name) .. ".setlist.json") end
+    local path = ctx.add_to_setlist(name, ctx.proj_file, ctx.proj_name)
+    if not path then return false end
+    if ctx.tabs.concert.load_setlist then ctx.tabs.concert.load_setlist(path) end
     ctx.show_result(T("done_title"), string.format(t("added"), ctx.proj_name, name), true)
   end
 
@@ -567,6 +604,7 @@ return function(ctx)
   -- enregistré (sinon le concert ne retrouve ni sections ni tempo) ; jamais un projet concert
   local saved_t = nil
   function M.autosave(key)
+    if not can_edit() then return false end
     if ctx.is_concert or key ~= ctx.proj_key or (ctx.proj_file or "") == "" then return false end
     if not reaper.Main_SaveProject then return false end
     reaper.Main_SaveProject(0, false)
@@ -577,6 +615,7 @@ return function(ctx)
   -- fin d'une commande de la CLI (bouton ou « Tout faire ») : moteur des sections et débuts douteux
   -- (lus dans cli_status.json), gardés dans le projet
   function M.cli_done(cmd, state, msg)
+    if (cmd == "publish" or cmd == "prepare") and state == "done" then M.proj_set("publication_dirty", ""); info = nil end
     if cmd ~= "prepare" then return end
     if state == "done" then
       dirty = false
@@ -609,14 +648,16 @@ return function(ctx)
     end
   end
 
-  function M.prepare() return ctx.start_cli("prepare", R.tr("prepare"), done_cb()) end
+  function M.prepare() if not can_edit() then return false end; return ctx.start_cli("prepare", R.tr("prepare"), done_cb()) end
   function M.reanalyse()
+    if not can_edit() then return false end
     if reaper.ShowMessageBox(t("reanalyse_q"), T("title"), 1) ~= 1 then return false end
     return ctx.start_cli("prepare --reanalyse", R.tr("prepare"), done_cb())
   end
-  function M.publish() return ctx.start_cli("publish", R.tr("publish"), done_cb()) end
-  function M.separate() return ctx.start_stems(done_cb(t("after_stems"))) end
+  function M.publish() if not can_edit() then return false end; return ctx.start_cli("publish", R.tr("publish"), done_cb()) end
+  function M.separate() if not can_edit() then return false end; return ctx.start_stems(done_cb(t("after_stems"))) end
   function M.do_all()
+    if not can_edit() then return false end
     ctx.propose_all = nil
     return ctx.flow.start(M.state(), function()
       info = nil
@@ -674,7 +715,7 @@ return function(ctx)
       if clk and not ctx.job then
         local a = pl[4]
         if a == "stems" and not i.stems_ok then M.separate()
-        elseif a == "structure" and not sf then ctx.do_action("structure")
+        elseif a == "structure" and not sf and can_edit() then ctx.do_action("structure")
         elseif a == "publish" then M.publish()
         elseif a == "lyrics" then
           if ly and ly.auto then ctx.guide.open_path(ly.dir .. SEP .. ly.file)   -- brouillon : l'ouvrir pour le corriger
@@ -684,7 +725,7 @@ return function(ctx)
           end
         elseif a == "prompter" then if p then ctx.open_qr() else M.publish() end
         elseif a == "sheet" then if i.sheet then ctx.guide.open_path(i.sheet) else M.publish() end
-        elseif a == "save" then ctx.guide.save_project(); saved_t = reaper.time_precise() end
+        elseif a == "save" and can_edit() then ctx.guide.save_project(); saved_t = reaper.time_precise() end
         return y + row_h, true
       end
       px = px + pw + 6
@@ -811,10 +852,14 @@ return function(ctx)
     local title = ctx.proj_name ~= "" and ctx.proj_name or "?"
     local NS = ctx.newsong
     local nw = NS and (U.text_w(NS.t("button"), 13) + 22) or 0
-    U.text(U.fit(title, w - nw - 10, 18, true), x, y, 18, U.INK, true)
+    local tw = U.text_w(t("tracks"), 12) + 22
+    U.text(U.fit(title, math.max(0, w - nw - tw - 20), 18, true), x, y, 18, U.INK, true)
+    if U.button("tracks", t("tracks"), x + w - nw - tw - 6, y - 3, tw, 26, nil, 12) then M.tracks().open() end
     if NS and U.button("newsong", NS.t("button"), x + w - nw, y - 3, nw, 26, (not i.has_audio) and "primary" or nil, 13)
       and not ctx.job then NS.start() return y end
     y = y + 26
+    if M.track_manager and M.track_manager.visible then return M.track_manager.draw(x, y, w) end
+    if M.proj_get("publication_dirty") == "1" then y = y + U.para(t("publication_dirty"), x, y, w, 12, U.WARN) + 6 end
     if ctx.flash and reaper.time_precise() - ctx.flash.t < 3 then
       y = y + (U.para(ctx.flash.txt, x, y, w, 12, ctx.flash.bad and U.WARN or U.ACCENT, 3) or 0) + 6
     end

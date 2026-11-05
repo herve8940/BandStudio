@@ -20,6 +20,13 @@ return function(ctx)
       batch_progress = "%d / %d", batch_done = "Lot terminé : %d prêt(s), %d en échec", batch_stopping = "arrêt après ce morceau…",
       batch_q = "Préparer %d morceau(x) l'un après l'autre ?\n\nChaque projet est ouvert dans un onglet, préparé (« Tout faire »), enregistré puis refermé. Compte quelques minutes par morceau (plus avec la séparation de stems).",
       close = "Fermer",
+      manage = "Gérer…", duplicate = "Dupliquer", archive = "Archiver", trash = "Corbeille", restore = "Restaurer…",
+      portable = "Copie autonome…", manage_busy = "Arrête la lecture et attends la fin de la tâche.",
+      manage_open = "Ferme d'abord ce concert dans tous les onglets REAPER.",
+      destination = "Nouveau dossier de destination :", manage_title = "Gestion du concert",
+      recover_none = "Aucun concert archivé ou dans la corbeille locale.",
+      recover_q = "Déplacer ce concert dans un dossier de récupération ? Les morceaux sources sont conservés.",
+      save_failed = "Impossible d'enregistrer la setlist : ",
     },
     en = {
       songs = "Songs (%s)", setlist = "Setlist “%s”", unnamed = "New concert",
@@ -36,6 +43,13 @@ return function(ctx)
       batch_progress = "%d / %d", batch_done = "Batch finished: %d ready, %d failed", batch_stopping = "stopping after this song…",
       batch_q = "Prepare %d song(s) one after the other?\n\nEach project is opened in a tab, prepared (“Do everything”), saved and closed. Allow a few minutes per song (more with stem separation).",
       close = "Close",
+      manage = "Manage…", duplicate = "Duplicate", archive = "Archive", trash = "Trash", restore = "Restore…",
+      portable = "Portable copy…", manage_busy = "Stop playback and wait for the current task.",
+      manage_open = "Close this concert in every REAPER project tab first.",
+      destination = "New destination folder:", manage_title = "Manage concert",
+      recover_none = "No concerts in the local archive or trash.",
+      recover_q = "Move this concert to a recovery folder? Source song projects are kept.",
+      save_failed = "Could not save the setlist: ",
     },
   }
   local function t(k) return ctx.tr(TXT, k) end
@@ -47,6 +61,10 @@ return function(ctx)
   local ed = { name = nil, path = nil, songs = {}, extra = nil }
   local picked = {}                    -- path -> true : sélection pour la préparation en lot
   local ORDER = { "name", "gap_s", "songs", "live", "live_exceptions" }
+  local function worker_busy()
+    return ctx.job or (R.active_job and R.active_job())
+      or (ctx.jobs and ctx.jobs.busy and ctx.jobs.busy())
+  end
 
   -- un projet est « préparé » s'il a des régions et une piste CLICK ; tempo : 1er point de la carte
   local function tokens(line)
@@ -132,6 +150,10 @@ return function(ctx)
   end
 
   local function ed_paths()
+    if ed.path then
+      local stem = ed.path:gsub("%.setlist%.json$", "")
+      return ed.path, stem .. ".RPP", stem .. ".concert.lua"
+    end
     local name = ed.name or t("unnamed")
     local dir = L.concert_dir()
     local stem = ctx.slug(name)
@@ -139,11 +161,15 @@ return function(ctx)
   end
 
   function M.save()
+    if ctx.require_edit and not ctx.require_edit() then return nil end
+    if worker_busy() or (reaper.GetPlayState and reaper.GetPlayState() ~= 0) then
+      ctx.show_result(T("error_title"), t("manage_busy"), false); return nil
+    end
     local name = ed.name or t("unnamed")
-    ed.name = name
     local path = ed_paths()
-    reaper.RecursiveCreateDirectory(L.concert_dir(), 0)
-    local d = ed.extra or {}
+    reaper.RecursiveCreateDirectory(path:match("^(.*)[/\\]") or L.concert_dir(), 0)
+    local d = {}
+    for key, value in pairs(ed.extra or {}) do d[key] = value end
     -- profil « joué en live » : celui du fichier existant s'il y en a un
     local cur = R.json_decode(L.read(path) or "")
     if type(cur) == "table" then
@@ -159,9 +185,11 @@ return function(ctx)
     d.live = d.live or R.json_array({})
     if type(d.live) == "table" and #d.live == 0 then d.live = R.json_array({}) end
     d.live_exceptions = d.live_exceptions or {}
-    ed.extra = d
-    ed.path = path
-    R.write_atomic(path, R.json_encode(d, "  ", ORDER))
+    if not R.write_atomic(path, R.json_encode(d, "  ", ORDER)) then
+      ctx.show_result(T("error_title"), t("save_failed") .. path, false)
+      return nil
+    end
+    ed.name, ed.extra, ed.path = name, d, path
     return path
   end
 
@@ -182,6 +210,7 @@ return function(ctx)
       return false
     end
     local path = M.save()
+    if not path then return false end
     local _, rpp = ed_paths()
     local name = ed.name
     return ctx.start_cli(ctx.cli_setlist(path), t("building"), function(state, msg)
@@ -193,6 +222,103 @@ return function(ctx)
         ctx.show_result(T("error_title"), msg, false)
       end
     end)
+  end
+
+  -- Files are managed by the Python transaction; no moves/deletes in the UI.
+  local function pathkey(p) return (p or ""):gsub("\\", "/"):lower() end
+  function M.manage(operation, path, name, destination)
+    if ctx.require_edit and not ctx.require_edit() then return false end
+    if worker_busy() or (reaper.GetPlayState and reaper.GetPlayState() ~= 0) then
+      ctx.show_result(T("error_title"), t("manage_busy"), false); return false
+    end
+    local rpp = path:gsub("%.setlist%.json$", ".RPP")
+    local restore_rpp
+    if operation == "restore" then
+      local folder = path:match("^(.*)[/\\]")
+      local recovery = R.json_decode(L.read(folder .. SEP .. "recovery.json") or "")
+      if type(recovery) == "table" and recovery.original_directory then
+        restore_rpp = (destination or recovery.original_directory) .. SEP .. path:match("([^/\\]+)$"):gsub("%.setlist%.json$", ".RPP")
+      end
+    end
+    local seen = {}
+    for i = 0, 1024 do
+      local proj, file = reaper.EnumProjects(i, "")
+      if not proj or seen[proj] then break end
+      seen[proj] = true
+      if pathkey(file) == pathkey(rpp) or (restore_rpp and pathkey(file) == pathkey(restore_rpp)) then
+        ctx.show_result(T("error_title"), t("manage_open"), false); return false
+      end
+      if reaper.GetPlayStateEx and reaper.GetPlayStateEx(proj) ~= 0 then
+        ctx.show_result(T("error_title"), t("manage_busy"), false); return false
+      end
+    end
+    local quote = (reaper.GetOS() or ""):match("Win") and R.winq or R.shq
+    local cmd = "concert-manage --operation " .. operation .. " --setlist " .. quote(path)
+    if name then cmd = cmd .. " --name " .. quote(name) end
+    if destination then cmd = cmd .. " --destination " .. quote(destination) end
+    return ctx.start_cli(cmd, t("manage_title"), function(state, msg)
+      if state == "done" then
+        if ed.path == path then
+          if operation == "rename" then
+            ed.name = name
+            ed.path = (destination or path:match("^(.*)[/\\]")) .. SEP .. ctx.slug(name) .. ".setlist.json"
+            if ed.extra then ed.extra.name = name end
+          elseif operation == "archive" or operation == "trash" then
+            ed = { name = nil, path = nil, songs = {}, extra = nil }
+          end
+        end
+        M.scan()
+        ctx.flash = { txt = msg, t = reaper.time_precise() }
+      else ctx.show_result(T("error_title"), msg, false) end
+    end)
+  end
+
+  function M.recoveries()
+    local out = {}
+    for _, kind in ipairs({ ".reacue-archive", ".reacue-trash" }) do
+      local root = L.concert_dir() .. SEP .. kind
+      local i = 0
+      while reaper.EnumerateSubdirectories do
+        local folder = reaper.EnumerateSubdirectories(root, i)
+        if not folder then break end
+        local dir = root .. SEP .. folder
+        local d = R.json_decode(L.read(dir .. SEP .. "recovery.json") or "")
+        if type(d) == "table" and type(d.setlist) == "string" and not d.setlist:find("[/\\]") then
+          out[#out + 1] = { name = d.name or d.setlist, path = dir .. SEP .. d.setlist, date = folder }
+        end
+        i = i + 1
+      end
+    end
+    table.sort(out, function(a, b) return a.date > b.date end)
+    return out
+  end
+
+  local function restore_menu()
+    if ctx.require_edit and not ctx.require_edit() then return end
+    if worker_busy() then ctx.show_result(T("error_title"), t("manage_busy"), false); return end
+    local choices, labels = M.recoveries(), {}
+    if #choices == 0 then ctx.show_result(t("manage_title"), t("recover_none"), false); return end
+    for _, d in ipairs(choices) do labels[#labels + 1] = (d.name .. " · " .. d.date):gsub("[|<>#!]", " ") end
+    local selected = gfx.showmenu(table.concat(labels, "|"))
+    if choices[selected] then M.manage("restore", choices[selected].path) end
+  end
+
+  local function manage_menu(d)
+    if worker_busy() then ctx.show_result(T("error_title"), t("manage_busy"), false); return end
+    local choice = gfx.showmenu(table.concat({t("rename"), t("duplicate"), t("archive"), t("trash"), t("portable")}, "|"))
+    local operation = ({"rename", "duplicate", "archive", "trash", "portable"})[choice]
+    if not operation then return end
+    if operation == "rename" or operation == "duplicate" then
+      local initial = (d.name or "") .. (operation == "duplicate" and " - copie" or "")
+      local ok, name = reaper.GetUserInputs(t("name_title"), 1, t("name_field") .. ",extrawidth=120", initial)
+      if ok and name and name:match("%S") then M.manage(operation, d.setlist, name) end
+    elseif operation == "portable" then
+      local ok, dest = reaper.GetUserInputs(t("manage_title"), 1, t("destination") .. ",extrawidth=260",
+                                           L.concert_dir() .. SEP .. ctx.slug(d.name or "Concert") .. " - portable")
+      if ok and dest and dest:match("%S") then M.manage(operation, d.setlist, nil, dest) end
+    elseif reaper.ShowMessageBox(t("recover_q"), t("manage_title"), 1) == 1 then
+      M.manage(operation, d.setlist)
+    end
   end
 
   -- préparation en lot ---------------------------------------------------------------------------
@@ -336,7 +462,10 @@ return function(ctx)
     U.heading(U.fit(string.format(t("setlist"), name), w - rw - 8, 12), x, y)
     if U.button("rename", t("rename"), x + w - rw, y - 4, rw, 20, nil, 11) then
       local ok, v = reaper.GetUserInputs(t("name_title"), 1, t("name_field") .. ",extrawidth=120", name)
-      if ok and v and v:gsub("%s", "") ~= "" then ed.name = v end
+      if ok and v and v:gsub("%s", "") ~= "" then
+        if ed.path and L.exists(ed.path) then M.manage("rename", ed.path, v)
+        else ed.name = v end
+      end
     end
     y = y + 20
     if #ed.songs == 0 then
@@ -372,16 +501,19 @@ return function(ctx)
 
   local function draw_existing(x, y, w)
     if not concerts then concerts, setlists = L.list_concerts(), L.list_setlists() end
-    if #concerts == 0 and #setlists == 0 then return y end
     U.heading(t("existing"), x, y)
+    local restore_w = U.text_w(t("restore"), 11) + 14
+    if U.button("crestore", t("restore"), x + w - restore_w, y - 4, restore_w, 20, nil, 11) and not ctx.job then restore_menu() end
     y = y + 20
     local function row(k, d, built)
       local bw = U.text_w(t("load"), 12) + 16
       local ow = U.text_w(t("open_one"), 12) + 16
+      local mw = U.text_w(t("manage"), 12) + 16
       U.set(U.PANEL2); gfx.rect(x, y, w, 23, 1)
       local lab = string.format(L.tr("n_songs"), d.name or "?", d.songs and #d.songs or 0)
       if not built then lab = (d.name or "?") .. "  ·  " .. t("not_built") end
-      U.text(U.fit(lab, w - bw - ow - 20, 13), x + 6, y + 4, 13, U.INK)
+      U.text(U.fit(lab, w - bw - ow - mw - 26, 13), x + 6, y + 4, 13, U.INK)
+      if U.button("mg" .. k, t("manage"), x + w - bw - ow - mw - 12, y + 1, mw, 21, nil, 12) and not ctx.job then manage_menu(d) end
       if U.button("ld" .. k, t("load"), x + w - bw - ow - 6, y + 1, bw, 21, nil, 12) then
         M.load_setlist(d.setlist)
       end
@@ -425,6 +557,7 @@ return function(ctx)
     end
     if U.button("clive", labels[4], x + 3 * (bw + gap), y, bw, 32, nil, 13) and #ed.songs > 0 then
       local path = M.save()
+      if not path then return y end
       local c = bc or { setlist = path, songs = {} }
       if not bc then for _, s in ipairs(ed.songs) do c.songs[#c.songs + 1] = { title = s.title } end end
       c.setlist = path

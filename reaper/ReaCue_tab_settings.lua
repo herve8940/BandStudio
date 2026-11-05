@@ -10,7 +10,7 @@ return function(ctx)
       performance = "Performances", standard = "Standard", fast = "Rapide", cpu_threads = "Threads CPU",
       fast_note = "Rapide : séparation moins lissée, contexte de structure réduit, transcription simplifiée. Qualité à vérifier.",
       general = "Général", cues = "Décompte et annonces", outputs = "Click et voix", other = "Performances et dossiers",
-      models = "Modèles avant préparation", models_tab = "Modèles", live_tab = "Live et système",
+      models = "Modèles avant préparation", models_tab = "Modèles", live_tab = "Live et système", presets_tab = "Presets",
       models_note = "Choix mémorisés. Les modèles avancés restent facultatifs, même installés.",
       lyrics = "Paroles", essential = "Essentiel", enhanced = "Avancé", disabled = "Désactivé", custom = "Personnalisé",
       lyrics_essential = "Whisper small · synchronisation par ligne",
@@ -45,7 +45,7 @@ return function(ctx)
       performance = "Performance", standard = "Standard", fast = "Fast", cpu_threads = "CPU threads",
       fast_note = "Fast: less separation smoothing, shorter structure context, simpler transcription. Check quality.",
       general = "General", cues = "Count-in and spoken cues", outputs = "Click and voice", other = "Performance and folders",
-      models = "Models before preparation", models_tab = "Models", live_tab = "Live and system",
+      models = "Models before preparation", models_tab = "Models", live_tab = "Live and system", presets_tab = "Presets",
       models_note = "Choices are saved. Advanced models stay optional, even when installed.",
       lyrics = "Lyrics", essential = "Essential", enhanced = "Advanced", disabled = "Disabled", custom = "Custom",
       lyrics_essential = "Whisper small · line timing",
@@ -103,6 +103,22 @@ return function(ctx)
     return data
   end
 
+  function M.reload_checked()
+    local raw = L.read(path())
+    local d = raw and R.json_decode(raw) or nil
+    if (raw and (type(d) ~= "table" or R.is_array(d))) or (not raw and L.exists(path())) then return false, t("save_failed") end
+    data = d or {}; return true
+  end
+
+  local function can_edit()
+    if ctx.require_edit and not ctx.require_edit() then return false end
+    return not (ctx.is_locked and ctx.is_locked()) and not ctx.job and
+      not (ctx.jobs and ctx.jobs.busy and ctx.jobs.busy()) and not (R.active_job and R.active_job()) and
+      not (ctx.flow and ctx.flow.run and not ctx.flow.run.finished) and
+      not (ctx.flow and ctx.flow.batch_active and ctx.flow.batch_active()) and
+      not (reaper.GetPlayState and reaper.GetPlayState() ~= 0)
+  end
+
   local function get(k)
     if not data then M.load() end
     local v = data[k]
@@ -124,13 +140,24 @@ return function(ctx)
     return ok
   end
 
-  function M.set(k, v)
-    if not data then M.load() end
-    local old = data[k]
-    data[k] = v
+  function M.apply_values(values, unset)
+    if not can_edit() then return false end
+    local ok, err = M.reload_checked(); if not ok then save_failed = true; return false, err end
+    local old = {}; for k, v in pairs(data) do old[k] = v end
+    for k, v in pairs(values) do data[k] = v end
+    for _, k in ipairs(unset or {}) do data[k] = nil end
     if save() then return true end
-    data[k] = old
-    return false
+    data = old
+    return false, t("save_failed")
+  end
+
+  function M.set(k, v)
+    return M.apply_values(v == nil and {} or { [k] = v }, v == nil and { k } or {})
+  end
+
+  function M.presets()
+    if not M.preset_manager then M.preset_manager = dofile(ctx.dir .. "ReaCue_presets.lua")(ctx, M) end
+    return M.preset_manager
   end
 
   function M.lyrics_profile()
@@ -143,14 +170,9 @@ return function(ctx)
 
   function M.set_lyrics_profile(profile)
     if profile ~= "essential" and profile ~= "advanced" and profile ~= "off" then return false end
-    if not data then M.load() end
-    local old_auto, old_model, old_words = data.lyrics_auto, data.lyrics_model, data.words_engine
-    data.lyrics_auto = profile == "off" and "off" or "auto"
-    data.words_engine = profile == "advanced" and "auto" or "off"
-    if profile ~= "off" then data.lyrics_model = profile == "advanced" and "large-v3-turbo" or "small" end
-    if save() then return true end -- le profil entier est écrit atomiquement
-    data.lyrics_auto, data.lyrics_model, data.words_engine = old_auto, old_model, old_words
-    return false
+    local values = { lyrics_auto = profile == "off" and "off" or "auto", words_engine = profile == "advanced" and "auto" or "off" }
+    if profile ~= "off" then values.lyrics_model = profile == "advanced" and "large-v3-turbo" or "small" end
+    return M.apply_values(values, {})
   end
 
   function M.model_summary()
@@ -345,7 +367,7 @@ return function(ctx)
     else
       local ib = U.text_w(t("install_sf"), 11) + 16
       U.text(U.fit(t("structure_off"), cw - ib - 6, 11), cx, y + 2, 11, U.MUTED)
-      if U.button("install_sf", t("install_sf"), cx + cw - ib, y - 2, ib, 20, nil, 11) then ctx.do_action("structure") end
+      if U.button("install_sf", t("install_sf"), cx + cw - ib, y - 2, ib, 20, nil, 11) and can_edit() then ctx.do_action("structure") end
       y = y + 4
     end
     y = y + 16
@@ -366,7 +388,7 @@ return function(ctx)
       U.text(t(status), cx, y, 11, present and U.ACCENT or U.WARN)
       if not present then
         local ib = U.text_w(t("install_sf"), 11) + 16
-        if U.button("install_words", t("install_sf"), cx + cw - ib, y - 2, ib, 20, nil, 11) then ctx.do_action("words") end
+        if U.button("install_words", t("install_sf"), cx + cw - ib, y - 2, ib, 20, nil, 11) and can_edit() then ctx.do_action("words") end
       end
       y = y + 24
     end
@@ -384,8 +406,11 @@ return function(ctx)
 
   function M.advanced() return reaper.GetExtState("ReaCue", "settings_adv") == "1" end
   function M.set_advanced(on) reaper.SetExtState("ReaCue", "settings_adv", on and "1" or "", true) end
-  function M.page() return reaper.GetExtState("ReaCue", "settings_page") == "live" and "live" or "models" end
-  function M.set_page(page) reaper.SetExtState("ReaCue", "settings_page", page == "live" and "live" or "models", true) end
+  function M.page()
+    local page = reaper.GetExtState("ReaCue", "settings_page")
+    return (page == "live" or page == "presets") and page or "models"
+  end
+  function M.set_page(page) reaper.SetExtState("ReaCue", "settings_page", (page == "live" or page == "presets") and page or "models", true) end
 
   local function footer(x, y, w)
     if save_failed then y = y + U.para(t("save_failed"), x, y, w, 12, U.RED) + 4 end
@@ -406,9 +431,11 @@ return function(ctx)
     local row = 32
     local v, ch
 
-    v, ch = seg("settings_page", x, y, w, { { "models", t("models_tab") }, { "live", t("live_tab") } }, M.page(), 13)
+    v, ch = seg("settings_page", x, y, w, { { "models", t("models_tab") }, { "live", t("live_tab") }, { "presets", t("presets_tab") } }, M.page(), 13)
     if ch then M.set_page(v) end
     y = y + 36
+
+    if M.page() == "presets" then return M.presets().draw(x, y, w) end
 
     -- vue simple / avancée, vérification de l'installation
     local b1 = U.text_w(t("check_install"), 12) + 22

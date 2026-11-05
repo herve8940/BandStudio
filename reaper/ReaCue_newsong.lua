@@ -8,10 +8,10 @@
 --   4. nouvel onglet de projet (le projet ouvert n'est pas touché), un fichier par piste à 0 s, projet
 --      enregistré dans <dossier des projets>/<Titre>/<Titre>.RPP, puis onglet « Morceau ».
 return function(ctx)
-  local L, U, T, SEP = ctx.L, ctx.U, ctx.T, ctx.SEP
+  local L, U, T, R, SEP = ctx.L, ctx.U, ctx.T, ctx.R, ctx.SEP
   local TXT = {
     fr = {
-      button = "+ Nouveau morceau", menu = "Un fichier (MP3, WAV…)|Des stems (un dossier)",
+      button = "+ Nouveau morceau", menu = "Un fichier (MP3, WAV…)|Des stems (un dossier)|Depuis un lien YouTube…",
       pick_file = "ReaCue - Fichier du nouveau morceau (MP3, WAV…)",
       pick_folder = "ReaCue - Dossier des stems du nouveau morceau",
       pick_one_stem = "Choisis UN des fichiers de stems : tous les fichiers audio de son dossier seront importés.",
@@ -26,7 +26,7 @@ return function(ctx)
       created = "Nouveau morceau « %s » : %d fichier(s) copié(s) dans %s",
     },
     en = {
-      button = "+ New song", menu = "One file (MP3, WAV…)|Stems (a folder)",
+      button = "+ New song", menu = "One file (MP3, WAV…)|Stems (a folder)|From a YouTube link…",
       pick_file = "ReaCue - File of the new song (MP3, WAV…)",
       pick_folder = "ReaCue - Stems folder of the new song",
       pick_one_stem = "Choose ONE of the stem files: every audio file in its folder will be imported.",
@@ -288,6 +288,7 @@ return function(ctx)
 
   -- projet : nouvel onglet, une piste par fichier, enregistré ------------------------------------
   function N.make_project(dir, title, files, single)
+    if ctx.require_edit and not ctx.require_edit() then return false end
     reaper.Main_OnCommand(40859, 0)                        -- nouvel onglet de projet
     reaper.PreventUIRefresh(1)
     for _, f in ipairs(files) do
@@ -316,14 +317,36 @@ return function(ctx)
     return rpp, saved
   end
 
+  -- Common completion for a local copy or an explicitly requested download.
+  function N.complete(dst, title, files, single)
+    if ctx.require_edit and not ctx.require_edit() then return false end
+    local rpp = N.make_project(dst, title, files, single)
+    if not rpp then return false end
+    ctx.refresh(true)
+    ctx.goto_tab("song")
+    if ctx.tabs.concert.project_changed then ctx.tabs.concert.project_changed() end
+    ctx.tabs.concert.rescan = true
+    ctx.flash = { txt = string.format(t("created"), title, #files, dst), t = reaper.time_precise() + 6 }
+    ctx.last_new = { rpp = rpp, single = single }
+    ctx.propose_all = ctx.proj_key -- propose « Tout faire » ; ne lance jamais une analyse ici
+    return true
+  end
+
   -- enchaînement complet (bouton « + Nouveau morceau ») -----------------------------------------
   function N.start(kind)
-    if ctx.job then return false end
+    if (R.active_job and R.active_job()) or (ctx.jobs and ctx.jobs.busy()) then
+      ctx.last_error=R.tr("busy"); if ctx.show_result then ctx.show_result("ReaCue",ctx.last_error,false) end; return false
+    end
+    if ctx.job or (ctx.require_edit and not ctx.require_edit()) then return false end
     if not kind then
       gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y
       local c = gfx.showmenu(t("menu"))
       if not c or c < 1 then return false end
-      kind = (c == 1) and "file" or "stems"
+      kind = (c == 1) and "file" or (c == 2 and "stems" or "link")
+    end
+    if kind == "link" then
+      if not ctx.audio_import then ctx.audio_import = dofile(ctx.dir .. "ReaCue_import.lua")(ctx) end
+      return ctx.audio_import.start()
     end
     local src, files, single = N.choose(kind)
     if not src then return false end
@@ -337,14 +360,7 @@ return function(ctx)
                 step = job.step, pct = 0,
                 on_done = function(state, msg)
                   if state ~= "done" then ctx.show_result(T("error_title"), msg, false) return end
-                  local rpp = N.make_project(dst, title, files, single)
-                  ctx.refresh(true)
-                  ctx.goto_tab("song")
-                  if ctx.tabs.concert.project_changed then ctx.tabs.concert.project_changed() end
-                  ctx.tabs.concert.rescan = true
-                  ctx.flash = { txt = string.format(t("created"), title, #files, dst), t = reaper.time_precise() + 6 }
-                  ctx.last_new = { rpp = rpp, single = single }
-                  ctx.propose_all = ctx.proj_key            -- l'onglet Morceau propose « Tout faire »
+                  N.complete(dst, title, files, single)
                 end }
     return true
   end

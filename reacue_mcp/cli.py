@@ -34,6 +34,10 @@ import time
 import traceback
 from pathlib import Path
 
+_JOB = None
+_LEASE = None
+_LEASE_TOKEN = None
+
 
 def _dirs():
     from .bridge import BRIDGE_DIR
@@ -44,9 +48,12 @@ def _status(state: str, **kw):
     _, status, _ = _dirs()
     status.parent.mkdir(parents=True, exist_ok=True)
     d = {"state": state, "time": time.time(), "pid": os.getpid(), **kw}
-    tmp = status.with_suffix(".tmp")
-    tmp.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, status)
+    from .jobs import atomic_json
+    if _JOB is not None:
+        # The process may still enrich the concert after publishing its usable result.
+        _JOB.update("running", reported_state=state, **kw)
+        d.update({k: _JOB.data[k] for k in ("id", "project", "started", "cancel_file", "cancellable", "launch_command")})
+    atomic_json(status, d)
 
 
 def _message(res: dict, title: str) -> str:
@@ -245,10 +252,12 @@ def _export(args, log) -> int:
     return 2
 
 
-def main(argv=None):
+def _main(argv=None):
+    global _JOB, _LEASE, _LEASE_TOKEN
     ap = argparse.ArgumentParser(prog="reacue")
     ap.add_argument("cmd", choices=["prepare", "publish", "concert", "concert-extras", "timecode",
-                                    "concert-lighting", "export", "library", "notes", "open-song"])
+                                    "concert-lighting", "export", "library", "notes", "open-song",
+                                    "concert-manage", "import-audio"])
     ap.add_argument("--bpm", type=float, help="tempo approximatif (corrige double/moitié)")
     ap.add_argument("--count-in", type=int, help="mesures de count-in (défaut : réglages, 2)")
     ap.add_argument("--reanalyse", action="store_true",
@@ -261,13 +270,68 @@ def main(argv=None):
     ap.add_argument("--job", help="export : tâche écrite par la fenêtre ReaCue (export_job.json)")
     ap.add_argument("--project", help="open-song : projet .RPP ouvert depuis l'écran BIBLIO de ReaCue Studio")
     ap.add_argument("--request", help="export : demande JSON (stems, format, kbps, range, mode, click)")
+    ap.add_argument("--operation", help="management or import operation")
+    ap.add_argument("--destination", help="new concert/package destination")
+    ap.add_argument("--launch-command", help=argparse.SUPPRESS)
+    ap.add_argument("--job-id", help=argparse.SUPPRESS)
+    ap.add_argument("--origin-project", help=argparse.SUPPRESS)
     args = ap.parse_args(argv)
     if args.resource_dir:
         # avant tout import de bridge : BRIDGE_DIR en dépend (REAPER portable, chemin non standard)
         os.environ["REAPER_RESOURCE_PATH"] = str(Path(args.resource_dir))
-    from .i18n import t, use_settings_lang
+    from .i18n import t, use_settings_lang, get_lang
     use_settings_lang()
-    _, _, log = _dirs()
+    directory, _, log = _dirs()
+    tracked = args.cmd not in ("library", "notes", "open-song")
+    if tracked:
+        from .jobs import Job, WorkerLease, lease_owned
+        _JOB = Job(directory, args.cmd, job_id=args.job_id, project=args.origin_project or "", launch_command=args.launch_command or args.cmd)
+        _LEASE = WorkerLease(directory)
+        acquired = _LEASE.acquire()
+        # MCP spawns extras just before releasing its own build lease. Wait for
+        # that handoff instead of running model workers concurrently.
+        if args.cmd == "concert-extras" and not acquired:
+            deadline = time.monotonic() + 10
+            while not acquired and time.monotonic() < deadline:
+                time.sleep(0.1)
+                acquired = _LEASE.acquire()
+        if not acquired:
+            _JOB.update("error", message="Un traitement est déjà en cours. Attends sa fin.")
+            return 1
+        _LEASE_TOKEN = lease_owned.set(True)
+        from . import show_lock
+        if show_lock.locked(directory):
+            _status("error", cmd=args.cmd, message=show_lock.message())
+            return 1
+    if args.origin_project:
+        os.environ["REACUE_EXPECTED_PROJECT"] = args.origin_project
+    if args.cmd in ("concert-manage", "import-audio"):
+        _status("running", cmd=args.cmd, step=t("cli_running"))
+        try:
+            progress = lambda text: _status("running", cmd=args.cmd, step=str(text))
+            if args.cmd == "concert-manage":
+                from .concert_manage import dispatch_request
+                data = {"operation": args.operation, "setlist": args.setlist,
+                        "name": args.name, "destination": args.destination}
+                result = dispatch_request(data, progress=progress)
+                field = "concert_manage"
+            else:
+                from .import_audio import dispatch_request
+                data = json.loads(Path(args.job).read_text(encoding="utf-8")) if args.job else json.loads(args.request or "{}")
+                if not isinstance(data, dict):
+                    raise ValueError("Invalid import request")
+                if args.operation:
+                    data["operation"] = args.operation
+                data["cancel_file"] = _JOB.data["cancel_file"]
+                result = dispatch_request(data, progress=progress)
+                field = "import_audio"
+            _status("done", cmd=args.cmd, message=result.get("message") or ("Terminé." if get_lang() == "fr" else "Done."), **{field: result})
+            return 0
+        except Exception as e:
+            _log_exc(log)
+            cancelled = _JOB is not None and _JOB.cancelled
+            _status("cancelled" if cancelled else "error", cmd=args.cmd, message=str(e))
+            return 130 if cancelled else 1
     if args.cmd == "concert-extras":           # arrière-plan, sans fenêtre de progression
         from . import concert as conc
         try:
@@ -347,6 +411,41 @@ def main(argv=None):
             f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + traceback.format_exc() + "\n")
         _status("error", cmd=args.cmd, message=t("cli_error_log", e=e, log=log))
         return 1
+
+
+def main(argv=None):
+    global _JOB, _LEASE, _LEASE_TOKEN
+    _JOB = None
+    _LEASE = None
+    _LEASE_TOKEN = None
+    before = os.environ.get("REACUE_EXPECTED_PROJECT")
+    code = 1
+    try:
+        code = _main(argv)
+        return code
+    except Exception as e:
+        if _JOB is None:
+            raise
+        _log_exc(_dirs()[2])
+        _status("error", cmd=_JOB.data["cmd"], message=str(e))
+        return 1
+    finally:
+        if _JOB is not None:
+            if _JOB.data["cmd"] == "export" and _LEASE and _LEASE.file:
+                _status("done" if code == 0 else "error", cmd="export", message=_JOB.data.get("message", ""))
+            _JOB.update("done" if code == 0 else "cancelled" if code == 130 else "error")
+        _JOB = None
+        if _LEASE is not None:
+            _LEASE.release()
+        _LEASE = None
+        if _LEASE_TOKEN is not None:
+            from .jobs import lease_owned
+            lease_owned.reset(_LEASE_TOKEN)
+        _LEASE_TOKEN = None
+        if before is None:
+            os.environ.pop("REACUE_EXPECTED_PROJECT", None)
+        else:
+            os.environ["REACUE_EXPECTED_PROJECT"] = before
 
 
 if __name__ == "__main__":

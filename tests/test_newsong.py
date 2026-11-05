@@ -193,6 +193,30 @@ def test_english_labels(concert, tmp_path):
     assert "+ New song" in T and any("create one with" in t for t in T), T
 
 
+@pytest.mark.parametrize("source", ["cli", "jobs"])
+def test_new_song_refuses_active_worker_before_copy_or_project_creation(concert, tmp_path, source):
+    L, g, projects = setup(concert, tmp_path)
+    W.open_window(L, g)
+    if source == "cli":
+        L.execute('REACUE_CTX.R.active_job=function() return {state="running"} end')
+    else:
+        L.execute('REACUE_CTX.jobs.busy=function() return true end')
+    assert g.REACUE_CTX.newsong.start("file") is False
+    assert g.REACUE_CTX.job is None
+    assert not list(projects.iterdir())
+    assert not list(g.state.inserted.values()) and not list(g.state.saved_ex.values())
+    assert not list(g.state.titles_asked.values())
+
+
+def test_new_song_completion_does_not_claim_success_when_project_creation_refused(concert, tmp_path):
+    L, g, _ = setup(concert, tmp_path)
+    W.open_window(L, g)
+    L.execute('REACUE_CTX.newsong.make_project=function() return false end')
+    assert g.REACUE_CTX.newsong.complete("/new", "New song", L.table_from(["mix.wav"]), True) is False
+    assert g.REACUE_CTX.last_new is None and g.REACUE_CTX.propose_all is None
+    assert not list(g.state.saved_ex.values())
+
+
 def test_python_new_song(tmp_path):
     root = tmp_path / "projects"
     src = tmp_path / "Demo Ballad Live-E minor-92bpm-441hz"
