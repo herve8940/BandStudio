@@ -219,7 +219,9 @@ très gros caractères pour la scène) :
 
 ## Installation
 
-1. Télécharge le projet (bouton vert **Code** → *Download ZIP*) et dézippe-le **là où il restera**, par
+1. Télécharge le [paquet macOS](https://github.com/herve8940/reacue/releases/download/main-build/ReaCue-macOS.zip)
+   ou le [paquet Windows](https://github.com/herve8940/reacue/releases/download/main-build/ReaCue-Windows.zip),
+   puis extrais tout le dossier `ReaCue` **là où il restera**, par
    exemple `Documents/ReaCue`. Ne déplace plus le dossier ensuite (ou relance l'installation si tu le fais).
 2. Lance REAPER une fois (pour que son dossier de réglages existe), puis **quitte REAPER** : l'installateur
    peut alors enregistrer les actions tout seul.
@@ -246,6 +248,15 @@ très gros caractères pour la scène) :
 
 L'installateur peut être relancé à tout moment (changer de langue, réparer une installation) : tes réglages
 et tes morceaux préparés sont conservés.
+
+La [release de main](https://github.com/herve8940/reacue/releases/tag/main-build) est mise à jour automatiquement
+après vérification des paquets et de l'installation de base sur Mac Intel, Apple Silicon et Windows.
+Les ZIP contiennent le programme et les installateurs de la plateforme ; Python, les dépendances et les
+modèles facultatifs sont téléchargés pendant l'installation. `BUILD_INFO.json` identifie le commit source
+et les fichiers `.sha256` permettent de vérifier les téléchargements. Cette préversion continue n'est pas
+un installateur signé `.app`/`.pkg` ou `.exe`. Les vérifications utilisent des ressources REAPER temporaires ;
+les modèles facultatifs et le fonctionnement dans REAPER restent à tester sur la machine cible.
+Le ZIP des sources reste disponible via **Code → Download ZIP**.
 
 Ce qu'il fait : installe [uv](https://docs.astral.sh/uv/) (gestionnaire Python d'Astral) si besoin, crée un
 environnement Python 3.12 privé dans le dossier `.venv` (paquets précompilés uniquement, aucun compilateur

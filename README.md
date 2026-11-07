@@ -209,7 +209,9 @@ for the stage):
 
 ## Installation
 
-1. Download the project (green **Code** button → *Download ZIP*) and unzip it **where you will keep it**,
+1. Download the [macOS installer ZIP](https://github.com/herve8940/reacue/releases/download/main-build/ReaCue-macOS.zip)
+   or the [Windows installer ZIP](https://github.com/herve8940/reacue/releases/download/main-build/ReaCue-Windows.zip),
+   and extract the entire `ReaCue` folder **where you will keep it**,
    for example `Documents/ReaCue`. Do not move the folder afterwards (or run the installer again if you do).
 2. Start REAPER once (so that its settings folder exists), then **quit REAPER**: the installer can then
    register the actions for you.
@@ -234,6 +236,14 @@ for the stage):
 
 The installer can be run again at any time (to change the language or repair an installation): your
 settings and prepared songs are kept.
+
+The [main build release](https://github.com/herve8940/reacue/releases/tag/main-build) is updated automatically
+after packaging and base-installation checks pass on macOS Intel, Apple Silicon and Windows. These ZIPs
+include the program and platform installers; Python, dependencies and optional models are downloaded
+during installation. `BUILD_INFO.json` identifies the source commit and the `.sha256` assets verify the
+downloads. This rolling prerelease is not a signed `.app`/`.pkg` or `.exe` installer. The checks use temporary
+REAPER resources; optional models and operation inside REAPER still require testing on the target machine.
+The source ZIP remains available through **Code → Download ZIP**.
 
 What it does: installs [uv](https://docs.astral.sh/uv/) (Astral's Python manager) if needed, creates a
 private Python 3.12 environment in the `.venv` folder (pre-built packages only, no compiler needed), copies
@@ -1097,6 +1107,11 @@ delete only its folders: ReaCue goes back to its own method). Demucs models are 
 hundred MB): delete that folder if you no longer need them. Separated stems stay next to your songs.
 
 ## For developers
+
+`python tools/package_installers.py` creates both installer ZIPs and SHA-256 files in `dist/`, from
+committed `HEAD` only (working changes are excluded). `.github/workflows/package-installers.yml` validates
+packages on pull requests and publishes them from `main`. Tests use temporary resources and do not bundle
+virtual environments, model weights, caches, songs or local settings.
 
 ```bash
 uv pip install -r requirements-dev.txt     # pytest, lupa, playwright

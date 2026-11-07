@@ -1,0 +1,121 @@
+name: Package installers
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installers-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.12'
+      - name: Check packaging
+        run: |
+          python -m pip install pytest
+          python -m pytest tests/test_packaging.py -q
+      - name: Build committed source archives
+        run: python tools/package_installers.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: installers
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+  install:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15-intel
+            platform: macOS
+          - os: macos-15
+            platform: macOS
+          - os: windows-latest
+            platform: Windows
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: installers
+          path: dist
+      - name: Install Python environment manager
+        run: python -m pip install uv
+      - name: Install package into temporary REAPER resources
+        run: python tools/smoke_installer.py dist/ReaCue-${{ matrix.platform }}.zip
+
+  publish:
+    needs: [package, install]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SOURCE_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: installers
+          path: dist
+      - name: Publish verified main packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A queued run must never replace a newer main build.
+          current_sha=$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)
+          if [ "$current_sha" != "$SOURCE_SHA" ]; then
+            echo "main has advanced; the newer workflow will publish its packages."
+            exit 0
+          fi
+          cd dist
+          sha256sum --check ReaCue-macOS.zip.sha256 ReaCue-Windows.zip.sha256
+          cat > "$RUNNER_TEMP/reacue-release.md" <<EOF
+          Installateurs de la branche main / Installers from main.
+
+          - **macOS (Intel + Apple Silicon)** : ReaCue-macOS.zip → extraire → Install ReaCue.command.
+          - **Windows** : ReaCue-Windows.zip → extraire → Install ReaCue.bat.
+
+          Extraire dans un dossier permanent, lancer REAPER une fois puis le fermer avant l'installation.
+          Internet est nécessaire pour Python, les dépendances et les modèles choisis ; les modèles ne sont pas inclus.
+          Installation de base vérifiée sur macOS Intel, Apple Silicon et Windows dans des ressources REAPER temporaires.
+          Les modèles facultatifs et le fonctionnement dans REAPER ne sont pas testés par cette vérification. Windows reste en bêta.
+
+          Extract to a permanent folder. Start REAPER once, then quit it before installing.
+          Internet is required for Python, dependencies and selected models. Optional models and live REAPER operation are not tested by CI.
+
+          Source : https://github.com/$GH_REPO/commit/$SOURCE_SHA
+          Empreintes SHA-256 / SHA-256 checksums: the two .sha256 files.
+          EOF
+          if gh release view main-build >/dev/null 2>&1; then
+            gh api --method PATCH "repos/$GH_REPO/git/refs/tags/main-build" -f sha="$SOURCE_SHA" -F force=true
+            gh release upload main-build ReaCue-macOS.zip ReaCue-Windows.zip ./*.sha256 --clobber
+            gh release edit main-build --title 'ReaCue — installation macOS et Windows (main)' \
+              --notes-file "$RUNNER_TEMP/reacue-release.md" --prerelease
+          else
+            gh release create main-build ReaCue-macOS.zip ReaCue-Windows.zip ./*.sha256 \
+              --target "$SOURCE_SHA" --title 'ReaCue — installation macOS et Windows (main)' \
+              --notes-file "$RUNNER_TEMP/reacue-release.md" --prerelease
+          fi
