@@ -115,6 +115,14 @@ if ($GpuInfo -and $GpuInfo.Vendor -eq "nvidia") {
                 "  Acceleration: Standard processor (CPU)")
 }
 
+# Windows PowerShell 5.1 drops empty strings when calling a native executable.
+# Omit the entire optional parameter on CPU/AMD instead of passing a bare switch.
+$GpuIndexArgs = @()
+if (-not [string]::IsNullOrWhiteSpace($GpuExtraIndex)) {
+  $GpuIndexArgs = @("-ExtraIndexUrl", $GpuExtraIndex)
+}
+$FailedComponents = @()
+
 Write-Host ""
 Write-Host (T "== 2/9 uv (gestionnaire Python d'Astral)" "== 2/9 uv (Astral's Python manager)")
 $env:Path = (Join-Path $env:USERPROFILE ".local\bin") + ";" + (Join-Path $env:USERPROFILE ".cargo\bin") + ";" + $env:Path
@@ -253,8 +261,9 @@ if ($Stems -eq "ask") {
   $Stems = if ($A -and ($A.ToLower().StartsWith("o") -or $A.ToLower().StartsWith("y"))) { "yes" } else { "no" }
 }
 if ($Stems -eq "yes") {
-  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Here "install\install_stems_windows.ps1") -Lang $L -ExtraIndexUrl $GpuExtraIndex
+  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Here "install\install_stems_windows.ps1") -Lang $L @GpuIndexArgs
   if ($LASTEXITCODE -ne 0) {
+    $FailedComponents += "Install ReaCue Stems.bat"
     Write-Host (T "  ! séparation de stems non installée (le reste de ReaCue fonctionne). Réessaie avec « Install ReaCue Stems.bat »." "  ! stem separation not installed (the rest of ReaCue works). Try again with 'Install ReaCue Stems.bat'.") -ForegroundColor Yellow
   }
 } else {
@@ -294,8 +303,9 @@ if ($Structure -eq "ask") {
   $Structure = if ($A -and $A.ToLower().StartsWith("n")) { "no" } else { "yes" }
 }
 if ($Structure -eq "yes") {
-  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Here "install\install_structure_windows.ps1") -Lang $L -ExtraIndexUrl $GpuExtraIndex
+  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Here "install\install_structure_windows.ps1") -Lang $L @GpuIndexArgs
   if ($LASTEXITCODE -ne 0) {
+    $FailedComponents += "Install ReaCue Structure.bat"
     Write-Host (T "  ! analyse de structure non installée (ReaCue garde sa détection). Réessaie avec « Install ReaCue Structure.bat »." "  ! structure analysis not installed (ReaCue keeps its own detection). Try again with 'Install ReaCue Structure.bat'.") -ForegroundColor Yellow
   }
 } else {
@@ -321,8 +331,9 @@ if ($Chords -eq "ask") {
   $Chords = if ($A -and $A.ToLower().StartsWith("n")) { "no" } else { "yes" }
 }
 if ($Chords -eq "yes") {
-  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Here "install\install_chords_windows.ps1") -Lang $L -ExtraIndexUrl $GpuExtraIndex
+  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Here "install\install_chords_windows.ps1") -Lang $L @GpuIndexArgs
   if ($LASTEXITCODE -ne 0) {
+    $FailedComponents += "Install ReaCue Chords.bat"
     Write-Host (T "  ! reconnaissance d'accords non installée (ReaCue garde sa détection standard)." `
                   "  ! chord recognition not installed (ReaCue keeps standard detection).") -ForegroundColor Yellow
   }
@@ -350,8 +361,9 @@ if ($Drums -eq "ask") {
   $Drums = if ($A -and $A.ToLower().StartsWith("n")) { "no" } else { "yes" }
 }
 if ($Drums -eq "yes") {
-  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Here "install\install_drums_windows.ps1") -Lang $L -ExtraIndexUrl $GpuExtraIndex
+  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Here "install\install_drums_windows.ps1") -Lang $L @GpuIndexArgs
   if ($LASTEXITCODE -ne 0) {
+    $FailedComponents += "Install ReaCue Drums.bat"
     Write-Host (T "  ! transcription de batterie non installée (ReaCue garde sa détection standard)." `
                   "  ! drum transcription not installed (ReaCue keeps standard detection).") -ForegroundColor Yellow
   }
@@ -379,8 +391,9 @@ if ($Words -eq "ask") {
   $Words = if ($A -and ($A.ToLower().StartsWith("o") -or $A.ToLower().StartsWith("y"))) { "yes" } else { "no" }
 }
 if ($Words -eq "yes") {
-  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Here "install\install_words_windows.ps1") -Lang $L -ExtraIndexUrl $GpuExtraIndex
+  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Here "install\install_words_windows.ps1") -Lang $L @GpuIndexArgs
   if ($LASTEXITCODE -ne 0) {
+    $FailedComponents += "Install ReaCue Words.bat"
     Write-Host (T "  ! modèles de paroles non installés (ReaCue garde le calage par ligne)." `
                   "  ! lyrics models not installed (ReaCue keeps line-by-line alignment).") -ForegroundColor Yellow
   }
@@ -396,6 +409,18 @@ try {
   $settingsFile = Join-Path (Join-Path $ReaperDir "ReaCueMCP") "reacue_settings.json"
   & $Py (Join-Path $Here "reacue_gpu.py") sync-settings $settingsFile | Out-Null
 } catch { }
+
+if ($FailedComponents.Count -gt 0) {
+  Write-Host ""
+  Write-Host "======================================================================" -ForegroundColor Yellow
+  Write-Host (T "  ReaCue de base est installé, mais $($FailedComponents.Count) composant(s) facultatif(s) ont échoué." `
+                "  Base ReaCue is installed, but $($FailedComponents.Count) optional component(s) failed.") -ForegroundColor Yellow
+  Write-Host (T "  Pour terminer l'installation, relancez ces fichiers depuis le dossier ReaCue :" `
+                "  To finish installation, rerun these files from the ReaCue folder:")
+  foreach ($launcher in $FailedComponents) { Write-Host "    - $launcher" }
+  Write-Host "======================================================================" -ForegroundColor Yellow
+  exit 1
+}
 
 Write-Host ""
 Write-Host "======================================================================" -ForegroundColor Green

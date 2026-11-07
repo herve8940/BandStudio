@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — Windows optional installers
+
+- Omit `-ExtraIndexUrl` when no CUDA index is selected: Windows PowerShell 5.1 otherwise drops the empty argument and prevents all five optional installers from starting.
+- Keep forwarding the selected CUDA index on NVIDIA systems. Add Windows tests for CPU, automatic mode, CUDA 12.4/12.8, skipped components and child-process failures.
+- Report a partial installation, list the installers to rerun and return a failure status when a selected optional component fails, while still attempting the remaining components.
+
 ## Unreleased — native REAPER Studio styling
 
 - Apply the effective Studio graphite/orange/green palette to the native Lua window; prefer Studio font families with system fallbacks.
