@@ -64,7 +64,7 @@ def build(output):
     bases=list(managed.glob('cpython-3.12.*-windows-x86_64-*'));assert len(bases)==1,bases
     shutil.copytree(bases[0],engine/'python');python=engine/'python/python.exe';assert python.is_file()
     subprocess.run([uv,'pip','install','--python',str(python),'--system','--break-system-packages','-r',str(ROOT/'desktop/studio/windows/requirements.txt')],check=True)
-    (engine/'tools').mkdir();shutil.copy2(uv,engine/'tools/uv.exe')
+    (engine/'tools').mkdir(exist_ok=True);shutil.copy2(uv,engine/'tools/uv.exe')
     download('https://raw.githubusercontent.com/astral-sh/uv/'+importlib.metadata.version('uv')+'/LICENSE-MIT',engine/'tools/uv-LICENSE-MIT')
     cache=output/'downloads';cache.mkdir(exist_ok=True)
     ffmpeg_url='https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip';archive=cache/'ffmpeg.zip';download(ffmpeg_url,archive);checksum=cache/'ffmpeg.sha256';download(ffmpeg_url+'.sha256',checksum)
