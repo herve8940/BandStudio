@@ -24,5 +24,8 @@ def smoke(engine,root):
     a.pitch=12;a.prepare();a.render(root/'transposed.wav',0,6,True);y,_=sf.read(root/'transposed.wav');assert np.max(abs(x[:2*sr]-y[:2*sr]))<1e-5
     a.close();atomic(snapshot,{**p,'_root':str(root),'_mode':'minus'});export_reaper(snapshot,root/'rpp.json');rpp=Path(json.loads((root/'rpp.json').read_text())['path']);import_reaper(rpp,root/'import/result.json',engine,snapshot)
     restored=model.load(Path(json.loads((root/'import/result.json').read_text())['project']));assert restored['sections'][0]['start']==2
-    report=dict(passed=True,python=sys.version.split()[0],frames=len(x),voice_peak=float(np.max(abs(x[:2*sr]))),voice_pitch_difference=float(np.max(abs(x[:2*sr]-y[:2*sr]))),reaper_regions=len(restored['sections']))
+    from windows.host import Api
+    host=Api(engine,root/'TemporaryLibrary');p['guideKey']='';model.save(p,root);host._load(root)
+    assert host._ready_guides();host._audio.close()
+    report=dict(host_guides=True,passed=True,python=sys.version.split()[0],frames=len(x),voice_peak=float(np.max(abs(x[:2*sr]))),voice_pitch_difference=float(np.max(abs(x[:2*sr]-y[:2*sr]))),reaper_regions=len(restored['sections']))
     atomic(root/'smoke-result.json',report);print(json.dumps(report))

@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import importlib.metadata
 import os
 from pathlib import Path
 import shutil
@@ -53,6 +54,7 @@ def build(output):
             dest.write_bytes(b'\xef\xbb\xbf'+text.replace('\r\n','\n').replace('\n','\r\n').encode('utf-8'))
         else:shutil.copy2(source,dest)
     shutil.copy2(ROOT/'desktop/studio/windows/LIRE-MOI.txt',package/'LIRE-MOI.txt')
+    shutil.copy2(ROOT/'desktop/studio/windows/THIRD_PARTY.txt',package/'WINDOWS_THIRD_PARTY.txt')
     shutil.copy2(ROOT/'LICENSE',package/'LICENSE');shutil.copy2(ROOT/'THIRD_PARTY_NOTICES.md',package/'THIRD_PARTY_NOTICES.md')
     html=engine/'web/index.html';text=html.read_text(encoding='utf-8');text=text.replace("script-src 'self'","script-src 'self' 'unsafe-eval'");text=text.replace('<script src="studio.js" defer>', '<script src="adapter.js" defer></script><script src="studio.js" defer>');html.write_text(text,encoding='utf-8');shutil.copy2(ROOT/'desktop/studio/windows/adapter.js',engine/'web/adapter.js')
     uv=shutil.which('uv');assert uv,'uv must be installed on the build runner'
@@ -62,6 +64,7 @@ def build(output):
     shutil.copytree(bases[0],engine/'python');python=engine/'python/python.exe';assert python.is_file()
     subprocess.run([uv,'pip','install','--python',str(python),'--system','--break-system-packages','-r',str(ROOT/'desktop/studio/windows/requirements.txt')],check=True)
     (engine/'tools').mkdir();shutil.copy2(uv,engine/'tools/uv.exe')
+    download('https://raw.githubusercontent.com/astral-sh/uv/'+importlib.metadata.version('uv')+'/LICENSE-MIT',engine/'tools/uv-LICENSE-MIT')
     cache=output/'downloads';cache.mkdir(exist_ok=True)
     ffmpeg_url='https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip';archive=cache/'ffmpeg.zip';download(ffmpeg_url,archive);checksum=cache/'ffmpeg.sha256';download(ffmpeg_url+'.sha256',checksum)
     expected=checksum.read_text().split()[0];assert hashlib.sha256(archive.read_bytes()).hexdigest()==expected
@@ -73,6 +76,9 @@ def build(output):
     deno_url='https://github.com/denoland/deno/releases/download/v2.9.8/deno-x86_64-pc-windows-msvc.zip';deno=cache/'deno.zip';download(deno_url,deno)
     assert hashlib.sha256(deno.read_bytes()).hexdigest()=='cba84b26e0df5ae7f74fc66b86a95b866872a86292ebd84fa1e959927edd93bf'
     extract(deno,tools)
+    download('https://raw.githubusercontent.com/denoland/deno/v2.9.8/LICENSE.md',tools/'deno-LICENSE.md')
+    dependency_list=subprocess.check_output([str(python),'-c',"import importlib.metadata,json; print(json.dumps(sorted([(d.metadata['Name'],d.version) for d in importlib.metadata.distributions()])))"],text=True)
+    (package/'BUNDLED_PACKAGES.json').write_text(dependency_list,encoding='utf-8')
     demo=package/'examples/Decouverte.bandstudio'
     subprocess.run([str(python),str(engine/'windows/demo.py'),str(demo)],check=True,env={**os.environ,'PYTHONPATH':str(engine),'PYTHONUTF8':'1'})
     compiler=Path(os.environ['WINDIR'])/'Microsoft.NET/Framework64/v4.0.30319/csc.exe'

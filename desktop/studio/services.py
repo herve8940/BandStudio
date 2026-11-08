@@ -191,7 +191,8 @@ def guides(project_file,output):
         with sf.SoundFile(path,'w',samplerate=sr,channels=2,subtype='FLOAT') as writer:
             for a in range(0,len(data),65536):writer.write(np.clip(data[a:a+65536],-1,1))
         file_map[name]=str(path)
-    del click,calls,counts
+    # The loop variable also holds the final mmap; release it before unlinking on Windows.
+    del data,click,calls,counts
     for name in ['click','calls','counts']:(root/(name+'.raw')).unlink()
     atomic(output,dict(files=file_map,events=events,beats=beats,duration=duration))
 

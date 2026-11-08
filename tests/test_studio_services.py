@@ -1,6 +1,7 @@
 """Audio placements and portable exchange, using real files rather than UI labels."""
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 import shutil
@@ -11,8 +12,9 @@ import pytest
 import soundfile as sf
 
 ROOT=Path(__file__).resolve().parents[1]
-ENGINE=ROOT/'desktop-build/standalone/Engine'
+ENGINE=Path(os.environ.get('BANDSTUDIO_TEST_ENGINE',str(ROOT/'desktop-build/standalone/Engine')))
 sys.path.insert(0,str(ROOT/'desktop/studio'))
+from platform_tools import executable
 spec=importlib.util.spec_from_file_location('studio_services',ROOT/'desktop/studio/services.py')
 services=importlib.util.module_from_spec(spec);spec.loader.exec_module(services)
 
@@ -94,7 +96,7 @@ def test_link_rejects_non_public_url_syntax(url):
 
 @pytest.mark.parametrize('extension,codec',[('mp3','libmp3lame'),('flac','flac'),('ogg','libvorbis'),('opus','libopus'),('wma','wmav2'),('aiff','pcm_s16be'),('m4a','aac'),('mkv','flac')])
 def test_ffmpeg_import_real_audio_formats(tmp_path,extension,codec):
-    ffmpeg=ENGINE/'import-tools/ffmpeg'
+    ffmpeg=executable(ENGINE,'ffmpeg')
     if not ffmpeg.exists():pytest.skip('Prepared local engine required')
     src=tmp_path/('audio.'+extension);dest=tmp_path/'decoded.wav'
     services.run([ffmpeg,'-hide_banner','-loglevel','error','-f','lavfi','-i','sine=frequency=440:duration=0.4','-c:a',codec,src])
@@ -110,7 +112,7 @@ def test_export_midi_real_smf_header_and_drum_channel(tmp_path):
 
 
 def test_reaper_audio_region_count_roundtrip(tmp_path,monkeypatch):
-    if not (ENGINE/'import-tools/ffmpeg').exists():pytest.skip('Prepared engine required')
+    if not (executable(ENGINE,'ffmpeg')).exists():pytest.skip('Prepared engine required')
     p=project(tmp_path);generate(p,tmp_path,monkeypatch)
     p['lyrics']=[dict(id='line',start=1,end=2,text='Hello',manual=True)]
     snapshot=tmp_path/'snapshot.json';snapshot.write_text(json.dumps(p))
@@ -128,7 +130,7 @@ def test_reaper_audio_region_count_roundtrip(tmp_path,monkeypatch):
 
 
 def test_reaper_import_keeps_source_offset_and_item_rate(tmp_path):
-    if not (ENGINE/'import-tools/ffmpeg').exists():pytest.skip('Prepared engine required')
+    if not (executable(ENGINE,'ffmpeg')).exists():pytest.skip('Prepared engine required')
     p=project(tmp_path);snapshot=tmp_path/'snapshot.json';snapshot.write_text(json.dumps(p))
     rpp=tmp_path/'offset.rpp';rpp.write_text('''<REAPER_PROJECT 0.1 7.0 1
  TEMPO 96 4 4

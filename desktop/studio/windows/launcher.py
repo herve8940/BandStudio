@@ -38,9 +38,12 @@ def main():
                     if result and result.get('bridge')=='function':break
                     time.sleep(.1)
                 if result['title']!='BandStudio' or result['bridge']!='function' or result['sections']<5:raise RuntimeError(str(result))
+                api._notice="Interface Windows connectée"
                 window.evaluate_js("send('ready')")
-                time.sleep(.5)
-                result['ready']=window.evaluate_js("typeof window.studioReceive === 'function'")
+                for _ in range(100):
+                    result['ready']=window.evaluate_js("document.querySelector('#notice').textContent === 'Interface Windows connectée'")
+                    if result['ready']:break
+                    time.sleep(.1)
                 assert result['ready']
                 args.gui_smoke.write_text(json.dumps(result),encoding='utf-8')
             finally:window.destroy()
