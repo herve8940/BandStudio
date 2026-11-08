@@ -1,0 +1,115 @@
+name: BandStudio Windows DEV
+
+on:
+  push:
+    branches: [DEV]
+    paths:
+      - 'desktop/studio/**'
+      - 'tools/*studio*'
+      - 'tests/test_studio*'
+      - 'reacue_*.py'
+      - 'install/install_*_windows.ps1'
+      - 'requirements*.txt'
+      - '.github/workflows/bandstudio-windows-dev.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bandstudio-windows-dev
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.12'
+      - name: Install build and test tools
+        run: python -m pip install uv pytest numpy==1.26.4 scipy==1.13.1 soundfile==0.13.1
+      - name: Build self-contained development archive
+        run: python tools/package_studio_windows.py
+      - name: Test document edits and audio mixing
+        shell: pwsh
+        run: |
+          $env:BANDSTUDIO_TEST_ENGINE = "$pwd/dist/bandstudio/stage/BandStudio-DEV/engine"
+          python -m pytest -q tests/test_studio_windows.py tests/test_studio_services.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test relocated package, Windows speech and native interface
+        run: python tools/check_studio_windows.py dist/bandstudio/BandStudio-0.3.0-dev.1-Windows-x64.zip --report dist/checks
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: bandstudio-windows-checks
+          path: dist/checks
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: bandstudio-windows-dev
+          path: |
+            dist/bandstudio/*.zip
+            dist/bandstudio/*.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    needs: windows
+    if: github.ref == 'refs/heads/DEV'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SOURCE_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: bandstudio-windows-dev
+          path: dist
+      - name: Publish tested Windows development version
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_sha=$(gh api "repos/$GH_REPO/git/ref/heads/DEV" --jq .object.sha)
+          if [ "$current_sha" != "$SOURCE_SHA" ]; then
+            echo 'DEV has advanced; only the current build may publish.'
+            exit 0
+          fi
+          cd dist
+          sha256sum --check ./*.sha256
+          cat > "$RUNNER_TEMP/bandstudio-notes.md" <<EOF
+          Préversion **BandStudio pour Windows 11 x64**.
+
+          1. Télécharger **BandStudio-0.3.0-dev.1-Windows-x64.zip** ci-dessous.
+          2. Décompresser tout le dossier dans un emplacement permanent.
+          3. Ouvrir **BandStudio.exe**. Un morceau synthétique permet de tester immédiatement le lecteur et le guidage.
+
+          Python, FFmpeg et Deno sont inclus. REAPER n’est pas nécessaire pour lancer l’application.
+          Les moteurs de séparation des stems, structure, paroles, accords et batterie s’installent depuis **Réglages → Analyses locales** (Internet et plusieurs Go possibles).
+          Import/export REAPER, projets BandStudio, sections/cues, appels, décomptes, boucles, mixage, exports et enregistrement sont proposés.
+
+          **Vérifié automatiquement sur Windows (runner GitHub Actions)** : archive déplacée dans un dossier avec espaces/accents, Python embarqué, voix SAPI, rendu audio, décompte conservé lors de la transposition, échange REAPER, démarrage de la fenêtre WebView2 et communication avec le lecteur.
+          Les modèles IA facultatifs, la lecture sur une vraie interface audio et la latence d’enregistrement restent à tester sur le PC.
+          Préversion non signée ; WebView2 requis. Vitesse/tonalité préparées dans un cache, périphériques Windows par défaut, liaison directe BandPilot/XR encore absente.
+          Le ZIP ne contient aucun morceau personnel de l’auteur. La version Mac installée et la publication stable sont indépendantes.
+
+          **English:** Windows 11 x64 development preview. Extract the complete ZIP, then run BandStudio.exe. Python and audio tools are bundled; optional AI components install from Settings. REAPER is optional. Automated Windows runtime, speech, audio, exchange and interface checks passed; real audio hardware and optional models still need testing. Unsigned preview; WebView2 required. Read LIRE-MOI.txt for limitations.
+
+          Source : https://github.com/$GH_REPO/commit/$SOURCE_SHA
+          EOF
+          if gh release view bandstudio-dev >/dev/null 2>&1; then
+            gh api --method PATCH "repos/$GH_REPO/git/refs/tags/bandstudio-dev" -f sha="$SOURCE_SHA" -F force=true
+            gh release upload bandstudio-dev ./*.zip ./*.sha256 --clobber
+            gh release edit bandstudio-dev --title 'BandStudio — Windows DEV' --notes-file "$RUNNER_TEMP/bandstudio-notes.md" --prerelease --latest=false
+          else
+            gh release create bandstudio-dev ./*.zip ./*.sha256 --target "$SOURCE_SHA" --title 'BandStudio — Windows DEV' --notes-file "$RUNNER_TEMP/bandstudio-notes.md" --prerelease --latest=false
+          fi

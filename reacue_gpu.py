@@ -58,7 +58,7 @@ def recommend_ai_suite(info: dict | None = None) -> dict:
       - Analyse de structure (SongFormer : MuQ + MusicFM)
       - Reconnaissance d'accords (Modèle entraîné ISMIR 2019)
       - Transcription de batterie (ADTOF)
-      - Paroles et chant (Whisper + calage mot-à-mot wav2vec2)
+      - Paroles Essentiel (Whisper small, calage par ligne ; mot-à-mot facultatif)
     """
     if info is None:
         info = detect_gpu()
@@ -74,9 +74,8 @@ def recommend_ai_suite(info: dict | None = None) -> dict:
         profile = "expert_gpu"
         title_fr = "Studio Pro / Performance Maximale"
         title_en = "Studio Pro / Maximum Performance"
-        desc_fr = "GPU NVIDIA haute performance : tous les modèles IA complets activés à pleine vitesse"
-        desc_en = "High-performance NVIDIA GPU: all full AI models enabled at max speed"
-        words = True
+        desc_fr = "GPU NVIDIA dédié : accélération des analyses compatibles, paroles Essentiel par défaut"
+        desc_en = "Dedicated NVIDIA GPU: acceleration for compatible analyses, Essential lyrics by default"
         structure_window = 420
     elif vendor == "apple" and has_gpu:
         profile = "apple_silicon"
@@ -84,7 +83,6 @@ def recommend_ai_suite(info: dict | None = None) -> dict:
         title_en = "Apple Silicon (Metal MPS) / Optimal"
         desc_fr = "Puce Apple avec mémoire unifiée : modèles 6 stems et analyse haute précision"
         desc_en = "Apple Silicon with unified memory: 6 stems and high-precision analysis"
-        words = True
         structure_window = 420
     elif is_dedicated and (vram_mb >= 2048 or vendor in ("nvidia", "amd")):
         profile = "mid_gpu"
@@ -92,15 +90,13 @@ def recommend_ai_suite(info: dict | None = None) -> dict:
         title_en = "Dedicated GPU / Balanced"
         desc_fr = "Accélération GPU dédiée : modèles haute fidélité optimisés pour la VRAM disponible"
         desc_en = "Dedicated GPU acceleration: high-fidelity models optimized for available VRAM"
-        words = True
         structure_window = 120
     else:
         profile = "standard_cpu"
-        title_fr = "Processeur Standard (CPU) / Léger & Rapide"
-        title_en = "Standard Processor (CPU) / Fast & Lightweight"
-        desc_fr = "Mode processeur sans GPU dédié : modèles 4 stems et analyse rapide pour éviter les attentes"
-        desc_en = "CPU mode without dedicated GPU: fast 4-stem and quick analysis to avoid long waits"
-        words = False
+        title_fr = "Processeur Standard (CPU) / Équilibré"
+        title_en = "Standard Processor (CPU) / Balanced"
+        desc_fr = "Sans GPU dédié : 4 stems et paroles Essentiel ; la durée des analyses dépend du morceau et du processeur"
+        desc_en = "Without dedicated GPU: 4 stems and Essential lyrics; analysis time depends on the song and processor"
         structure_window = 120
 
     models = [
@@ -142,12 +138,12 @@ def recommend_ai_suite(info: dict | None = None) -> dict:
         },
         {
             "id": "words",
-            "name": "Whisper & wav2vec2 (Forced Alignment)",
-            "selected_model": "Whisper large-v3-turbo + CTC (~1 à 2 Go)",
-            "role_fr": "Transcription automatique des paroles et calage mot-à-mot synchronisé",
-            "role_en": "Automatic lyrics transcription and synchronized word-by-word timing",
-            "why_fr": "Prompteur paroles défilantes synchronisé en direct sur la voix du chanteur",
-            "why_en": "Real-time scrolling lyrics prompter following the singer's vocals",
+            "name": "Whisper (Essentiel / Essential)",
+            "selected_model": "Whisper small",
+            "role_fr": "Brouillon automatique des paroles avec calage par ligne",
+            "role_en": "Automatic lyrics draft with line timing",
+            "why_fr": "Profil Avancé facultatif : large-v3-turbo et calage mot-à-mot wav2vec2",
+            "why_en": "Optional Advanced profile: large-v3-turbo and wav2vec2 word alignment",
         },
     ]
 
@@ -163,7 +159,7 @@ def recommend_ai_suite(info: dict | None = None) -> dict:
         "structure_window": structure_window,
         "install_chords": True,
         "install_drums": True,
-        "install_words": words,
+        "install_words": True,
         "models": models,
     }
 
@@ -655,7 +651,11 @@ def audit_venv(py_path: str | Path, gpu_info: dict | None = None) -> dict:
 
 
 def sync_settings(settings_path: Path | str, gpu_info: dict | None = None, force_model: bool = False) -> dict:
-    """Met à jour reacue_settings.json avec les paramètres de la machine (hardware et modèle recommandé)."""
+    """Actualise le matériel sans remplacer le modèle choisi par l'utilisateur.
+
+    La recommandation reste informative sauf demande explicite ``force_model``
+    (commande ``sync-settings --force``).
+    """
     p = Path(settings_path)
     if gpu_info is None:
         gpu_info = detect_gpu()
@@ -686,21 +686,12 @@ def sync_settings(settings_path: Path | str, gpu_info: dict | None = None, force
         changed = True
 
     current_model = data.get("stems_model")
-    if not current_model or force_model:
-        data["stems_model"] = rec_model
+    new_model = rec_model if force_model else (
+        current_model if current_model in ("htdemucs", "htdemucs_ft", "htdemucs_6s") else "htdemucs"
+    )
+    if current_model != new_model:
+        data["stems_model"] = new_model
         changed = True
-    else:
-        # Ajustement automatique si le modèle configuré est inadapté au matériel détecté :
-        if not gpu_info.get("has_gpu") or not gpu_info.get("is_dedicated"):
-            # Sur CPU : htdemucs_6s prend 15 à 20 min par morceau -> repli sur htdemucs
-            if current_model == "htdemucs_6s":
-                data["stems_model"] = "htdemucs"
-                changed = True
-        elif gpu_info.get("is_dedicated") and gpu_info.get("vram_mb", 0) >= 7500:
-            # Sur gros GPU (>= 8 Go) : passer au modèle 6 stems haute qualité si encore sur htdemucs standard
-            if current_model == "htdemucs":
-                data["stems_model"] = "htdemucs_6s"
-                changed = True
 
     if changed:
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -708,7 +699,7 @@ def sync_settings(settings_path: Path | str, gpu_info: dict | None = None, force
 
     return {
         "changed": changed,
-        "stems_model": data.get("stems_model", rec_model),
+        "stems_model": data["stems_model"],
         "hardware": data.get("hardware", new_hw),
     }
 

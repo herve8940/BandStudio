@@ -1,0 +1,50 @@
+BandStudio DEV — Windows 11 x64
+
+1. Décompresse TOUT le fichier ZIP dans un dossier permanent de ton compte.
+2. Ouvre BandStudio.exe à l’intérieur du dossier décompressé.
+3. Le morceau de démonstration est synthétique et libre de données personnelles.
+   Attends la préparation des voix puis clique Lecture.
+4. Importe ton propre fichier audio ou colle un lien via Importer un lien.
+5. Dans Guidage : règle la voix, les annonces, les décomptes et le métronome.
+
+Python, FFmpeg, Deno, le lecteur et l’interface sont inclus. REAPER n’est pas nécessaire.
+Windows utilise Microsoft Edge WebView2. Il est normalement présent sur Windows 11.
+Si absent, le runtime officiel est disponible sur https://developer.microsoft.com/microsoft-edge/webview2/ .
+L’application de développement n’est pas signée par un certificat d’éditeur commercial.
+Aucun compte, abonnement ou accès administrateur n’est nécessaire pour les fonctions de base.
+
+Tes projets sont enregistrés dans ton dossier personnel Music/BandStudioDev.
+Pour ouvrir un projet BandStudio copié depuis un Mac, Ouvrir → sélectionne le dossier .bandstudio.
+Importer REAPER accepte les .rpp. Les effets/instruments MIDI doivent être rendus en audio dans REAPER.
+Les dossiers de travail, médias et projets de l’auteur ne sont pas inclus dans cette distribution.
+
+ANALYSES FACULTATIVES
+Dans Réglages → Analyses locales, installe les composants voulus.
+Les moteurs et leurs modèles se téléchargent depuis leurs sources d’origine ; cela peut prendre du temps
+et plusieurs gigaoctets. Les licences de SongFormer/ADTOF sont affichées avant leur installation.
+Une fenêtre d’installation séparée reste ouverte : ferme-la quand elle a terminé.
+Les scripts n’installent rien dans REAPER et ne modifient pas sa configuration.
+Ne déplace pas le dossier de l’application après avoir installé ces composants.
+
+À TESTER
+- Lecture, modes original/mix/sans batterie, volumes, panoramiques, mute et solo.
+- Appels de régions, comptes avant les régions, décompte avant la lecture et entre les boucles.
+- Création et correction de sections/repères, sauvegarde et réouverture.
+- Import audio/vidéo/liens, puis installation et essai de la séparation des stems.
+- Export WAV et projet REAPER ; import d’un RPP simple contenant des médias audio.
+- Paroles, accords, grille de batterie et setlists.
+- Entrée/sortie Windows et enregistrement, si tu disposes d’un microphone/interface.
+
+LIMITES DE CETTE PRÉVERSION
+Les changements de vitesse/tonalité sont préparés dans un cache audio avant de reprendre la lecture.
+Les paliers de vitesse d’une boucle peuvent donc provoquer une pause de préparation.
+Les sorties et entrées audio sont celles choisies par défaut dans Windows ; pas encore de choix ASIO intégré.
+La liaison directe BandPilot/XR et le contrôle scène/lumières ne sont pas disponibles.
+La voix utilisée est une voix SAPI Windows installée ; le rendu peut différer de celui du Mac.
+Les tests automatiques ne valident pas la latence et la stabilité sur chaque interface audio réelle.
+
+DIAGNOSTIC
+Si le démarrage échoue, ouvre Demarrer-avec-console.cmd et conserve le message d’erreur.
+Le journal est dans %LOCALAPPDATA%\BandStudioDev\demarrage.log.
+Pour un retour utile : version Windows, processeur/RAM, interface audio, action effectuée et message d’erreur.
+N’envoie pas de fichiers musicaux ou de données personnelles sans raison.

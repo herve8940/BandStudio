@@ -1,0 +1,33 @@
+{
+  "reviewedAt": "2026-11-08",
+  "sources": [
+    "https://moises.ai/features/",
+    "https://help.moises.ai/hc/en-us/articles/360013289060-Accepted-Play-file-formats",
+    "https://help.moises.ai/hc/en-us/articles/8583454469276-How-to-Upload-and-Edit-your-track-using-Moises",
+    "https://moises.ai/features/metronome-online/",
+    "https://moises.ai/features/song-parts/",
+    "https://github.com/facebookresearch/demucs"
+  ],
+  "moisesInventory": [
+    {"feature":"Stem separation","status":"implemented","implementation":"Demucs local 4, 6 and fine-tuned 4 stems; proprietary Moises models are not included"},
+    {"feature":"Setlists","status":"implemented","implementation":"Local ordered sets, manual song loading and end stop"},
+    {"feature":"DAW plugin","status":"alternative","implementation":"Standalone native playback and bidirectional REAPER audio-project exchange; no VST/AU plugin"},
+    {"feature":"Smart metronome","status":"implemented","implementation":"Detected/fixed grid, accents, subdivisions, count-in, count between repeats"},
+    {"feature":"Chords and lyrics","status":"implemented","implementation":"Local inference, synchronized prompter, manual corrections, word highlighting"},
+    {"feature":"Capo","status":"not implemented"},
+    {"feature":"Key and chord detection","status":"partial","implementation":"Chord inference and transposed chord display; key estimation pending"},
+    {"feature":"Mastering","status":"not implemented"},
+    {"feature":"Lyric writer","status":"not implemented"},
+    {"feature":"Video recording","status":"not implemented","implementation":"Multichannel audio recording only"},
+    {"feature":"Multimedia dialogue/music/effects separation","status":"not implemented","implementation":"Video audio import only"},
+    {"feature":"Song sections","status":"implemented","implementation":"SongFormer suggestions, exact boundaries, manual split/merge, protection and loops"},
+    {"feature":"Voice conversion","status":"not implemented"},
+    {"feature":"Pitch and transpose","status":"implemented","implementation":"Independent musical pitch and time, guides keep their pitch"},
+    {"feature":"Stem generation","status":"not implemented"},
+    {"feature":"Live system audio separation","status":"not implemented"}
+  ],
+  "existingWorkflow": {
+    "implemented":["Spoken region calls","Per-region count","Initial count-in","Editable cues","Click following beat map","Separate left/right pan for guides","Protected manual sections","4/6 stems","Rehearsal loops and speed ramp","Synchronized lyrics and words","Chord prompter","Editable drum pattern and MIDI","Setlists","Audio capture","WAV mix export","CSV cues","REAPER import/export"],
+    "pending":["Direct BandPilot data exchange and XR analysis","Remote musician/phone views","PIN remote control","grandMA3 lighting","LTC/MTC","PDF charts","Lyrics file/alignment editing","Key detection and capo","Per-stem compressed exports","Automatic multi-song concert timeline"]
+  }
+}
