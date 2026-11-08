@@ -58,7 +58,7 @@ def build(output):
     uv=shutil.which('uv');assert uv,'uv must be installed on the build runner'
     managed=output/'python-build';env=os.environ.copy();env['UV_PYTHON_INSTALL_DIR']=str(managed)
     subprocess.run([uv,'python','install','3.12'],check=True,env=env)
-    bases=list(managed.glob('cpython-3.12*-windows-x86_64-*'));assert len(bases)==1,bases
+    bases=list(managed.glob('cpython-3.12.*-windows-x86_64-*'));assert len(bases)==1,bases
     shutil.copytree(bases[0],engine/'python');python=engine/'python/python.exe';assert python.is_file()
     subprocess.run([uv,'pip','install','--python',str(python),'--system','--break-system-packages','-r',str(ROOT/'desktop/studio/windows/requirements.txt')],check=True)
     (engine/'tools').mkdir();shutil.copy2(uv,engine/'tools/uv.exe')

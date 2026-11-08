@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 import functools
+import shutil
 import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
@@ -32,11 +33,17 @@ def test_structure_rejects_empty_and_overlapping_suggestions():
     assert [(s['start'],s['end']) for s in result]==[(0,4),(4,6)]
 
 
-def test_native_ui_commands_and_project_binding():
+@pytest.mark.parametrize('windows',[False,True])
+def test_native_ui_commands_and_project_binding(tmp_path,windows):
     from playwright.sync_api import sync_playwright,expect
     class Handler(SimpleHTTPRequestHandler):
         def log_message(self,*a):pass
-    host=ThreadingHTTPServer(('127.0.0.1',0),functools.partial(Handler,directory=ROOT/'desktop/studio/web'))
+    web=ROOT/'desktop/studio/web'
+    if windows:
+        shutil.copytree(web,tmp_path/'web');web=tmp_path/'web'
+        shutil.copy2(ROOT/'desktop/studio/windows/adapter.js',web/'adapter.js')
+        html=web/'index.html';html.write_text(html.read_text().replace('<script src="studio.js" defer>', '<script src="adapter.js" defer></script><script src="studio.js" defer>'))
+    host=ThreadingHTTPServer(('127.0.0.1',0),functools.partial(Handler,directory=web))
     threading.Thread(target=host.serve_forever,daemon=True).start()
     project={'id':'test-project','name':'Mon morceau <script>bad()</script>',
              'tracks':[{'id':'drums','name':'Batterie','file':'Audio/drums.caf','role':'drums','duration':100,'offset':0,'gain':.8,'muted':False,'solo':False,'peaks':[.2,.7,.1]*200}],
@@ -48,7 +55,15 @@ def test_native_ui_commands_and_project_binding():
             page=browser.new_page(viewport={'width':1360,'height':900})
             errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
             page.add_init_script('window.sent=[];window.webkit={messageHandlers:{studio:{postMessage:m=>window.sent.push(m)}}};')
+            if windows:page.add_init_script('window.pywebview={api:{command:m=>window.sent.push(m)}};')
             page.goto(f'http://127.0.0.1:{host.server_port}/index.html')
+            if windows:
+                page.get_by_role('button',name='Importer REAPER',exact=True).click()
+                assert page.evaluate('window.sent.at(-1).command')=='openRPP'
+                page.locator('.rail [data-view=settings]').click()
+                page.get_by_role('button',name='Installer / vérifier').first.click()
+                assert page.evaluate('window.sent.at(-1).args.component')=='stems'
+                page.locator('.rail [data-view=studio]').click()
             expect(page.locator('#empty')).to_be_visible()
             page.evaluate('p=>window.studioReceive({type:"state",project:p,duration:100,loaded:true,library:[],revision:1})',project)
             expect(page.locator('#title')).to_have_text(project['name'])
