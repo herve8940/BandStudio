@@ -14,9 +14,10 @@ def check(archive,report):
     archive=archive.resolve();report=report.resolve();report.mkdir(parents=True,exist_ok=True)
     assert hashlib.sha256(archive.read_bytes()).hexdigest()==archive.with_suffix('.zip.sha256').read_text().split()[0]
     with tempfile.TemporaryDirectory(prefix='BandStudio relocated é ') as temp:
-        root=Path(temp)
+        root=Path(temp).resolve()
         with zipfile.ZipFile(archive) as z:
-            assert all((root/name).resolve().is_relative_to(root) for name in z.namelist())
+            invalid=[name for name in z.namelist() if not (root/name).resolve().is_relative_to(root)]
+            assert not invalid,invalid[:3]
             z.extractall(root)
         package=root/'BandStudio-DEV';engine=package/'engine';python=engine/'python/python.exe';launcher=engine/'windows/launcher.py'
         assert (package/'BandStudio.exe').is_file()
