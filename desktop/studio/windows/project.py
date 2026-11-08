@@ -13,7 +13,7 @@ GUIDE_DEFAULTS=dict(clickEnabled=False,clickGain=.45,clickPan=0,subdivision=1,be
 def ident():return str(uuid.uuid4())
 
 def fresh(name='Nouveau morceau'):
-    return dict(version=1,id=ident(),name=name,tracks=[],sections=[],cues=[],bpm=0,beats=[],notes='',settings=GUIDE_DEFAULTS.copy(),guideFiles={},guideKey='',lyrics=[],chords=[],drumHits=[],key='',sourceURL='')
+    return dict(version=1,id=ident(),name=name,tracks=[],sections=[],cues=[],bpm=0,beats=[],notes='',settings=GUIDE_DEFAULTS.copy(),guideFiles={},guideKey='',lyrics=[],chords=[],drumHits=[],key='',sourceURL='',capo=0,gridLocked=False,downbeats=[],analysisNote='')
 
 def duration(p):return max((t['offset']+t['duration'] for t in p['tracks'] if not t['role'].startswith('guide_')),default=0)
 
@@ -33,6 +33,8 @@ def validate(p,root=None):
     if p.get('version')!=1 or len(p['tracks'])>128:raise ValueError('Format de projet non pris en charge.')
     if len({t['id'] for t in p['tracks']})!=len(p['tracks']):raise ValueError('Identifiants de piste dupliqués.')
     length=duration(p)
+    if int(p.get('capo',0))!=number(p.get('capo',0),0,12):raise ValueError('Position de capo entière attendue.')
+    for value in p.get('downbeats',[]):number(value,0,length+.1)
     for t in p['tracks']:
         number(t['duration'],.00001,43200);number(t['offset'],-120,43200);number(t['gain'],0,2);number(t['pan'],-1,1)
         if root:
@@ -54,6 +56,7 @@ def validate(p,root=None):
 
 def load(root):
     p=json.loads((Path(root)/'project.json').read_text(encoding='utf-8'));defaults=fresh()
+    p.setdefault('gridLocked',bool(p.get('beats')))
     for k,v in defaults.items():p.setdefault(k,v)
     p['settings']={**GUIDE_DEFAULTS,**p['settings']};validate(p,root)
     for t in p['tracks']:
@@ -74,7 +77,7 @@ def track(path,root,name,role,offset=0):
 def guide_key(p):
     value={k:p[k] for k in ['settings','bpm','beats','sections','cues']};value['duration']=duration(p)
     # Platform names prevent accidentally reusing Mac voice assets after editing on Windows.
-    return 'windows:'+hashlib.sha256(json.dumps(value,sort_keys=True,allow_nan=False).encode()).hexdigest()
+    return 'windows-guides-2:'+hashlib.sha256(json.dumps(value,sort_keys=True,allow_nan=False).encode()).hexdigest()
 
 def period(p,at):
     import bisect

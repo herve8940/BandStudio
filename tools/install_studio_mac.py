@@ -10,7 +10,7 @@ import uuid
 
 ROOT=Path(__file__).resolve().parents[1]
 BUILD=ROOT/'desktop-build/standalone'
-VERSION='0.2.0'
+VERSION='0.4.0'
 
 
 def copy(source,target):

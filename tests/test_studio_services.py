@@ -69,6 +69,48 @@ def test_variable_grid_anticipation_and_manual_first_beat():
     assert services.before_beat(.5,4,beats,120)==pytest.approx(-1.5)
 
 
+@pytest.mark.parametrize('target,grid,expected',[
+    (8.13,[],[6,6.5,7,7.5]),
+    (7.88,[],[6,6.5,7,7.5]),
+    (8,[],[6,6.5,7,7.5]),
+    (8.07,[0,.52,1.03,1.55,2.1,2.65,3.2,3.75,4.31,4.86,5.42,5.99,6.55,7.10,7.64,8.2,8.75,9.3,9.85,10.4,10.95,11.5],
+     [5.99,6.55,7.10,7.64]),
+])
+def test_offbeat_region_counts_land_on_audible_metronome_clicks(tmp_path,monkeypatch,target,grid,expected):
+    p=project(tmp_path);p['sections']=[dict(id='region',name='Refrain',start=target,end=12,locked=True,origin='manual')]
+    p['beats']=grid;p['settings'].update(gridMode='detected' if grid else 'fixed',countClick=False,leadBeats=0)
+    result=generate(p,tmp_path,monkeypatch)
+    click,sr=sf.read(result['files']['click']);counts,_=sf.read(result['files']['counts'])
+    assert [x['time'] for x in result['countEvents']]==expected
+    assert [x['number'] for x in result['countEvents']]==[1,2,3,4]
+    starts=np.flatnonzero(np.diff(np.r_[False,counts[:,0]>.1].astype(int))==1)
+    assert list(starts)==[round(at*sr) for at in expected]
+    for at in starts:
+        assert np.max(np.abs(click[at:at+100]))>.2
+        assert np.max(np.abs(counts[max(0,at-100):at]))==0
+    assert np.max(np.abs(counts[round(target*sr):]))==0
+    assert result['events'][0]['time']+.12<=expected[0]-.049
+    assert p['sections'][0]['start']==target # Do not move manual or estimated region boundaries.
+
+
+def test_region_count_uses_only_available_beats_and_keeps_number_order():
+    assert services.region_count_beats(0,4,[0,.5,1])==[]
+    assert [(e['number'],e['time']) for e in services.region_count_beats(1,4,[0,.5,1])]==[(3,0),(4,.5)]
+    assert services.region_count_beats(10,4,[0,.5,1])==[] # No fabricated count after detection stops.
+
+
+def test_manual_downbeat_accent_uses_the_chosen_beat_without_moving_pulses(tmp_path,monkeypatch):
+    p=project(tmp_path);p['beats']=[1+i*.5 for i in range(20)]
+    p['settings'].update(gridMode='detected',firstBeat=6.5,subdivision=1)
+    result=generate(p,tmp_path,monkeypatch);click,sr=sf.read(result['files']['click'])
+    assert result['beats']==p['beats']
+    for i,beat in enumerate(p['beats']):
+        at=round(beat*sr);pulse=click[at:at+int(sr*.035),0];t=np.arange(len(pulse))/sr
+        low=abs(np.sum(pulse*np.exp(-2j*np.pi*1100*t)))
+        high=abs(np.sum(pulse*np.exp(-2j*np.pi*1760*t)))
+        assert (high>low*5) if i%4==3 else (low>high*5)
+
+
 def test_portable_reaper_export_keeps_counts_regions_pan_and_original_mute(tmp_path,monkeypatch):
     p=project(tmp_path);generate(p,tmp_path,monkeypatch)
     p['tracks'].append({**p['tracks'][0],'id':'drums','role':'drums','name':'Batterie','solo':True})

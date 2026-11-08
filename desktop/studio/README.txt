@@ -1,4 +1,4 @@
-BandStudio 0.2 — atelier autonome pour répéter et enregistrer
+BandStudio 0.4.0 DEV — atelier autonome pour répéter et enregistrer
 
 DÉMARRER
 L’application est installée dans ~/Applications/BandStudio.app.
@@ -10,9 +10,19 @@ RETROUVER LES APPELS ET LES DÉCOMPTES
 Ouvre Guidage. Par défaut : annonces activées, deux mesures avant la lecture, voix sur la
  dernière mesure et compte de quatre temps avant chaque région. L’anticipation minimale des
 annonces est de huit temps. Une annonce est avancée si nécessaire pour ne pas chevaucher le compte.
+Premier temps de mesure sert de repère pour le clic accentué et le comptage du prompteur.
+En mode détecté, sa position choisit le temps le plus proche comme « 1 » ; les pulsations restent en place.
+La détection simple trouve les pulsations. Détecter les temps et mesures utilise Beat This en local.
+Le premier temps est proposé seulement si plusieurs mesures régulières concordent. Les introductions
+sans pulsation et changements de signature restent à contrôler. Les anciennes grilles sont protégées
+par défaut : déverrouille le calage dans Guidage pour lancer une nouvelle analyse.
+Placer le « 1 » à la tête de lecture et Taper le tempo permettent de corriger le repère ou le tempo fixe.
 Le métronome continu est désactivé par défaut. Chaque guide a son volume et son panoramique.
 Choisis la voix macOS (Thomas en français), la langue des nombres, le débit et les temps par mesure.
 Clique Appliquer au morceau. La préparation des fichiers vocaux peut prendre quelques instants.
+Le décompte des régions suit les clics de la grille, même quand une frontière de région tombe entre deux temps.
+Il utilise les temps disponibles avant la région ; il ne crée pas de temps après la fin de la détection.
+Actualiser les guides force leur recalcul. Les guides des versions précédentes sont régénérés avant la lecture.
 Au prochain départ, le nombre de temps restant s’affiche aussi dans le prompteur.
 Pour ne pas attendre de décompte au démarrage, règle Mesures avant le départ sur 0.
 Un décompte après un saut et un décompte entre répétitions peuvent être activés séparément.
@@ -77,10 +87,12 @@ Le contrôle des paramètres de la console et la liaison directe des analyses av
 Ce n’est pas une reproduction de l’ensemble de la gamme Moises. Voir capabilities.json pour l’inventaire
 recherché et son statut. Pas de génération de musique ou de voix, mastering automatique, vidéo synchronisée,
 séparation dialogue/effets, plug-in de DAW, synchronisation cloud ou séparation de l’audio système en direct.
-Le mode scène sur téléphone, les télécommandes réseau, les lumières grandMA3 et le timecode LTC/MTC de
-l’outil précédent ne sont pas encore portés dans cette application autonome. Les projets REAPER existants
+Le prompteur en lecture seule est accessible sur téléphone via le même réseau local. Les commandes
+à distance, les lumières grandMA3 et le timecode LTC/MTC ne sont pas encore disponibles. Les projets REAPER existants
 et leur environnement sont conservés. Le lanceur BandPilot est présent ; sa liaison directe reste à développer.
-La reconnaissance de tonalité, le capo, le PDF de partition et l’édition fine des mots restent à intégrer.
+La tonalité estimée, le capo, les horaires des mots et la fiche PDF sont disponibles. La fiche PDF
+n’est pas une partition musicale gravée. Le mastering artistique et la comparaison à une référence
+ne sont pas disponibles ; l’outil Niveau final normalise uniquement le niveau et les crêtes.
 
 VALIDATION
 Tests Python : frontières des sections, appels et décomptes réellement audibles dans les WAV, subdivisions,
@@ -99,3 +111,41 @@ PLAYWRIGHT_BROWSERS_PATH=/private/tmp/reacue-test-browsers .venv-test/bin/python
 La compilation copie les runtimes locaux existants ; aucune dépendance à l’installation précédente à l’exécution.
 Les moteurs de modèles gardent leurs licences d’origine, notamment les restrictions non commerciales de
 SongFormer et ADTOF. Examiner THIRD_PARTY_NOTICES.md avant redistribution de modèles ou commercialisation.
+
+NOUVEAUTÉS 0.4 — OUTILS LOCAUX
+Préparer → Comprendre la batterie → Séparer les éléments de batterie : DrumSep fournit grosse caisse,
+caisse claire, toms et cymbales/charleston. Le charleston n’est pas isolé des cymbales par ce modèle.
+La batterie complète reste dans le projet pour la transcription et la comparaison : utilise son Solo.
+Le mix normal utilise ses quatre sous-pistes sans superposer la batterie complète. Sans batterie coupe
+aussi ces quatre pistes. La qualité reste dépendante du morceau ; une fuite est toujours possible.
+
+Prompteur : détecter ou corriger la tonalité et régler le capo. Le capo change uniquement les accords
+affichés, y compris les basses d’accords ; la transposition du lecteur agit sur le son. Les mots et
+leurs horaires se corrigent dans Modifier une entrée → Modifier les horaires de chaque mot.
+Répartir les mots fournit des horaires approximatifs, à corriger à l’écoute.
+
+Outils : exports séparés WAV 24 bits, FLAC, MP3 320 kbit/s et AAC 256 kbit/s ; chaque stem garde son
+tempo et sa hauteur d’origine. pistes.json documente les offsets et le mix. Import et export SRT/LRC,
+ZIP portable du projet et fiche PDF (structure, cues, accords, paroles, notes). L’import de paroles
+préserve les plages existantes par défaut ; Remplacer les lignes existantes permet de les remplacer.
+La fiche applique transposition et capo aux accords tout en gardant les horaires d’origine.
+
+Niveau final : normalisation EBU R128 en deux passes et plafond de crête vraie, sortie WAV 24 bits /
+48 kHz. Utilise le mode d’écoute, les niveaux et la transposition du lecteur, sur le morceau entier,
+sans guides ni décompte. Les sources restent inchangées. mesures.json conserve les mesures avant/après.
+Rapport audio : crête, RMS, dynamique crête/RMS, offset continu et échantillons proches du plein niveau.
+Ce rapport ne diagnostique pas à lui seul une saturation et ne règle aucun paramètre sur la XR.
+
+Prompteur téléphone : Activer le prompteur local, puis scanner le QR code depuis le même Wi-Fi.
+Le lien affiche uniquement l’état du prompteur, sans pistes audio, fichiers ni télécommande. Il change
+à chaque nouvelle session. Arrêter le partage ou quitter l’application ferme le service. Un pare-feu
+ou un réseau isolant les appareils peut empêcher l’accès. Le Wi-Fi ajoute une latence d’affichage ;
+ce prompteur n’est pas une source de synchronisation audio. Aucun partage réseau au démarrage.
+
+MODÈLES AJOUTÉS
+Beat This 1.1.0 / final0 : MIT, https://github.com/CPJKU/beat_this
+DrumSep 49469ca8 : dépôt MIT, https://github.com/inagoy/drumsep
+Empreintes SHA-256 vérifiées par les installateurs et avant l’inférence. Téléchargement initial depuis
+les auteurs ; traitement ensuite hors ligne. Sur ce Mac, les deux modèles sont inclus dans le moteur
+installé. Sur Windows, installer Séparer les stems puis Rythme avancé / Éléments de batterie.
+Cette version ne prétend pas reproduire toute la gamme Moises. Consulter capabilities.json.

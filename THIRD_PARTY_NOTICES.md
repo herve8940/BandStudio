@@ -157,3 +157,18 @@ LICENSE/README. ReaCue's adapter preserves the predicted events and projects
 supported GM drum notes onto its existing nine display lanes; it does not retrain
 or modify the model weights. Refer to the upstream licence for attribution and
 share-alike conditions when distributing adaptations.
+
+## BandStudio 0.4 — nouveaux composants locaux (8 novembre 2026)
+
+- Beat This 1.1.0, modèle final0 : code et poids MIT, Francesco Foscarin, Jan Schlüter et Gerhard Widmer / CPJKU. Source : https://github.com/CPJKU/beat_this ; poids téléchargés depuis le serveur des auteurs. Empreinte du checkpoint : `8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331`.
+- DrumSep 49469ca8 : dépôt MIT, Copyright (c) 2024 Iñaki Goyeneche. Source et lien des poids : https://github.com/inagoy/drumsep ; modèle Hybrid Demucs pour grosse caisse, caisse claire, toms et cymbales/charleston. Empreinte : `aefaa8543c9b9c75e22f5f32b53ab86dfe416457849af1383ff1aef83401423f`. Les poids ne sont pas ajoutés au dépôt Git.
+- rotary-embedding-torch 0.6.5 : MIT ; soxr 0.3.7 : bibliothèque de rééchantillonnage (licences de la distribution et de libsoxr conservées dans le moteur).
+- ReportLab 4.4.10 : BSD ; police Bitstream Vera embarquée par ReportLab avec sa licence.
+- qrcode 8.2 : BSD ; Pillow : HPND et licences des composants embarqués.
+- gdown 5.2.0 : MIT, utilitaire de téléchargement facultatif des poids DrumSep.
+
+Le runtime Mac conserve les notices des paquets et les fichiers LICENSE des deux modèles.
+Les archives Windows installent ces modèles séparément ; aucun audio personnel n’est distribué.
+La normalisation utilise les filtres loudnorm de FFmpeg (mesure EBU R128) et ne constitue pas un moteur
+de mastering artistique. Le prompteur réseau utilise la bibliothèque standard Python et reste désactivé
+jusqu’à son activation par l’utilisateur.

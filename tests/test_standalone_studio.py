@@ -95,6 +95,20 @@ def test_native_ui_commands_and_project_binding(tmp_path,windows):
             assert value['command']=='settings' and value['args']['value']['manualBPM']==96
             assert value['args']['value']['countBars']==1 and value['args']['value']['callsPan']==-1
             assert value['args']['value']['regionCountEnabled'] is True
+            # A manually chosen downbeat must govern both the click and the displayed measure.
+            project['beats']=[1+i*.5 for i in range(20)]
+            project['settings']={'firstBeat':2.5,'gridMode':'detected','beatsPerBar':4}
+            project['drumHits']=[{'time':2.5,'pitch':36,'velocity':100}]
+            page.evaluate('p=>window.studioReceive({type:"state",project:p,duration:100,loaded:true,library:[],revision:3})',project)
+            page.locator('.rail [data-view=prompter]').click()
+            for at,label in [(1,'Levée · temps 2 / 4'),(2.5,'Mesure 1 · temps 1 / 4'),(3,'Mesure 1 · temps 2 / 4'),(4.5,'Mesure 2 · temps 1 / 4')]:
+                page.evaluate('position=>window.studioReceive({type:"transport",position,rate:1,mode:"mix"})',at)
+                expect(page.locator('#stageBeat')).to_have_text(label)
+            page.evaluate('window.studioReceive({type:"transport",position:2.5,rate:1,mode:"mix"})')
+            assert page.locator('.drum-row').last.locator('.drum-cell').first.get_attribute('class').find('hit')>=0
+            project['settings']['firstBeat']=6.5 # Another downbeat on the same phase leaves numbering stable.
+            page.evaluate('p=>window.studioReceive({type:"state",project:p,duration:100,loaded:true,library:[],revision:4})',project)
+            expect(page.locator('#stageBeat')).to_have_text('Mesure 1 · temps 1 / 4')
             page.locator('#importLink').click()
             page.locator('#linkURL').fill('https://www.youtube.com/watch?v=example')
             page.locator('#linkForm button[type=submit]').click()
@@ -117,6 +131,32 @@ def test_native_ui_commands_and_project_binding(tmp_path,windows):
             page.locator('#setlistName').fill('Répétition du jeudi')
             page.locator('#saveSetlist').click()
             assert page.evaluate('window.sent.at(-1).command')=='setlist'
+            page.locator('.rail [data-view=tools]').click()
+            page.locator('#stemFormat').select_option('flac');page.locator('#exportStems').click()
+            assert page.evaluate('window.sent.at(-1).args')=={'kind':'stemsexport','options':{'format':'flac'}}
+            page.locator('#exportSheet').click()
+            assert page.evaluate('window.sent.at(-1).args.kind')=='sheet'
+            page.locator('#startPhone').click()
+            assert page.evaluate('window.sent.at(-1).command')=='phone'
+            page.evaluate('window.studioReceive({type:"phone",active:true,url:"http://127.0.0.1:9999/session/",qr:"data:image/png;base64,"})')
+            expect(page.locator('#stopPhone')).to_be_visible()
+            page.locator('#stopPhone').click()
+            assert page.evaluate('window.sent.at(-1).args.on') is False
+            page.locator('#lyricsFile').set_input_files({'name':'paroles.lrc','mimeType':'text/plain','buffer':b'[00:01.00]Bonjour\n[00:02.00]Refrain'})
+            page.wait_for_function('window.sent.at(-1)?.args.kind === "lyricsimport"')
+            assert page.evaluate('window.sent.at(-1).args.options.replace') is False
+            page.locator('.rail [data-view=guides]').click()
+            page.locator('#lockGrid').check()
+            assert page.evaluate('window.sent.at(-1).args.gridLocked') is True
+            page.locator('.rail [data-view=prompter]').click()
+            project['key']='D';project['capo']=2;project['chords']=[{'start':0,'end':100,'text':'D/F#'}]
+            page.evaluate('p=>window.studioReceive({type:"state",project:p,duration:100,loaded:true,library:[],revision:6})',project)
+            expect(page.locator('#stageChord')).to_have_text('C/E · capo 2')
+            page.locator('#addAnnotation').click();page.locator('#annotationText').fill('Très bien')
+            page.locator('#annotationStart').fill('1');page.locator('#annotationEnd').fill('3')
+            page.locator('#wordEditor summary').click();page.locator('#distributeWords').click()
+            page.locator('#annotationForm button[type=submit]').click()
+            assert page.evaluate('window.sent.at(-1).args.words')==[{'text':'Très','start':1,'end':2},{'text':'bien','start':2,'end':3}]
             page.locator('.rail [data-view=studio]').click()
             for width in [1360,1024,960]:
                 page.set_viewport_size({'width':width,'height':900})

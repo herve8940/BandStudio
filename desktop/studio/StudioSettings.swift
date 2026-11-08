@@ -61,7 +61,7 @@ struct StudioSetlist:Codable {var id=UUID().uuidString;var name:String;var paths
 
 extension StudioProject {
     enum CodingKeys:String,CodingKey {
-        case version,id,name,tracks,sections,cues,bpm,beats,notes,settings,guideFiles,guideKey,lyrics,chords,drumHits,key,sourceURL
+        case version,id,name,tracks,sections,cues,bpm,beats,notes,settings,guideFiles,guideKey,lyrics,chords,drumHits,key,sourceURL,capo,gridLocked,downbeats,analysisNote
     }
     init(from decoder:Decoder) throws {
         let d=try decoder.container(keyedBy:CodingKeys.self)
@@ -79,10 +79,14 @@ extension StudioProject {
         chords=try d.decodeIfPresent([TimedText].self,forKey:.chords) ?? []
         drumHits=try d.decodeIfPresent([DrumHit].self,forKey:.drumHits) ?? []
         key=try d.decodeIfPresent(String.self,forKey:.key) ?? ""
+        capo=try d.decodeIfPresent(Int.self,forKey:.capo) ?? 0
+        gridLocked=try d.decodeIfPresent(Bool.self,forKey:.gridLocked) ?? !beats.isEmpty
+        downbeats=try d.decodeIfPresent([Double].self,forKey:.downbeats) ?? []
+        analysisNote=try d.decodeIfPresent(String.self,forKey:.analysisNote) ?? ""
         sourceURL=try d.decodeIfPresent(String.self,forKey:.sourceURL) ?? ""
     }
     func desiredGuideKey()->String {
-        struct Input:Encodable{var settings:GuideSettings;var bpm:Double;var beats:[Double];var sections:[Section];var cues:[Cue];var duration:Double}
+        struct Input:Encodable{var generator=2;var settings:GuideSettings;var bpm:Double;var beats:[Double];var sections:[Section];var cues:[Cue];var duration:Double}
         let input=Input(settings:settings,bpm:bpm,beats:beats,sections:sections,cues:cues,duration:duration)
         let enc=JSONEncoder();enc.outputFormatting = .sortedKeys
         return SHA256.hash(data:(try? enc.encode(input)) ?? Data()).map{String(format:"%02x",$0)}.joined()

@@ -105,6 +105,25 @@ def before_beat(target,amount,beats,bpm):
     return target-amount*60/max(20,bpm)
 
 
+def region_count_beats(target,amount,beats):
+    """Place spoken numbers on existing clicks, never on an offset copy of the grid."""
+    # Use the closest click as the passage's musical entry without moving its region.
+    # Otherwise a region 100 ms after a beat would speak "four" on that entry beat.
+    if not beats:return []
+    right=bisect.bisect_left(beats,target)
+    candidates=[i for i in (right-1,right) if 0<=i<len(beats)]
+    stop=min(candidates,key=lambda i:(abs(beats[i]-target),i))
+    if not stop:return []
+    if target>beats[-1]:
+        span=beats[-1]-beats[-2] if len(beats)>1 else 0
+        # Do not invent a countdown in a tail where beat detection has stopped.
+        if span<=0 or target-beats[-1]>span*1.25:return []
+    first=max(0,stop-amount)
+    return [dict(number=amount-(stop-index)+1,time=beats[index],
+                 end=beats[index+1])
+            for index in range(first,stop)]
+
+
 def voice_wav(text,folder,settings):
     import numpy as np
     import soundfile as sf
@@ -155,7 +174,9 @@ def guides(project_file,output):
             n=int(sr*.035);t=np.arange(n)/sr
             sound=np.sin(2*np.pi*(1760 if accented else 1100)*t)*np.exp(-t*130)*(0.8 if sub==0 else 0.35)
             place(click,np.repeat(sound[:,None],2,axis=1),beat+sub*span/s['subdivision'])
-    file_map={};events=[]
+    file_map={};events=[];count_events=[]
+    count_plans={item['id']:region_count_beats(item['start'],s['regionCountBeats'],beats)
+                 for item in p.get('sections',[])}
     for item in p.get('sections',[])+ (p.get('cues',[]) if s['speakCues'] else []):
         if item.get('announce') is False or not s['callsEnabled']:continue
         text=item.get('callText') or item['name'];target=item.get('start',item.get('time',0))
@@ -167,8 +188,8 @@ def guides(project_file,output):
             # Calls before time zero are played during the initial count-in by the native engine.
             # Reserve the final spoken beats for the region count, avoiding two voices at once.
             if 'start' in item and s['regionCountEnabled'] and s['countVoice']:
-                count_at=before_beat(target,s['regionCountBeats'],beats,p.get('bpm') or s['manualBPM'])
-                at=min(at,count_at-len(x)/sr-.05)
+                plan=count_plans[item['id']]
+                if plan:at=min(at,plan[0]['time']-len(x)/sr-.05)
             if at>=0:place(calls,x,at);events.append(dict(time=at,target=target,text=text,file=str(path)))
     words={'fr':['un','deux','trois','quatre','cinq','six','sept','huit','neuf','dix','onze','douze'],
            'en':['one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve']}
@@ -176,15 +197,14 @@ def guides(project_file,output):
         for i,text in enumerate(words[s['language']][:max(s['beatsPerBar'],s['regionCountBeats'])]):file_map['number:'+str(i+1)]=str(voice_wav(text,cache,s))
     for item in p.get('sections',[]):
         if item.get('announce') is False:continue
-        for i in range(s['regionCountBeats']):
-            at=before_beat(item['start'],s['regionCountBeats']-i,beats,p.get('bpm') or s['manualBPM'])
-            end=before_beat(item['start'],s['regionCountBeats']-i-1,beats,p.get('bpm') or s['manualBPM'])
-            if at<0:continue
+        for event in count_plans[item['id']]:
+            number,at,end=event['number'],event['time'],event['end']
+            count_events.append(dict(section=item['id'],target=item['start'],number=number,time=at,end=end))
             if s['countVoice']:
-                x,_=sf.read(file_map['number:'+str(i+1)],dtype='float32',always_2d=True)
+                x,_=sf.read(file_map['number:'+str(number)],dtype='float32',always_2d=True)
                 place(counts,x[:max(0,int((end-at)*sr*.92))],at)
             if s['countClick']:
-                t=np.arange(int(sr*.035))/sr;wave=.65*np.sin(2*np.pi*(1760 if i==0 else 1100)*t)*np.exp(-t*130)
+                t=np.arange(int(sr*.035))/sr;wave=.65*np.sin(2*np.pi*(1760 if number==1 else 1100)*t)*np.exp(-t*130)
                 place(counts,np.repeat(wave[:,None],2,axis=1),at)
     for name,data in [('click',click),('calls',calls),('counts',counts)]:
         path=root/(name+'.wav')
@@ -194,7 +214,7 @@ def guides(project_file,output):
     # The loop variable also holds the final mmap; release it before unlinking on Windows.
     del data,click,calls,counts
     for name in ['click','calls','counts']:(root/(name+'.raw')).unlink()
-    atomic(output,dict(files=file_map,events=events,beats=beats,duration=duration))
+    atomic(output,dict(files=file_map,events=events,countEvents=count_events,beats=beats,duration=duration))
 
 
 def quote(value):
@@ -234,8 +254,9 @@ def export_reaper(project_file,output):
         audible=not t['muted'] and (not has_solo or t['solo'])
         if mode=='original':audible=t['role']=='source' and not t['muted']
         elif t['role']=='source':audible=mode=='mix' and not has_stems and not t['muted'] and not has_solo
-        elif mode=='drums':audible=audible and t['role']=='drums'
-        elif mode=='minus':audible=audible and t['role']!='drums'
+        elif mode=='drums':audible=audible and (t['role']=='drums' or t['role'].startswith('drum_'))
+        elif mode=='minus':audible=audible and t['role']!='drums' and not t['role'].startswith('drum_')
+        if t['role']=='drums' and any(x['role'].startswith('drum_') for x in p['tracks']) and not t['solo']:audible=False
         muted=not audible
         gain=t['gain'];pan=t['pan']
         if t['role']=='guide_click':muted=not s['clickEnabled'];gain=s['clickGain'];pan=s['clickPan']
@@ -258,8 +279,8 @@ def export_reaper(project_file,output):
                 lines+=['  <TRACK','    NAME "Annonce de départ"',f'    VOLPAN {s["callsGain"]} {s["callsPan"]}','    <ITEM','      POSITION 0',f'      LENGTH {length:.9f}','      <SOURCE WAVE','        FILE "Audio/initial-call.wav"','      >','    >','  >']
     lines+=['>'];rpp=target/(safe_name(p['name'])+'.rpp');rpp.write_text('\n'.join(lines)+'\n')
     # Annotations have no native RPP representation. Bind their timing to this exact export.
-    metadata={key:p.get(key) for key in ['settings','notes','lyrics','chords','drumHits','key','sourceURL']}
-    metadata.update(exportPreroll=preroll,rppSHA256=hashlib.sha256(rpp.read_bytes()).hexdigest())
+    metadata={key:p.get(key) for key in ['settings','notes','lyrics','chords','drumHits','key','sourceURL','capo','downbeats','gridLocked','analysisNote']}
+    metadata.update(exportPreroll=preroll,rppSHA256=hashlib.sha256(rpp.read_bytes()).hexdigest(),trackRoles={str(uuid.uuid5(uuid.NAMESPACE_OID,t['id']))+'.wav':t['role'] for t in p['tracks']})
     atomic(target/'bandstudio-project.json',metadata)
     atomic(output,dict(path=str(rpp),folder=str(target),preroll=preroll))
 
@@ -327,6 +348,11 @@ def import_reaper(path,output,engine,snapshot):
     import numpy as np
     import soundfile as sf
     source=Path(path).resolve();tree=read_rpp(source);folder=Path(output).parent/'Imported.bandstudio';media=folder/'Audio';media.mkdir(parents=True,exist_ok=True)
+    roles_by_file={}
+    metadata=source.parent/'bandstudio-project.json'
+    if metadata.is_file():
+        saved=json.loads(metadata.read_text())
+        if saved.get('rppSHA256')==hashlib.sha256(source.read_bytes()).hexdigest():roles_by_file=saved.get('trackRoles',{})
     p=json.loads(Path(snapshot).read_text());settings=p['settings'].copy();settings['countBars']=0
     p=dict(version=1,id=str(uuid.uuid4()),name=source.stem,tracks=[],sections=[],cues=[],bpm=120,beats=[],notes='',settings=settings,guideFiles={},guideKey='',lyrics=[],chords=[],drumHits=[],key='',sourceURL='')
     warnings=[]
@@ -370,6 +396,8 @@ def import_reaper(path,output,engine,snapshot):
             role='other';lower=name.lower()
             for candidate,words in [('source',['original','source']),('drums',['drum','batterie']),('bass',['bass','basse']),('vocals',['vocal','chant']),('guitar',['guitar','guitare']),('piano',['piano','clavier']),('take',['prise'])]:
                 if any(w in lower for w in words):role=candidate;break
+            restored_role=roles_by_file.get(Path(filename[0]).name)
+            if restored_role in ('source','drums','drum_kick','drum_snare','drum_toms','drum_cymbals','bass','vocals','guitar','piano','other','take'):role=restored_role
             itemvp=field(item,'VOLPAN',['1','0']);gain=max(0,min(2,num(vp,0,1)*num(itemvp,0,1)));pan=max(-1,min(1,num(vp,1)+num(itemvp,1)))
             p['tracks'].append(dict(id=ident,name=name+(f' · {index+1}' if len(items)>1 else ''),file='Audio/'+target.name,role=role,duration=info.duration,offset=offset,gain=gain,pan=pan,muted=num(ms,0)!=0 or num(field(item,'MUTE',['0']),0)!=0,solo=num(ms,1)!=0,peaks=peaks.tolist()))
     if not p['tracks']:raise ValueError('Aucune piste audio à importer. Dans REAPER, rends les instruments MIDI en audio avant l’import.')
@@ -408,6 +436,8 @@ def import_reaper(path,output,engine,snapshot):
                     p[kind].append(entry)
             p['drumHits']=[{**h,'time':h['time']+shift} for h in saved.get('drumHits') or []]
             p['key']=saved.get('key') or '';p['sourceURL']=saved.get('sourceURL') or ''
+            p['capo']=saved.get('capo') or 0;p['gridLocked']=saved.get('gridLocked',True);p['analysisNote']=saved.get('analysisNote') or ''
+            p['downbeats']=[t+shift for t in saved.get('downbeats') or []]
             if saved.get('settings'):p['settings']={**saved['settings'],'countBars':0}
         else:warnings.append('Le RPP a été modifié : les anciennes annotations de paroles et d’accords doivent être resynchronisées.')
     p['notes']='Import audio du projet REAPER. Les régions et repères gardent leurs temps d’origine.\n'+'\n'.join(dict.fromkeys(warnings))

@@ -84,6 +84,11 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     var timer:Timer?
     var lastBroadcast=0.0
     var quitting=false
+    var phoneProcess:Process?
+    var phoneFolder:URL?
+    var phoneRevision = -1
+    var phonePulse=0.0
+    var phoneAnnounced=false
 
     func applicationDidFinishLaunching(_ notification:Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -117,7 +122,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         web.loadFileURL(webRoot.appendingPathComponent("index.html"),allowingReadAccessTo:webRoot)
         NSApp.activate(ignoringOtherApps:true)
         timer=Timer.scheduledTimer(withTimeInterval:0.1,repeats:true){[weak self] _ in
-            guard let s=self else{return};s.audio.tick();s.sendTransport()
+            guard let s=self else{return};s.audio.tick();s.sendTransport();s.updatePhone()
             if s.recorder.running, let error=s.recorder.error {s.notice=error.localizedDescription;try? s.stopRecord()}
         }
         if let requested=pendingProject {
@@ -128,7 +133,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             do{try load(URL(fileURLWithPath:path))}catch{notice=error.localizedDescription}
         }
     }
-    @objc func about() {NSApp.orderFrontStandardAboutPanel(options:[.applicationName:"BandStudio",.applicationVersion:"0.2 · atelier autonome",.credits:NSAttributedString(string:"Stems, appels, décompte, paroles, accords et projets REAPER\nTraitement local sur ce Mac")])}
+    @objc func about() {NSApp.orderFrontStandardAboutPanel(options:[.applicationName:"BandStudio",.applicationVersion:"0.4 DEV · atelier autonome",.credits:NSAttributedString(string:"Stems, appels, décompte, paroles, accords et projets REAPER\nTraitement local sur ce Mac")])}
     func projectList()->[[String:String]] {
         guard let library=library else{return []}
         return ((try? FileManager.default.contentsOfDirectory(at:library,includingPropertiesForKeys:nil)) ?? [])
@@ -262,9 +267,10 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         }
     }
     func runAnalysis(_ kind:String,model:String,language:String="auto",quality:String="standard") throws {
-        guard ["grid","structure","separate","lyrics","chords","drums"].contains(kind),["htdemucs","htdemucs_6s","htdemucs_ft"].contains(model) else {throw StudioError("Traitement inconnu.")}
-        let desired=kind == "lyrics" ? "vocals" : (kind == "drums" ? "drums" : "source")
-        guard let root=root,let source=project.tracks.first(where:{$0.role==desired}) ?? (kind == "drums" ? nil : project.tracks.first(where:{$0.role == "source"})) else {throw StudioError(kind == "drums" ? "Sépare d’abord une piste batterie." : "Importe d’abord un morceau.")}
+        guard ["grid","structure","separate","drumsep","lyrics","chords","drums"].contains(kind),["htdemucs","htdemucs_6s","htdemucs_ft"].contains(model) else {throw StudioError("Traitement inconnu.")}
+        if kind == "grid" && project.gridLocked {throw StudioError("Le calage est protégé. Déverrouille-le dans Guidage avant une nouvelle analyse.")}
+        let desired=kind == "lyrics" ? "vocals" : (["drums","drumsep"].contains(kind) ? "drums" : "source")
+        guard let root=root,let source=project.tracks.first(where:{$0.role==desired}) ?? (["drums","drumsep"].contains(kind) ? nil : project.tracks.first(where:{$0.role == "source"})) else {throw StudioError(["drums","drumsep"].contains(kind) ? "Sépare d’abord une piste batterie." : "Importe d’abord un morceau.")}
         try startJob(kind,input:project.audioURL(source,root:root),arguments:["--model",model,"--language",language,"--quality",quality]) {result in
             if ["lyrics","chords","drums"].contains(kind) {try self.applyTextAnalysis(kind,result:result)}
             else{try self.applyAnalysis(kind,result:result);self.notice="Analyse terminée. Les corrections manuelles sont conservées."}
@@ -282,7 +288,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             project.applySections(try JSONDecoder().decode([Section].self,from:raw))
         } else {
             var newTracks:[Track]=[]
-            let names=["vocals":"Chant","drums":"Batterie","bass":"Basse","guitar":"Guitare","piano":"Piano","other":"Autres instruments"]
+            let names=["vocals":"Chant","drums":"Batterie","bass":"Basse","guitar":"Guitare","piano":"Piano","other":"Autres instruments","drum_kick":"Grosse caisse","drum_snare":"Caisse claire","drum_toms":"Toms","drum_cymbals":"Cymbales et charleston"]
             for item in object["tracks"] as? [[String:String]] ?? [] {
                 guard let path=item["path"],let role=item["role"] else{continue}
                 let source=URL(fileURLWithPath:path).resolvingSymlinksInPath()
@@ -290,10 +296,11 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 let relative="Audio/"+UUID().uuidString+"-"+role+".wav"
                 try FileManager.default.copyItem(at:source,to:root.appendingPathComponent(relative))
                 let (duration,peaks)=try inspectAudio(root.appendingPathComponent(relative))
-                newTracks.append(Track(name:names[role] ?? role,file:relative,role:role,duration:duration,peaks:peaks))
+                newTracks.append(Track(name:names[role] ?? role,file:relative,role:role,duration:duration,offset:kind == "drumsep" ? (project.tracks.first(where:{$0.role=="drums"})?.offset ?? 0) : 0,peaks:peaks))
             }
             guard !newTracks.isEmpty else{throw StudioError("Aucune piste produite.")}
-            project.tracks=project.tracks.filter{$0.role == "source" || $0.role == "take" || $0.role.hasPrefix("guide_")}+newTracks
+            if kind == "drumsep" {project.tracks=project.tracks.filter{!$0.role.hasPrefix("drum_")}+newTracks}
+            else {project.tracks=project.tracks.filter{$0.role == "source" || $0.role == "take" || $0.role.hasPrefix("guide_")}+newTracks}
             try audio.load(project,root:root);audio.mode="mix";audio.applyMix()
         }
         try changed()
@@ -401,7 +408,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 guard let mode=args["value"] as? String,["original","mix","drums","minus"].contains(mode) else{return}
                 if mode == "original" && !project.tracks.contains(where:{$0.role == "source"}){throw StudioError("Ce projet ne contient pas de piste originale.")}
                 if mode != "original" && !project.tracks.contains(where:{$0.role != "source"}){throw StudioError("Sépare les instruments ou ajoute des pistes pour utiliser le mix.")}
-                if ["drums","minus"].contains(mode) && !project.tracks.contains(where:{$0.role == "drums"}){throw StudioError("Sépare les instruments ou ajoute une piste batterie.")}
+                if ["drums","minus"].contains(mode) && !project.tracks.contains(where:{$0.role == "drums" || $0.role.hasPrefix("drum_")}){throw StudioError("Sépare les instruments ou ajoute une piste batterie.")}
                 audio.mode=mode;audio.applyMix()
             case "loop":try audio.configureLoop(on:args["on"] as? Bool ?? false,start:number(args,"start",range:0...project.duration),end:number(args,"end",range:0...project.duration))
             case "track":
@@ -416,7 +423,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                     project.tracks[index].offset=try number(args,"offset",range:-120...43200)
                     try project.validate();try reloadAudio()
                 }
-                if let role=args["role"] as? String,["drums","bass","vocals","guitar","piano","other","take"].contains(role),project.tracks[index].role != "source"{project.tracks[index].role=role}
+                if let role=args["role"] as? String,["drums","drum_kick","drum_snare","drum_toms","drum_cymbals","bass","vocals","guitar","piano","other","take"].contains(role),project.tracks[index].role != "source"{project.tracks[index].role=role}
                 audio.project=project;audio.applyMix();try changed()
             case "section":
                 let start=try number(args,"start",range:0...project.duration),end=try number(args,"end",range:0...project.duration)
@@ -459,10 +466,13 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 project.cues.removeAll{$0.time>self.project.duration};project.beats.removeAll{$0>self.project.duration}
                 project.lyrics.removeAll{$0.end>self.project.duration};project.chords.removeAll{$0.end>self.project.duration};project.drumHits.removeAll{$0.time>self.project.duration}
                 try reloadAudio();try changed()
-            case "guides":try withGuides{self.notice="Les guides sont à jour.";self.sendState()}
+            case "guides":try requireIdle();audio.pause();try withGuides(force:true){self.notice="Les guides ont été recalculés.";self.sendState()}
             case "reaper":try exportRPP()
             case "showExport":if !lastExport.isEmpty{NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath:lastExport)])}
             case "annotation":try annotation(args)
+            case "studioTask":try advancedTask(args)
+            case "musicSettings":try musicSettings(args)
+            case "phone":try phoneCommand(args)
             case "midi":try startJob("midi"){result in
                 let obj=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
                 self.lastExport=obj["path"] as? String ?? "";self.notice="Fichier MIDI de batterie créé. Afficher l’export permet de le retrouver."
@@ -495,5 +505,5 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         do{try save()}catch{notice=error.localizedDescription;sendState();return .terminateCancel}
         return .terminateNow
     }
-    func applicationWillTerminate(_ notification:Notification){quitting=true;timer?.invalidate();audio.pause();job?.terminate()}
+    func applicationWillTerminate(_ notification:Notification){quitting=true;timer?.invalidate();audio.pause();job?.terminate();phoneProcess?.terminate()}
 }

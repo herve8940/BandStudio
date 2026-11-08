@@ -59,7 +59,15 @@ def separate(audio, output, model, engine, quality='standard'):
     from demucs.audio import convert_audio
     import numpy as np
     torch.set_num_threads(max(1, min(4, os.cpu_count() or 1)))
-    net = get_model(model)
+    if model == '49469ca8':
+        import hashlib
+        from demucs.states import load_model
+        checkpoint=Path(engine)/'drumsep/49469ca8.th'
+        if hashlib.sha256(checkpoint.read_bytes()).hexdigest()!='aefaa8543c9b9c75e22f5f32b53ab86dfe416457849af1383ff1aef83401423f':raise ValueError('Modèle DrumSep modifié ou incomplet.')
+        # Only this exact, verified upstream checkpoint may deserialize its model class.
+        net=load_model(torch.load(checkpoint,map_location='cpu',weights_only=False))
+    else:
+        net=get_model(model)
     # Bounded CPU operation is portable on Intel and does not interrupt playback.
     x, sr = sf.read(audio, dtype='float32', always_2d=True)
     x = convert_audio(torch.from_numpy(x.T), sr, net.samplerate, net.audio_channels)
@@ -80,7 +88,8 @@ def separate(audio, output, model, engine, quality='standard'):
     for name, data in zip(net.sources, sources):
         path = folder / (name + '.wav')
         sf.write(path, data.cpu().numpy().T, net.samplerate, subtype='FLOAT')
-        files.append(dict(role=name, path=str(path)))
+        role={'bombo':'kick','redoblante':'snare','platillos':'cymbals','toms':'toms'}.get(name,name)
+        files.append(dict(role=('drum_'+role if model == '49469ca8' else name), path=str(path)))
     write(output, dict(tracks=files, model=model,quality=quality))
 
 
@@ -104,7 +113,9 @@ def analyze(audio, output, mode, engine):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument('command', choices=['grid', 'structure', 'separate','guides','link','decode','reaper','rpp','lyrics','chords','drums','midi'])
+    p.add_argument('command', choices=['grid', 'structure', 'separate','drumsep','guides','link','decode','reaper','rpp','lyrics','chords','drums','midi','smartgrid','key','lyricsimport','lyricsexport','stemsexport','master','report','portable','sheet'])
+    p.add_argument('--options',default='{}')
+    p.add_argument('--options-file')
     p.add_argument('--input', default='')
     p.add_argument('--project')
     p.add_argument('--url')
@@ -126,6 +137,14 @@ def main():
     os.environ['HF_HUB_OFFLINE']='1'
     sys.path.insert(0,str(engine))
     from services import guides,import_link,decode,export_reaper,export_midi,import_reaper
+    if a.command=='drumsep':
+        if not (engine/'drumsep/49469ca8.th').is_file():raise ValueError('Le modèle DrumSep n’est pas installé.')
+        separate(a.input,a.output,'49469ca8',engine,a.quality)
+        return
+    if a.command in ('smartgrid','key','lyricsimport','lyricsexport','stemsexport','master','report','portable','sheet'):
+        from advanced import run
+        run(a.command,a.project,a.output,engine,json.loads(Path(a.options_file).read_text() if a.options_file else a.options),a.input)
+        return
     if a.command=='guides':guides(a.project,a.output);return
     if a.command=='link':import_link(a.url,a.output,engine);return
     if a.command=='decode':

@@ -69,8 +69,9 @@ class Audio:
                 on=include_guides and s['regionCountEnabled' if role=='guide_count' else key+'Enabled'];gain=s[key+'Gain'];pan=s[key+'Pan']
             elif self.mode=='original':on=role=='source' and not t['muted']
             elif role=='source':on=self.mode=='mix' and not has_stems and not t['muted'] and not solo
-            elif self.mode=='minus':on=on and role!='drums'
-            elif self.mode=='drums':on=on and role=='drums'
+            elif self.mode=='minus':on=on and role!='drums' and not role.startswith('drum_')
+            elif self.mode=='drums':on=on and (role=='drums' or role.startswith('drum_'))
+            if role=='drums' and any(x['role'].startswith('drum_') for x in p['tracks']) and not t['solo']:on=False
             if not on:continue
             data=self.data[t['id']];offset=round((start-t['offset'])/self.rate*SR);begin=max(0,-offset);source=max(0,offset);n=min(frames-begin,len(data)-source)
             if n>0:out[begin:begin+n]+=data[source:source+n]*pan_gain(gain,pan)

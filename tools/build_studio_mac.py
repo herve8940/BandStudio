@@ -47,6 +47,8 @@ def prepare_runtime(source, engine):
     shutil.copy2(ROOT / 'desktop/studio/worker.py', engine / 'worker.py')
     shutil.copy2(ROOT / 'desktop/studio/services.py',engine/'services.py')
     shutil.copy2(ROOT / 'desktop/studio/platform_tools.py',engine/'platform_tools.py')
+    shutil.copy2(ROOT / 'desktop/studio/advanced.py',engine/'advanced.py')
+    shutil.copy2(ROOT / 'desktop/studio/phone.py',engine/'phone.py')
     # No inherited DAW settings. Worker settings and model cache belong to the app.
     (engine / '.studio-owned').write_text('BandStudio standalone analysis runtime\n')
 
@@ -64,17 +66,18 @@ def build(source, prepare=False):
     shutil.copytree(ROOT / 'desktop/studio/web', resources / 'web')
     for name in ['README.txt','capabilities.json']:
         shutil.copy2(ROOT/'desktop/studio'/name,resources/name)
+    shutil.copy2(ROOT/'THIRD_PARTY_NOTICES.md',resources/'THIRD_PARTY_NOTICES.md')
     (resources / 'studio.json').write_text(json.dumps({'runtime':str(engine),'library':str(BUILD / 'Projects')}))
     info=dict(CFBundleName='BandStudio',CFBundleDisplayName='BandStudio',CFBundleIdentifier='fr.bandstudio.mac',
-              CFBundleExecutable='BandStudio',CFBundlePackageType='APPL',CFBundleShortVersionString='0.2.0',
-              CFBundleVersion='2',NSHighResolutionCapable=True,LSMinimumSystemVersion='12.0',
+              CFBundleExecutable='BandStudio',CFBundlePackageType='APPL',CFBundleShortVersionString='0.4.0',
+              CFBundleVersion='5',NSHighResolutionCapable=True,LSMinimumSystemVersion='12.0',
               NSMicrophoneUsageDescription='BandStudio enregistre tes prises sur les entrées audio sélectionnées.',
               CFBundleDocumentTypes=[dict(CFBundleTypeName='Projet BandStudio',CFBundleTypeExtensions=['bandstudio'],CFBundleTypeRole='Editor',LSTypeIsPackage=True)],
               NSHumanReadableCopyright='BandStudio · atelier de musique autonome')
     (contents / 'Info.plist').write_bytes(plistlib.dumps(info))
     cache=BUILD / 'swift-module-cache';cache.mkdir(exist_ok=True)
     subprocess.run(['xcrun','swiftc','-O','-module-cache-path',str(cache),
-                    *[str(ROOT / 'desktop/studio' / f) for f in ['StudioSettings.swift','StudioCore.swift','StudioApp.swift','StudioWorkflows.swift','main.swift']],
+                    *[str(ROOT / 'desktop/studio' / f) for f in ['StudioSettings.swift','StudioCore.swift','StudioApp.swift','StudioWorkflows.swift','StudioAdvanced.swift','StudioPhone.swift','main.swift']],
                     '-o',str(mac / 'BandStudio'),'-framework','AppKit','-framework','WebKit','-framework','AVFoundation'],check=True)
     subprocess.run(['codesign','--force','--sign','-',str(app)],check=True)
     subprocess.run(['codesign','--verify','--deep','--strict',str(app)],check=True)

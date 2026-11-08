@@ -18,13 +18,13 @@ from services import atomic,safe_name
 from windows import project as model
 from windows.audio import Audio,SR
 
-COMPONENTS={'separate':'stems','structure':'structure','lyrics':'words','chords':'chords','drums':'drums'}
-ENVIRONMENTS={'separate':'.venv-demucs','structure':'.venv-structure','lyrics':'.venv-words','chords':'.venv-chords','drums':'.venv-drums'}
+COMPONENTS={'separate':'stems','drumsep':'drumsep','structure':'structure','lyrics':'words','chords':'chords','drums':'drums','smartgrid':'rhythm'}
+ENVIRONMENTS={'separate':'.venv-demucs','drumsep':'.venv-demucs','structure':'.venv-structure','lyrics':'.venv-words','chords':'.venv-chords','drums':'.venv-drums','smartgrid':'.venv-demucs'}
 
 class Api:
     def __init__(self,engine,library=None):
         self._engine=Path(engine).resolve();self._library=Path(library or Path.home()/'Music/BandStudioDev');self._library.mkdir(parents=True,exist_ok=True)
-        self._project=model.fresh();self._root=None;self._audio=Audio(self._engine);self._window=None;self._busy=False;self._job_name='';self._job=None;self._job_log=None;self._notice='';self._revision=0;self._history=[];self._future=[];self._last_export='';self._stop=threading.Event();self._lock=threading.RLock();self._record=None;self._components={}
+        self._project=model.fresh();self._root=None;self._audio=Audio(self._engine);self._window=None;self._busy=False;self._job_name='';self._job=None;self._job_log=None;self._notice='';self._revision=0;self._history=[];self._future=[];self._last_export='';self._stop=threading.Event();self._lock=threading.RLock();self._record=None;self._components={};self._phone=None
         try:self._setlists=json.loads((self._library/'setlists.json').read_text(encoding='utf-8'))
         except (OSError,ValueError):self._setlists=[]
     def _send(self,value):
@@ -44,6 +44,7 @@ class Api:
     def _pulse(self):
         while not self._stop.wait(.1):
             self._transport()
+            if self._phone:self._phone.update(self)
             if self._audio.error:self._notice=self._audio.error;self._audio.error='';self._state()
             if self._audio.pending_rate and not self._busy:
                 rate=self._audio.pending_rate;self._audio.pending_rate=None
@@ -87,6 +88,9 @@ class Api:
         folder=(self._root or self._library/'.Imports')/'Analyses'/model.ident();folder.mkdir(parents=True)
         snapshot=folder/'project.json';atomic(snapshot,{**self._project,'_root':str(self._root or folder),'_mode':self._audio.mode})
         result=folder/'result.json';python=python_for(self._engine,ENVIRONMENTS.get(kind,'.venv'))
+        arguments=list(arguments)
+        if '--options' in arguments:
+            index=arguments.index('--options');options=folder/'options.json';options.write_text(arguments[index+1],encoding='utf-8');arguments[index:index+2]=['--options-file',str(options)]
         args=[str(python),str(self._engine/'worker.py'),kind,'--engine',str(self._engine),'--project',str(snapshot),'--output',str(result),*map(str,arguments)]
         if input:args+=['--input',str(input)]
         env=os.environ.copy();env.update(PYTHONUTF8='1',PYTHONIOENCODING='utf-8',PYTHONUNBUFFERED='1',PYTHONDONTWRITEBYTECODE='1',HF_HUB_OFFLINE='1',PATH=str(self._engine/'import-tools')+os.pathsep+env.get('PATH',''))
@@ -106,8 +110,8 @@ class Api:
     def _load(self,root):
         p=model.load(root);self._audio.loop=False;self._audio.load(p,root);self._project=p;self._root=root;self._history=[];self._future=[];self._last_export='';self._revision+=1;self._state()
         self._guides()
-    def _guides(self):
-        if self._ready_guides():return
+    def _guides(self,force=False):
+        if not force and self._ready_guides():return
         result,obj=self._work('guides');folder=self._root/'Guides'/model.ident();folder.mkdir(parents=True)
         mapping={}
         for key,value in obj['files'].items():
@@ -143,19 +147,22 @@ class Api:
         if not source.is_relative_to(result.parent.resolve()):raise ValueError('Dossier d’import invalide.')
         p=model.load(source);target=self._library/(safe_name(p['name'])+' '+p['id'][:6]+'.bandstudio');shutil.move(str(source),target);self._load(target);self._notice='Projet REAPER importé. '+' '.join(obj.get('warnings',[]))
     def _analysis(self,kind,args):
-        desired={'lyrics':'vocals','drums':'drums'}.get(kind,'source');source=next((t for t in self._project['tracks'] if t['role']==desired),None)
-        if not source and kind!='drums':source=next((t for t in self._project['tracks'] if t['role']=='source'),None)
+        if kind=='grid' and self._project.get('gridLocked'):raise ValueError('Le calage est protégé. Déverrouille-le dans Guidage avant une nouvelle analyse.')
+        desired={'lyrics':'vocals','drums':'drums','drumsep':'drums'}.get(kind,'source');source=next((t for t in self._project['tracks'] if t['role']==desired),None)
+        if not source and kind not in ('drums','drumsep'):source=next((t for t in self._project['tracks'] if t['role']=='source'),None)
         if not source:raise ValueError('Il manque la piste '+desired+'. Importe un morceau ou sépare ses instruments.')
+        offset=source['offset']
         result,obj=self._work(kind,model.relative_file(self._root,source['file']),['--model',args.get('model','htdemucs'),'--quality',args.get('quality','standard'),'--language',args.get('language','auto')]);self._remember()
         if kind=='grid':self._project['bpm']=obj.get('bpm',0);self._project['beats']=obj.get('beats',[])
         elif kind=='structure':model.apply_sections(self._project,obj['sections'])
-        elif kind=='separate':
-            tracks=[];names={'drums':'Batterie','bass':'Basse','vocals':'Chant','guitar':'Guitare','piano':'Piano','other':'Autres instruments'}
+        elif kind in ('separate','drumsep'):
+            tracks=[];names={'drums':'Batterie','bass':'Basse','vocals':'Chant','guitar':'Guitare','piano':'Piano','other':'Autres instruments','drum_kick':'Grosse caisse','drum_snare':'Caisse claire','drum_toms':'Toms','drum_cymbals':'Cymbales et charleston'}
             for t in obj['tracks']:
                 source=Path(t['path']).resolve()
                 if not source.is_relative_to(result.parent.resolve()):raise ValueError('Piste hors du dossier de traitement.')
-                target=self._root/'Audio'/(model.ident()+'.wav');shutil.copy2(source,target);tracks.append(model.track(target,self._root,names.get(t['role'],t['role']),t['role']))
-            self._project['tracks']=[t for t in self._project['tracks'] if t['role'] in ('source','take') or t['role'].startswith('guide_')]+tracks;self._reload();self._audio.mode='mix'
+                target=self._root/'Audio'/(model.ident()+'.wav');shutil.copy2(source,target);tracks.append(model.track(target,self._root,names.get(t['role'],t['role']),t['role'],offset if kind=='drumsep' else 0))
+            keep=[t for t in self._project['tracks'] if not t['role'].startswith('drum_')] if kind=='drumsep' else [t for t in self._project['tracks'] if t['role'] in ('source','take') or t['role'].startswith('guide_')]
+            self._project['tracks']=keep+tracks;self._reload();self._audio.mode='mix'
         elif kind=='drums':
             pitches={'BD':36,'SD':38,'TT':45,'HH':42,'CY':49};self._project['drumHits']=sorted([dict(time=t,pitch=pitches[k],velocity=max(1,min(127,round(prob*127)))) for k,rows in obj['onsets'].items() for t,prob in rows if t<=model.duration(self._project)],key=lambda x:x['time'])
         elif kind in ('lyrics','chords'):
@@ -177,11 +184,12 @@ class Api:
     def _reveal(self,path):
         if os.name=='nt':subprocess.Popen(['explorer.exe','/select,',str(Path(path))],creationflags=creation_flags())
     def _install(self,component):
-        if component not in ('stems','structure','words','chords','drums'):raise ValueError('Composant inconnu.')
+        if component not in ('stems','structure','words','chords','drums','rhythm','drumsep'):raise ValueError('Composant inconnu.')
         if component in self._components:raise ValueError('Cette installation est déjà ouverte.')
         env=os.environ.copy();env.update(PYTHONUTF8='1',REAPER_RESOURCE_PATH=str(self._engine/'worker-state'),UV_PYTHON_INSTALL_DIR=str(self._engine/'managed-python'),UV_CACHE_DIR=str(self._engine/'.uv_cache'),REACUE_WORDS_ENGINE='off',TORCH_HOME=str(self._engine/'torch-cache'))
         env['PATH']=str(self._engine/'tools')+os.pathsep+str(self._engine/'import-tools')+os.pathsep+env.get('PATH','')
-        proc=subprocess.Popen(['powershell.exe','-NoProfile','-ExecutionPolicy','Bypass','-NoExit','-File',str(self._engine/'install'/('install_'+component+'_windows.ps1')),'-Lang','fr'],cwd=self._engine,env=env,creationflags=subprocess.CREATE_NEW_CONSOLE)
+        script=['-File',str(self._engine/'windows/install_extra.ps1'),'-Component',component] if component in ('rhythm','drumsep') else ['-File',str(self._engine/'install'/('install_'+component+'_windows.ps1')),'-Lang','fr']
+        proc=subprocess.Popen(['powershell.exe','-NoProfile','-ExecutionPolicy','Bypass','-NoExit',*script],cwd=self._engine,env=env,creationflags=subprocess.CREATE_NEW_CONSOLE)
         self._components[component]=proc;self._notice='Une fenêtre d’installation est ouverte. Suis ses indications puis ferme-la quand elle a terminé.'
     def command(self,message):
         """The only method exposed to the local WebView; never accepts executable code."""
@@ -254,7 +262,7 @@ class Api:
         if cmd=='mode':
             mode=args['value']
             if mode not in ('original','mix','minus','drums'):raise ValueError('Mode inconnu.')
-            if mode in ('minus','drums') and not any(t['role']=='drums' for t in p['tracks']):raise ValueError('Sépare la batterie avant d’utiliser ce mode.')
+            if mode in ('minus','drums') and not any(t['role']=='drums' or t['role'].startswith('drum_') for t in p['tracks']):raise ValueError('Sépare la batterie avant d’utiliser ce mode.')
             a.mode=mode;return
         if cmd=='loop':
             start=model.number(args['start'],0,model.duration(p));end=model.number(args['end'],0,model.duration(p));on=bool(args['on'])
@@ -266,13 +274,43 @@ class Api:
             self._reveal(self._last_export if cmd=='showExport' and self._last_export else self._root);return
         if cmd=='save':self._save();self._notice='Projet enregistré.';return
         if cmd=='saveDefaults':atomic(self._library/'defaults.json',p['settings']);self._notice='Réglages enregistrés pour les prochains imports.';return
-        if cmd=='guides':a.pause();self._op('Préparation des guides',self._guides);return
+        if cmd=='guides':a.pause();self._op('Préparation des guides',lambda:self._guides(force=True));return
         if cmd=='settings':
             value={**model.GUIDE_DEFAULTS,**args['value']};candidate={**p,'settings':value};model.validate(candidate,self._root)
-            a.pause();self._remember();p['settings']=value;self._save();self._op('Préparation des guides',self._guides);return
+            a.pause();self._remember()
+            if any(value[k]!=p['settings'][k] for k in ('firstBeat','gridMode','beatsPerBar','manualBPM')):p['gridLocked']=True
+            p['settings']=value;self._save();self._op('Préparation des guides',self._guides);return
+        if cmd=='phone':
+            from windows.phone_host import PhoneSession
+            if args.get('on'):
+                if self._root is None:raise ValueError('Ouvre d’abord un morceau.')
+                if not self._phone:self._phone=PhoneSession(self._engine)
+                self._phone.announced=False;self._phone.update(self)
+            else:
+                if self._phone:self._phone.close()
+                self._phone=None;self._send(dict(type='phone',active=False))
+            return
+        if cmd=='musicSettings':
+            self._remember()
+            if 'capo' in args:
+                value=model.number(args['capo'],0,12)
+                if int(value)!=value:raise ValueError('Position de capo entière attendue.')
+                p['capo']=int(value)
+            if 'key' in args:
+                import re
+                if args['key'] and not re.fullmatch(r'[A-G](#|b)?m?',args['key']):raise ValueError('Tonalité invalide.')
+                p['key']=args['key']
+            if 'gridLocked' in args:p['gridLocked']=bool(args['gridLocked'])
+            self._save();return
+        if cmd=='studioTask':
+            from windows.advanced_host import advanced_task
+            kind=args.get('kind');options=args.get('options') or {}
+            if kind not in ('smartgrid','key','lyricsimport','lyricsexport','stemsexport','master','report','portable','sheet'):raise ValueError('Outil inconnu.')
+            if kind=='smartgrid' and p.get('gridLocked'):raise ValueError('Le calage est protégé. Déverrouille-le dans Guidage avant une nouvelle analyse.')
+            a.pause();self._op('Outil local : '+kind,lambda:advanced_task(self,kind,options));return
         if cmd=='analyze':
             kind=args.get('kind')
-            if kind not in ('grid','structure','separate','lyrics','chords','drums'):raise ValueError('Analyse inconnue.')
+            if kind not in ('grid','structure','separate','drumsep','lyrics','chords','drums'):raise ValueError('Analyse inconnue.')
             self._op('Analyse locale : '+kind,lambda:self._analysis(kind,args));return
         if cmd in ('reaper','midi'):
             def exported():
@@ -316,7 +354,7 @@ class Api:
             for k in ('muted','solo'):
                 if k in args:track[k]=bool(args[k])
             if args.get('name'):track['name']=str(args['name'])[:120]
-            if args.get('role') in ('drums','bass','vocals','guitar','piano','other','take') and track['role']!='source':track['role']=args['role']
+            if args.get('role') in ('drums','drum_kick','drum_snare','drum_toms','drum_cymbals','bass','vocals','guitar','piano','other','take') and track['role']!='source':track['role']=args['role']
             model.validate(p,self._root)
             with a.lock:a.project=copy.deepcopy(p)
         elif cmd in ('section','cue'):
@@ -348,7 +386,14 @@ class Api:
             if not args.get('delete'):
                 start=model.number(args['start'],0,model.duration(p));end=model.number(args['end'],start+.000001,model.duration(p));text=str(args['text']).strip()
                 if not text:raise ValueError('Saisis un texte.')
-                entries.append(dict(id=ident,start=start,end=end,text=text[:1000],manual=True))
+                words=[];previous=start
+                if kind=='lyrics':
+                    if len(args.get('words',[]))>300:raise ValueError('Trop de mots pour cette ligne.')
+                    for w in args.get('words',[]):
+                        a=model.number(w['start'],start,end);b=model.number(w['end'],start,end);word=str(w['text']).strip()
+                        if a<previous or b<=a or not word or len(word)>120:raise ValueError('Horaires des mots invalides ou chevauchants.')
+                        words.append(dict(start=a,end=b,text=word));previous=b
+                entries.append(dict(id=ident,start=start,end=end,text=text[:1000],manual=True,words=words))
             p[kind]=sorted(entries,key=lambda x:x['start'])
         elif cmd=='drumHit':
             at=model.number(args['time'],0,model.duration(p));pitch=int(model.number(args['pitch'],0,127));tolerance=model.number(args['tolerance'],.001,1)
@@ -403,4 +448,5 @@ class Api:
         if self._job:
             if os.name=='nt':subprocess.run(['taskkill.exe','/PID',str(self._job.pid),'/T','/F'],capture_output=True,creationflags=creation_flags())
             else:self._job.terminate()
+        if self._phone:self._phone.close()
         self._stop.set();self._audio.close();return True

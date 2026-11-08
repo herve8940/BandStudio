@@ -48,3 +48,14 @@ Si le démarrage échoue, ouvre Demarrer-avec-console.cmd et conserve le message
 Le journal est dans %LOCALAPPDATA%\BandStudioDev\demarrage.log.
 Pour un retour utile : version Windows, processeur/RAM, interface audio, action effectuée et message d’erreur.
 N’envoie pas de fichiers musicaux ou de données personnelles sans raison.
+
+NOUVEAUTÉS 0.4
+Dans Réglages → Analyses locales : installer les stems avant Rythme avancé (Beat This)
+ou Éléments de batterie (DrumSep). Ces deux modèles fonctionnent ensuite sans connexion.
+DrumSep produit grosse caisse, caisse claire, toms et cymbales/charleston regroupés.
+Le calage des anciens projets est protégé ; déverrouille-le dans Guidage pour le réanalyser.
+Outils regroupe exports de stems, paroles SRT/LRC, fiche PDF, ZIP portable, normalisation
+de niveau et rapport audio. Le prompteur téléphone partage les indications de jeu
+en lecture seule sur le même réseau Wi-Fi, uniquement après activation.
+La tonalité, le capo et les horaires des mots se corrigent dans le prompteur.
+Ni génération musicale/voix, ni cloud, ni plugin VST, ni pilotage XR direct dans cette version.

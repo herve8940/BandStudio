@@ -33,17 +33,17 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install build and test tools
-        run: python -m pip install uv pytest numpy==1.26.4 scipy==1.13.1 soundfile==0.13.1
+        run: python -m pip install uv pytest numpy==1.26.4 scipy==1.13.1 soundfile==0.13.1 reportlab==4.4.10 qrcode[pil]==8.2
       - name: Build self-contained development archive
         run: python tools/package_studio_windows.py
       - name: Test document edits and audio mixing
         shell: pwsh
         run: |
           $env:BANDSTUDIO_TEST_ENGINE = "$pwd/dist/bandstudio/stage/BandStudio-DEV/engine"
-          python -m pytest -q tests/test_studio_windows.py tests/test_studio_services.py
+          python -m pytest -q tests/test_studio_windows.py tests/test_studio_services.py tests/test_studio_advanced.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test relocated package, Windows speech and native interface
-        run: python tools/check_studio_windows.py dist/bandstudio/BandStudio-0.3.0-dev.1-Windows-x64.zip --report dist/checks
+        run: python tools/check_studio_windows.py dist/bandstudio/BandStudio-0.4.0-dev.1-Windows-x64.zip --report dist/checks
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
@@ -89,13 +89,14 @@ jobs:
           cat > "$RUNNER_TEMP/bandstudio-notes.md" <<EOF
           Préversion **BandStudio pour Windows 11 x64**.
 
-          1. Télécharger **BandStudio-0.3.0-dev.1-Windows-x64.zip** ci-dessous.
+          1. Télécharger **BandStudio-0.4.0-dev.1-Windows-x64.zip** ci-dessous.
           2. Décompresser tout le dossier dans un emplacement permanent.
           3. Ouvrir **BandStudio.exe**. Un morceau synthétique permet de tester immédiatement le lecteur et le guidage.
 
           Python, FFmpeg et Deno sont inclus. REAPER n’est pas nécessaire pour lancer l’application.
           Les moteurs de séparation des stems, structure, paroles, accords et batterie s’installent depuis **Réglages → Analyses locales** (Internet et plusieurs Go possibles).
-          Import/export REAPER, projets BandStudio, sections/cues, appels, décomptes, boucles, mixage, exports et enregistrement sont proposés.
+          Nouveautés 0.4 : temps et mesures avec Beat This, batterie en 4 éléments avec DrumSep, tonalité/capo, paroles LRC/SRT et mots éditables, exports WAV/FLAC/MP3/AAC, fiche PDF, ZIP portable, normalisation du mix et prompteur téléphone en lecture seule sur le même Wi-Fi. Les modèles avancés s’installent après le composant stems.
+          Import/export REAPER, sections/cues, appels, décomptes, boucles, mixage et enregistrement restent disponibles.
 
           **Vérifié automatiquement sur Windows (runner GitHub Actions)** : archive déplacée dans un dossier avec espaces/accents, Python embarqué, voix SAPI, rendu audio, décompte conservé lors de la transposition, échange REAPER, démarrage de la fenêtre WebView2 et communication avec le lecteur.
           Les modèles IA facultatifs, la lecture sur une vraie interface audio et la latence d’enregistrement restent à tester sur le PC.

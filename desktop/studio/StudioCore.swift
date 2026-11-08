@@ -54,11 +54,16 @@ struct StudioProject: Codable {
     var chords:[TimedText]=[]
     var drumHits:[DrumHit]=[]
     var key=""
+    var capo=0
+    var gridLocked=false
+    var downbeats:[Double]=[]
+    var analysisNote=""
     var sourceURL=""
     var duration: Double { tracks.filter{!$0.role.hasPrefix("guide_")}.map { $0.duration + $0.offset }.max() ?? 0 }
 
     func validate() throws {
         try settings.validate()
+        guard (0...12).contains(capo),downbeats.allSatisfy({$0.isFinite && $0>=0 && $0<=duration+0.1}) else {throw StudioError("Repères de mesure ou capo invalides.")}
         guard version == 1, tracks.count <= 128, sections.count <= 10000,
               Set(tracks.map(\.id)).count == tracks.count else { throw StudioError("Format de projet non pris en charge.") }
         for t in tracks {
@@ -214,6 +219,7 @@ final class StudioAudio {
     func applyMix() {
         let hasSolo=project.tracks.contains{$0.solo && $0.role != "source" && !$0.role.hasPrefix("guide_")}
         let hasStems=project.tracks.contains{$0.role != "source" && $0.role != "take" && !$0.role.hasPrefix("guide_")}
+        let hasDrumParts=project.tracks.contains{$0.role.hasPrefix("drum_")}
         let s=project.settings
         countClick.volume=s.countClick ? s.countGain : 0;countClick.pan=s.countPan
         countVoice.volume=s.countVoice ? s.countGain : 0;countVoice.pan=s.countPan
@@ -225,8 +231,9 @@ final class StudioAudio {
             var audible = !t.muted && (!hasSolo || t.solo)
             if mode == "original" {audible=t.role == "source" && !t.muted}
             else if t.role == "source" {audible=mode == "mix" && !hasStems && !t.muted && !hasSolo}
-            else if mode == "drums" {audible=audible && t.role == "drums"}
-            else if mode == "minus" {audible=audible && t.role != "drums"}
+            else if mode == "drums" {audible=audible && (t.role == "drums" || t.role.hasPrefix("drum_"))}
+            else if mode == "minus" {audible=audible && t.role != "drums" && !t.role.hasPrefix("drum_")}
+            if t.role == "drums" && hasDrumParts && !t.solo {audible=false}
             players[i].volume=audible ? t.gain : 0;players[i].pan=t.pan
         }
     }
