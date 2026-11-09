@@ -232,7 +232,13 @@ class Api:
         if self._record and cmd not in ('record','stop','studioControl'):raise ValueError('Arrête la prise avant cette action.')
         if cmd=='installComponent':self._install(args.get('component'));return
         if cmd=='audioSettings':os.startfile('ms-settings:sound');return
-        if cmd=='bandpilot':raise ValueError('La connexion directe avec BandPilot n’est pas disponible dans cette préversion Windows.')
+        if cmd=='bandpilot':
+            local=Path(os.environ.get('LOCALAPPDATA',Path.home()/'AppData/Local'))
+            programs=Path(os.environ.get('ProgramFiles','C:/Program Files'))
+            candidates=[local/'Programs/BandPilot/BandPilot.exe',local/'Programs/xr18-studio/BandPilot.exe',local/'BandPilot/BandPilot.exe',programs/'BandPilot/BandPilot.exe']
+            installed=next((path for path in candidates if path.is_file()),None)
+            if installed is None:raise ValueError('Installe BandPilot 2.3.4 DEV ou ouvre-le manuellement, puis active Relier BandPilot dans Prises.')
+            os.startfile(str(installed));return
         if cmd in ('import','addTracks'):
             paths=self._dialog('OPEN',allow_multiple=cmd=='addTracks',file_types=('Audio et vidéos (*.*)',))
             if paths:a.pause();self._op('Import du morceau',lambda:self._import(paths,cmd=='import'))

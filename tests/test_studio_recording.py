@@ -70,6 +70,14 @@ def test_capture_plan_rejects_duplicate_or_nonexistent_numbers():
     with pytest.raises(ValueError):recording.settings(dict(channels=[dict(input=33,name='A')]))
     with pytest.raises(ValueError):recording.settings(dict(latencyMS=float('nan')))
 
+def test_bandpilot_button_finds_windows_installation(tmp_path,monkeypatch):
+    import os
+    local=tmp_path/'Local';app=local/'Programs/BandPilot/BandPilot.exe';app.parent.mkdir(parents=True);app.write_bytes(b'test placeholder')
+    monkeypatch.setenv('LOCALAPPDATA',str(local));opened=[]
+    monkeypatch.setattr(os,'startfile',lambda path:opened.append(path),raising=False)
+    host=Api(ENGINE,tmp_path/'library');host._command(dict(command='bandpilot'))
+    assert opened==[str(app)]
+
 
 @pytest.mark.parametrize('action',['record','play'])
 def test_stop_cancels_transport_while_guides_are_preparing(tmp_path,monkeypatch,action):
