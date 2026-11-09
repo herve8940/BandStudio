@@ -40,10 +40,10 @@ jobs:
         shell: pwsh
         run: |
           $env:BANDSTUDIO_TEST_ENGINE = "$pwd/dist/bandstudio/stage/BandStudio-DEV/engine"
-          python -m pytest -q tests/test_studio_windows.py tests/test_studio_services.py tests/test_studio_advanced.py
+          python -m pytest -q tests/test_studio_windows.py tests/test_studio_services.py tests/test_studio_advanced.py tests/test_studio_recording.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test relocated package, Windows speech and native interface
-        run: python tools/check_studio_windows.py dist/bandstudio/BandStudio-0.4.0-dev.1-Windows-x64.zip --report dist/checks
+        run: python tools/check_studio_windows.py dist/bandstudio/BandStudio-0.5.0-dev.1-Windows-x64.zip --report dist/checks
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
@@ -89,18 +89,19 @@ jobs:
           cat > "$RUNNER_TEMP/bandstudio-notes.md" <<EOF
           Préversion **BandStudio pour Windows 11 x64**.
 
-          1. Télécharger **BandStudio-0.4.0-dev.1-Windows-x64.zip** ci-dessous.
+          1. Télécharger **BandStudio-0.5.0-dev.1-Windows-x64.zip** ci-dessous.
           2. Décompresser tout le dossier dans un emplacement permanent.
           3. Ouvrir **BandStudio.exe**. Un morceau synthétique permet de tester immédiatement le lecteur et le guidage.
 
           Python, FFmpeg et Deno sont inclus. REAPER n’est pas nécessaire pour lancer l’application.
           Les moteurs de séparation des stems, structure, paroles, accords et batterie s’installent depuis **Réglages → Analyses locales** (Internet et plusieurs Go possibles).
-          Nouveautés 0.4 : temps et mesures avec Beat This, batterie en 4 éléments avec DrumSep, tonalité/capo, paroles LRC/SRT et mots éditables, exports WAV/FLAC/MP3/AAC, fiche PDF, ZIP portable, normalisation du mix et prompteur téléphone en lecture seule sur le même Wi-Fi. Les modèles avancés s’installent après le composant stems.
+          Nouveautés 0.5 : enregistrement des entrées armées, session vide, prise sur morceau et punch, liaison locale BandPilot, mastering EQ/compression/stéréo, génération instrumentale MusicGen Small (usage non commercial), chant/chœurs et extension ReaScript. Les modèles créatifs sont facultatifs et à installer dans Réglages.
+          Acquis 0.4 : temps et mesures avec Beat This, batterie en 4 éléments avec DrumSep, tonalité/capo, paroles LRC/SRT et mots éditables, exports WAV/FLAC/MP3/AAC, fiche PDF, ZIP portable, normalisation du mix et prompteur téléphone en lecture seule sur le même Wi-Fi. Les modèles avancés s’installent après le composant stems.
           Import/export REAPER, sections/cues, appels, décomptes, boucles, mixage et enregistrement restent disponibles.
 
           **Vérifié automatiquement sur Windows (runner GitHub Actions)** : archive déplacée dans un dossier avec espaces/accents, Python embarqué, voix SAPI, rendu audio, décompte conservé lors de la transposition, échange REAPER, démarrage de la fenêtre WebView2 et communication avec le lecteur.
           Les modèles IA facultatifs, la lecture sur une vraie interface audio et la latence d’enregistrement restent à tester sur le PC.
-          Préversion non signée ; WebView2 requis. Vitesse/tonalité préparées dans un cache, périphériques Windows par défaut, liaison directe BandPilot/XR encore absente.
+          Préversion non signée ; WebView2 requis. Vitesse/tonalité préparées dans un cache, sortie Windows par défaut et entrées sélectionnables. La liaison nécessite BandPilot compatible 2.3.4 DEV ; pas de réglage XR automatique.
           Le ZIP ne contient aucun morceau personnel de l’auteur. La version Mac installée et la publication stable sont indépendantes.
 
           **English:** Windows 11 x64 development preview. Extract the complete ZIP, then run BandStudio.exe. Python and audio tools are bundled; optional AI components install from Settings. REAPER is optional. Automated Windows runtime, speech, audio, exchange and interface checks passed; real audio hardware and optional models still need testing. Unsigned preview; WebView2 required. Read LIRE-MOI.txt for limitations.

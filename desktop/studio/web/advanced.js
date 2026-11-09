@@ -35,7 +35,7 @@ $('lyricsFile').onchange=async()=>{
  catch{$('lyricsImportStatus').textContent='Impossible de lire ce fichier.';}
  $('lyricsFile').value='';
 };
-$('masterForm').onsubmit=e=>{e.preventDefault();studioTask('master',{lufs:Number($('masterLUFS').value),peak:Number($('masterPeak').value),lra:Number($('masterLRA').value)});};
+$('masterForm').onsubmit=e=>{e.preventDefault();studioTask('master',{lufs:Number($('masterLUFS').value),peak:Number($('masterPeak').value),lra:Number($('masterLRA').value),lowDB:Number($('masterLow').value),midDB:Number($('masterMid').value),highDB:Number($('masterHigh').value),width:Number($('masterWidth').value),compressDB:Number($('masterThreshold').value),ratio:Number($('masterRatio').value),attackMS:Number($('masterAttack').value),releaseMS:Number($('masterRelease').value)});};
 const oldFeatures=renderFeatures;
 renderFeatures=function(){oldFeatures();
  const p=state.project;
@@ -88,3 +88,6 @@ $('startPhone').onclick=()=>{send('phone',{on:true});$('phoneStatus').textConten
 $('stopPhone').onclick=()=>send('phone',{on:false});
 const receiveBeforePhone=window.studioReceive;
 window.studioReceive=data=>{if(data.type==='phone'){$('phoneStatus').textContent=data.error||(data.active?'Actif · même réseau Wi-Fi requis':'Désactivé');$('startPhone').hidden=!!data.active;$('stopPhone').hidden=!data.active;$('phoneQR').hidden=!data.active;$('phoneURL').hidden=!data.active;if(data.active){$('phoneQR').src=data.qr;$('phoneURL').value=data.url;}}else receiveBeforePhone(data);};
+
+$('splitVocals').onclick=()=>send('creative',{kind:'vocalsplit'});
+$('generateForm').onsubmit=e=>{e.preventDefault();send('creative',{kind:'generate',options:{prompt:$('generationPrompt').value,duration:Number($('generationDuration').value),seed:Number($('generationSeed').value)}});};

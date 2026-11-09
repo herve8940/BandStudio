@@ -38,6 +38,8 @@ struct Cue: Codable {
     var announce:Bool? = nil
 }
 struct StudioProject: Codable {
+    var sessionDuration=0.0
+    var capture=CaptureSettings()
     var version = 1
     var id = UUID().uuidString
     var name = "Nouveau morceau"
@@ -59,10 +61,11 @@ struct StudioProject: Codable {
     var downbeats:[Double]=[]
     var analysisNote=""
     var sourceURL=""
-    var duration: Double { tracks.filter{!$0.role.hasPrefix("guide_")}.map { $0.duration + $0.offset }.max() ?? 0 }
+    var duration: Double { max(sessionDuration,tracks.filter{!$0.role.hasPrefix("guide_")}.map { $0.duration + $0.offset }.max() ?? 0) }
 
     func validate() throws {
-        try settings.validate()
+        try settings.validate();try capture.validate()
+        guard sessionDuration.isFinite,(0...43200).contains(sessionDuration) else{throw StudioError("Durée de session invalide.")}
         guard (0...12).contains(capo),downbeats.allSatisfy({$0.isFinite && $0>=0 && $0<=duration+0.1}) else {throw StudioError("Repères de mesure ou capo invalides.")}
         guard version == 1, tracks.count <= 128, sections.count <= 10000,
               Set(tracks.map(\.id)).count == tracks.count else { throw StudioError("Format de projet non pris en charge.") }
@@ -170,6 +173,7 @@ final class StudioAudio {
     var files:[AVAudioFile]=[]
     var project=StudioProject()
     var running=false
+    var playbackHost:UInt64=0
     var position=0.0
     var rate:Float=1
     var pitch:Float=0
@@ -234,6 +238,7 @@ final class StudioAudio {
             else if mode == "drums" {audible=audible && (t.role == "drums" || t.role.hasPrefix("drum_"))}
             else if mode == "minus" {audible=audible && t.role != "drums" && !t.role.hasPrefix("drum_")}
             if t.role == "drums" && hasDrumParts && !t.solo {audible=false}
+            if t.role == "vocals" && project.tracks.contains(where:{$0.role.hasPrefix("vocal_")}) && !t.solo {audible=false}
             players[i].volume=audible ? t.gain : 0;players[i].pan=t.pan
         }
     }
@@ -322,7 +327,8 @@ final class StudioAudio {
         for c in 0..<2 {silence.floatChannelData![c].initialize(repeating:0,count:1024)}
         clock.scheduleBuffer(silence,at:nil,options:.loops)
         engine.prepare();try engine.start()
-        let time=AVAudioTime(hostTime:mach_absolute_time()+AVAudioTime.hostTime(forSeconds:0.08))
+        playbackHost=mach_absolute_time()+AVAudioTime.hostTime(forSeconds:0.08)
+        let time=AVAudioTime(hostTime:playbackHost)
         clock.play(at:time);for n in players+[countClick,countVoice,startCall] {n.play(at:time)}
         running=true
     }

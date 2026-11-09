@@ -38,8 +38,8 @@ Ne déplace pas le dossier de l’application après avoir installé ces composa
 LIMITES DE CETTE PRÉVERSION
 Les changements de vitesse/tonalité sont préparés dans un cache audio avant de reprendre la lecture.
 Les paliers de vitesse d’une boucle peuvent donc provoquer une pause de préparation.
-Les sorties et entrées audio sont celles choisies par défaut dans Windows ; pas encore de choix ASIO intégré.
-La liaison directe BandPilot/XR et le contrôle scène/lumières ne sont pas disponibles.
+La sortie utilise le périphérique Windows par défaut ; les entrées se choisissent dans Prises parmi les périphériques disponibles dans PortAudio. Pas de panneau ASIO natif garanti.
+La liaison locale BandPilot 2.3.4 DEV pilote le transport et les prises ; le contrôle scène/lumières et la correction XR automatique restent absents.
 La voix utilisée est une voix SAPI Windows installée ; le rendu peut différer de celui du Mac.
 Les tests automatiques ne valident pas la latence et la stabilité sur chaque interface audio réelle.
 
@@ -58,4 +58,12 @@ Outils regroupe exports de stems, paroles SRT/LRC, fiche PDF, ZIP portable, norm
 de niveau et rapport audio. Le prompteur téléphone partage les indications de jeu
 en lecture seule sur le même réseau Wi-Fi, uniquement après activation.
 La tonalité, le capo et les horaires des mots se corrigent dans le prompteur.
-Ni génération musicale/voix, ni cloud, ni plugin VST, ni pilotage XR direct dans cette version.
+Pas de génération de chant intelligible, conversion vocale, cloud ou plug-in VST3/AU. Les nouveaux modèles créatifs sont facultatifs.
+
+NOUVEAUTÉS 0.5
+Prises : interface et entrées armées, noms, WAV24, session vide, prise sur morceau et punch.
+BandPilot compatible : activer Relier BandPilot dans Prises, puis piloter depuis Enregistrement.
+Outils : mastering EQ/compression/stéréo, chant/chœurs UVR et accompagnements courts MusicGen Small.
+Installer Création et chant/chœurs dans Réglages. MusicGen : modèle CC-BY-NC, usage non commercial.
+L’extension REAPER exportée est un ReaScript de télécommande, pas un effet audio VST.
+Les modèles et l’interface audio physique restent à tester sur ce PC.

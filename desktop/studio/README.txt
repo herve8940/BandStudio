@@ -1,4 +1,4 @@
-BandStudio 0.4.0 DEV — atelier autonome pour répéter et enregistrer
+BandStudio 0.5.0 DEV — atelier autonome pour répéter et enregistrer
 
 DÉMARRER
 L’application est installée dans ~/Applications/BandStudio.app.
@@ -75,24 +75,43 @@ La grille de la mesure courante permet d’ajouter ou retirer une frappe. L’ex
 Ces analyses sont des propositions. Leurs essais techniques ne prouvent pas leur justesse sur tous les morceaux.
 Les setlists, dans Morceaux, organisent la bibliothèque et l’ordre de répétition. Chaque morceau s’arrête à sa fin.
 
-ENREGISTRER
-Choisis l’entrée dans les réglages audio du Mac. Toutes les entrées du périphérique choisi deviennent des pistes.
-Enregistre à 100 %, sans transposition et sans boucle. Le retour logiciel est désactivé.
-Le décompte est entendu avant le morceau et sa durée est soustraite au placement de la prise.
-La latence de l’interface reste à contrôler et à corriger avec le champ Départ de la prise.
-L’enregistrement sur une console XR dépend de son choix comme périphérique audio dans macOS.
-Le contrôle des paramètres de la console et la liaison directe des analyses avec BandPilot ne sont pas intégrés.
+ENREGISTRER ET PILOTER DEPUIS BANDPILOT
+Prises : crée une session vide pour toute la répétition, ou ouvre un morceau pour jouer dessus.
+Choisis explicitement l’interface audio USB, arme les entrées voulues et nomme-les. Appliquer mémorise
+ce plan par projet. Capture mono WAV 24 bits par entrée, à la fréquence de l’interface, jusqu’à 32
+entrées armées et 128 pistes par projet. La XR18 doit être reliée en USB à l’ordinateur ; sa connexion
+réseau sert au contrôle dans BandPilot, pas au transport des pistes audio.
+Modes : répétition entière sans lecture, prise sur morceau, ou plage de punch avec lecture avant.
+Le punch conserve la capture complète et ajoute des pistes découpées aux limites de la plage.
+Les prises utilisent une référence d’horloge audio ; la compensation manuelle en ms avance la prise
+quand elle est positive. Vérifier la latence réelle avec l’interface. Retour d’écoute sur la console,
+pas de monitoring logiciel. Vitesse 100 %, transposition 0 et boucle désactivée pendant la capture.
+
+Active Relier BandPilot dans Prises, puis utilise Enregistrement → BandStudio dans BandPilot
+2.3.4 DEV compatible. Le plan de la console peut fournir les noms et numéros USB ; vérifie ensuite
+l’interface et les entrées avant REC. Lecture, pause, navigation, REC, arrêt et repères passent par
+un canal local distinct du pont REAPER. Aucun changement de routage ou de gain XR n’est appliqué.
+La liaison est locale à cet ordinateur, désactivée à chaque démarrage et protégée contre les requêtes
+périmées, les changements de projet et les répétitions de commande. Les comptes BandPilot autres que
+l’administrateur n’y ont pas accès. Ne pas lancer deux fenêtres BandStudio pour la même session.
+Un arrêt perdu n’est pas répété automatiquement : vérifier l’état réel dans BandStudio.
+
+LECTEUR
+Début/fin, repère précédent/suivant, déplacement d’une mesure et position exacte en secondes.
+Raccourcis : Début/Fin, flèches gauche/droite pour une mesure, Maj+flèches pour les repères, M pour
+un repère, Espace pour lecture/pause. Les boucles, ralentissement et transposition restent présents.
+Outils → Extension REAPER exporte un ReaScript de télécommande, à charger dans les Actions REAPER.
+Il pilote BandStudio, sans synchroniser les deux horloges audio ni remplacer un plug-in VST3/AU.
 
 ÉTAT RÉEL DE CETTE VERSION
 Ce n’est pas une reproduction de l’ensemble de la gamme Moises. Voir capabilities.json pour l’inventaire
-recherché et son statut. Pas de génération de musique ou de voix, mastering automatique, vidéo synchronisée,
+recherché et son statut. Pas de génération de chant intelligible ou conversion vocale, mastering automatique par référence, vidéo synchronisée,
 séparation dialogue/effets, plug-in de DAW, synchronisation cloud ou séparation de l’audio système en direct.
-Le prompteur en lecture seule est accessible sur téléphone via le même réseau local. Les commandes
-à distance, les lumières grandMA3 et le timecode LTC/MTC ne sont pas encore disponibles. Les projets REAPER existants
-et leur environnement sont conservés. Le lanceur BandPilot est présent ; sa liaison directe reste à développer.
+Le prompteur en lecture seule est accessible sur téléphone via le même réseau local. La télécommande sur un autre ordinateur, les lumières grandMA3 et le timecode LTC/MTC ne sont pas encore disponibles. Les projets REAPER existants
+et leur environnement sont conservés. La liaison de transport/enregistrement BandPilot est disponible ; la correction automatique de la XR ne l’est pas.
 La tonalité estimée, le capo, les horaires des mots et la fiche PDF sont disponibles. La fiche PDF
-n’est pas une partition musicale gravée. Le mastering artistique et la comparaison à une référence
-ne sont pas disponibles ; l’outil Niveau final normalise uniquement le niveau et les crêtes.
+n’est pas une partition musicale gravée. Le mastering manuel propose égalisation, compression et largeur stéréo avant la normalisation.
+La comparaison et l’égalisation automatiques par référence restent absentes.
 
 VALIDATION
 Tests Python : frontières des sections, appels et décomptes réellement audibles dans les WAV, subdivisions,
@@ -149,3 +168,27 @@ Empreintes SHA-256 vérifiées par les installateurs et avant l’inférence. T�
 les auteurs ; traitement ensuite hors ligne. Sur ce Mac, les deux modèles sont inclus dans le moteur
 installé. Sur Windows, installer Séparer les stems puis Rythme avancé / Éléments de batterie.
 Cette version ne prétend pas reproduire toute la gamme Moises. Consulter capabilities.json.
+
+NOUVEAUTÉS CRÉATIVES 0.5
+Outils → Séparer le chant et les chœurs : UVR MDX Karaoke 2 travaille sur le stem de chant existant.
+Les deux pistes reprennent son gain, pan et offset ; le chant complet est exclu du mix tant que les
+sous-pistes sont présentes, sauf Solo. Des fuites restent possibles, aucune garantie de séparation
+parfaite. La somme des deux sous-pistes reconstitue la source sans normalisation indépendante.
+
+Outils → Créer un accompagnement : MusicGen Small, modèle officiel fixé à la révision
+4c8334b02c6ec4e8664a91979669a501ec497792. Description, durée de 2 à 20 secondes et variation (seed).
+Le modèle travaille hors ligne. Il ne garantit ni tempo exact, ni respect parfait du texte, ni chant
+intelligible. Sur le Mac Intel de développement : environ 64 secondes pour un premier extrait de
+2 secondes, chargement compris. La piste est muette si le projet possède déjà de l’audio ; Solo pour
+l’écouter. Métadonnées dans Analyses/generation.json du traitement. Modèle CC-BY-NC 4.0 : usage non
+commercial. Ce n’est pas un générateur de chanson complète. Aucune voix de personne n’est clonée.
+
+Mastering local : égalisation grave/médium/aigu, compression à seuil/ratio/attaque/relâchement
+réglables, largeur stéréo, normalisation LUFS et plafond de crête vraie. Les sources restent intactes.
+Les réglages et mesures avant/après accompagnent le WAV exporté ; juger le résultat à l’écoute.
+
+VALIDATION 0.5
+Tests de canaux synthétiques (18 entrées, sélection 1/3/18), fichiers mono 24 bits synchronisés,
+punch à l’échantillon, commandes locales périmées/rejouées, projet changé, contrôle d’accès BandPilot,
+UI, mastering réel et régressions. MusicGen et UVR exécutés réellement en local. Aucune capture
+physique XR18 ni mesure de latence matérielle n’a été faite : à vérifier lors de la première prise.

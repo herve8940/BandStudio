@@ -15,7 +15,7 @@ def ident():return str(uuid.uuid4())
 def fresh(name='Nouveau morceau'):
     return dict(version=1,id=ident(),name=name,tracks=[],sections=[],cues=[],bpm=0,beats=[],notes='',settings=GUIDE_DEFAULTS.copy(),guideFiles={},guideKey='',lyrics=[],chords=[],drumHits=[],key='',sourceURL='',capo=0,gridLocked=False,downbeats=[],analysisNote='')
 
-def duration(p):return max((t['offset']+t['duration'] for t in p['tracks'] if not t['role'].startswith('guide_')),default=0)
+def duration(p):return max(p.get('sessionDuration',0),max((t['offset']+t['duration'] for t in p['tracks'] if not t['role'].startswith('guide_')),default=0))
 
 def relative_file(root,relative):
     root=Path(root).resolve();value=Path(relative)
@@ -32,6 +32,10 @@ def number(value,low,high):
 def validate(p,root=None):
     if p.get('version')!=1 or len(p['tracks'])>128:raise ValueError('Format de projet non pris en charge.')
     if len({t['id'] for t in p['tracks']})!=len(p['tracks']):raise ValueError('Identifiants de piste dupliqués.')
+    number(p.get('sessionDuration',0),0,43200)
+    if 'capture' in p:
+        from windows.recording import settings
+        settings(p['capture'])
     length=duration(p)
     if int(p.get('capo',0))!=number(p.get('capo',0),0,12):raise ValueError('Position de capo entière attendue.')
     for value in p.get('downbeats',[]):number(value,0,length+.1)

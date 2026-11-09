@@ -1,5 +1,5 @@
 {
-  "reviewedAt": "2026-11-08",
+  "reviewedAt": "2026-11-09",
   "sources": [
     "https://moises.ai/features/",
     "https://help.moises.ai/hc/en-us/articles/360013289060-Accepted-Play-file-formats",
@@ -8,13 +8,16 @@
     "https://moises.ai/features/song-parts/",
     "https://github.com/facebookresearch/demucs",
     "https://github.com/CPJKU/beat_this",
-    "https://github.com/inagoy/drumsep"
+    "https://github.com/inagoy/drumsep",
+    "https://github.com/facebookresearch/audiocraft",
+    "https://github.com/nomadkaraoke/python-audio-separator",
+    "https://www.reaper.fm/sdk/js/js.php"
   ],
   "moisesInventory": [
     {
       "feature": "Stem separation",
       "status": "implemented",
-      "implementation": "Local Demucs 4/6 stems and DrumSep 4 drum parts; hi-hat remains grouped with cymbals; no Moises proprietary models"
+      "implementation": "Local Demucs 4/6 stems and DrumSep 4 drum parts; hi-hat remains grouped with cymbals; no Moises proprietary models; UVR MDX Karaoke 2 lead/backing vocal parts from the vocal stem"
     },
     {
       "feature": "Setlists",
@@ -24,7 +27,7 @@
     {
       "feature": "DAW plugin",
       "status": "alternative",
-      "implementation": "Standalone native playback and bidirectional REAPER audio-project exchange; no VST/AU plugin"
+      "implementation": "REAPER audio-project exchange and local ReaScript remote; no audio VST3/AU/AAX plugin or host-clock synchronization"
     },
     {
       "feature": "Smart metronome",
@@ -49,7 +52,7 @@
     {
       "feature": "Mastering",
       "status": "partial",
-      "implementation": "Two-pass EBU R128 loudness normalization and true-peak ceiling, 24-bit export and measurements; no AI EQ or reference mastering"
+      "implementation": "Manual three-band EQ, compressor, stereo width, two-pass LUFS/true-peak normalization and before/after measurements; no automatic reference matching"
     },
     {
       "feature": "Lyric writer",
@@ -81,7 +84,8 @@
     },
     {
       "feature": "Stem generation",
-      "status": "not implemented"
+      "status": "partial",
+      "implementation": "Offline MusicGen Small: experimental 2–20 second instrumental clips, CPU, CC-BY-NC model. No intelligible singing or voice cloning; no guaranteed tempo or source-conditioned stem generation."
     },
     {
       "feature": "Live system audio separation",
@@ -117,16 +121,25 @@
       "Portable project ZIP",
       "Practice-sheet PDF",
       "Local audio level report",
-      "Read-only LAN phone prompter with ephemeral QR link"
+      "Read-only LAN phone prompter with ephemeral QR link",
+      "Local BandPilot transport and armed input recording plan",
+      "Named selected-input mono WAV24 capture",
+      "Empty live rehearsal sessions and overdubs",
+      "Sample-trimmed punch takes with full raw capture retained",
+      "Audio-clock capture alignment and manual latency correction",
+      "Transport navigation by measure/cue and exact position",
+      "Offline short instrumental generation",
+      "Lead/backing vocal separation",
+      "REAPER ReaScript remote"
     ],
     "pending": [
-      "Direct BandPilot data exchange and XR control",
       "Network transport remote control",
       "grandMA3 lighting",
       "LTC/MTC",
       "Engraved music notation",
-      "Automatic multi-song concert timeline"
+      "Automatic multi-song concert timeline",
+      "Automatic XR processing correction from recorded audio"
     ]
   },
-  "version": "0.4.0-dev"
+  "version": "0.5.0-dev"
 }

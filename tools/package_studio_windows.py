@@ -13,7 +13,7 @@ import urllib.request
 import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
-VERSION='0.4.0-dev.1'
+VERSION='0.5.0-dev.1'
 
 
 def download(url,target):
@@ -31,14 +31,14 @@ def extract(zip_path,target):
 
 def source_files():
     files=[ROOT/'LICENSE',ROOT/'THIRD_PARTY_NOTICES.md']
-    for name in ['services.py','platform_tools.py','worker.py','advanced.py','phone.py']:files.append(ROOT/'desktop/studio'/name)
+    for name in ['services.py','platform_tools.py','worker.py','advanced.py','phone.py','creative.py','BandStudio_Remote.lua']:files.append(ROOT/'desktop/studio'/name)
     files+=list((ROOT/'desktop/studio/windows').glob('*.py'))+list((ROOT/'desktop/studio/windows').glob('*.js'))+list((ROOT/'desktop/studio/windows').glob('*.ps1'))
     files+=[p for p in (ROOT/'desktop/studio/web').iterdir() if p.suffix in ('.html','.js','.css')]
     for name in ['reacue_structure.py','reacue_metal.py','reacue_performance.py','reacue_transcribe.py','reacue_words.py','reacue_chords.py','reacue_drums.py','reacue_stems.py','reacue_gpu.py']:files.append(ROOT/name)
     for component in ['stems','structure','words','chords','drums']:
         files.extend([ROOT/'install'/('install_'+component+'_windows.ps1'),ROOT/('requirements-'+component+'.txt')])
     files.append(ROOT/'requirements-whisper.txt')
-    files.extend([ROOT/'tools/setup_studio_models.py',ROOT/'tools/setup_studio_rhythm.py'])
+    files.extend([ROOT/'tools/setup_studio_models.py',ROOT/'tools/setup_studio_rhythm.py',ROOT/'tools/setup_studio_creative.py'])
     return files
 
 

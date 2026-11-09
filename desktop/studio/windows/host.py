@@ -17,14 +17,15 @@ from platform_tools import executable,python_for,creation_flags
 from services import atomic,safe_name
 from windows import project as model
 from windows.audio import Audio,SR
+from windows import recording
 
-COMPONENTS={'separate':'stems','drumsep':'drumsep','structure':'structure','lyrics':'words','chords':'chords','drums':'drums','smartgrid':'rhythm'}
-ENVIRONMENTS={'separate':'.venv-demucs','drumsep':'.venv-demucs','structure':'.venv-structure','lyrics':'.venv-words','chords':'.venv-chords','drums':'.venv-drums','smartgrid':'.venv-demucs'}
+COMPONENTS={'generate':'creative','vocalsplit':'creative','separate':'stems','drumsep':'drumsep','structure':'structure','lyrics':'words','chords':'chords','drums':'drums','smartgrid':'rhythm'}
+ENVIRONMENTS={'generate':'.venv-creative','vocalsplit':'.venv-creative','separate':'.venv-demucs','drumsep':'.venv-demucs','structure':'.venv-structure','lyrics':'.venv-words','chords':'.venv-chords','drums':'.venv-drums','smartgrid':'.venv-demucs'}
 
 class Api:
     def __init__(self,engine,library=None):
         self._engine=Path(engine).resolve();self._library=Path(library or Path.home()/'Music/BandStudioDev');self._library.mkdir(parents=True,exist_ok=True)
-        self._project=model.fresh();self._root=None;self._audio=Audio(self._engine);self._window=None;self._busy=False;self._job_name='';self._job=None;self._job_log=None;self._notice='';self._revision=0;self._history=[];self._future=[];self._last_export='';self._stop=threading.Event();self._lock=threading.RLock();self._record=None;self._components={};self._phone=None
+        self._project=model.fresh();self._root=None;self._audio=Audio(self._engine);self._window=None;self._busy=False;self._job_name='';self._job=None;self._job_log=None;self._notice='';self._revision=0;self._history=[];self._future=[];self._last_export='';self._stop=threading.Event();self._lock=threading.RLock();self._record=None;self._components={};self._phone=None;self._bridge=None;self._transport_generation=0
         try:self._setlists=json.loads((self._library/'setlists.json').read_text(encoding='utf-8'))
         except (OSError,ValueError):self._setlists=[]
     def _send(self,value):
@@ -36,13 +37,18 @@ class Api:
     def _ready_guides(self):
         return bool(self._root and self._project['guideKey']==model.guide_key(self._project) and all(model.relative_file(self._root,p).is_file() for p in self._project['guideFiles'].values()))
     def _state(self):
-        self._send(dict(type='state',project=self._project,duration=model.duration(self._project),loaded=self._root is not None,library=self._list(),setlists=self._setlists,busy=self._busy,job=self._job_name,notice=self._notice,undo=bool(self._history),redo=bool(self._future),revision=self._revision,lastExport=self._last_export,guidesReady=self._ready_guides(),platform='windows',components={k:python_for(self._engine,v).is_file() for k,v in ENVIRONMENTS.items()}))
+        self._send(dict(type='state',project=self._project,duration=model.duration(self._project),loaded=self._root is not None,library=self._list(),setlists=self._setlists,busy=self._busy,job=self._job_name,notice=self._notice,undo=bool(self._history),redo=bool(self._future),revision=self._revision,lastExport=self._last_export,guidesReady=self._ready_guides(),platform='windows',capture=recording.state(self),bridgeEnabled=self._bridge is not None,components={k:python_for(self._engine,v).is_file() for k,v in ENVIRONMENTS.items()}))
         self._transport()
     def _transport(self):
         a=self._audio
-        self._send(dict(type='transport',position=a.position,playing=a.running,recording=self._record is not None,rate=a.rate,pitch=a.pitch,loop=a.loop,loopStart=a.loopStart,loopEnd=a.loopEnd,mode=a.mode,countRemaining=a.remaining() if a.project else 0))
+        self._send(dict(type='transport',position=self._record.elapsed if self._record and self._record.config['mode']=='live' else a.position,captureElapsed=self._record.elapsed if self._record else 0,meters=self._record.meters if self._record else [],playing=a.running,recording=self._record is not None,rate=a.rate,pitch=a.pitch,loop=a.loop,loopStart=a.loopStart,loopEnd=a.loopEnd,mode=a.mode,countRemaining=a.remaining() if a.project else 0))
     def _pulse(self):
         while not self._stop.wait(.1):
+            with self._lock:
+                if self._bridge:self._bridge.update(self)
+                if self._record and (self._record.errors or self._record.elapsed>=43100 or (self._record.config['mode']=='punch' and self._audio.position>=self._record.config['punchEnd'])):
+                    try:self._stop_record();self._state()
+                    except Exception as e:self._notice=str(e)
             self._transport()
             if self._phone:self._phone.update(self)
             if self._audio.error:self._notice=self._audio.error;self._audio.error='';self._state()
@@ -83,6 +89,13 @@ class Api:
                         except Exception:pass
             finally:self._busy=False;self._job=None;self._job_name='';self._job_log=None;self._state()
         threading.Thread(target=run,daemon=True).start()
+    def _prepared_transport(self,action):
+        generation=self._transport_generation
+        def ready():
+            self._guides()
+            with self._lock:
+                if self._transport_generation==generation:action()
+        return ready
     def _work(self,kind,input=None,arguments=()):
         if kind in ENVIRONMENTS and not python_for(self._engine,ENVIRONMENTS[kind]).is_file():raise ValueError('Installe le composant '+COMPONENTS[kind]+' dans Réglages → Analyses locales, puis relance ce traitement.')
         folder=(self._root or self._library/'.Imports')/'Analyses'/model.ident();folder.mkdir(parents=True)
@@ -109,7 +122,7 @@ class Api:
         pos,mode=self._audio.position,self._audio.mode;self._audio.load(self._project,self._root);self._audio.position=min(pos,model.duration(self._project));self._audio.mode=mode
     def _load(self,root):
         p=model.load(root);self._audio.loop=False;self._audio.load(p,root);self._project=p;self._root=root;self._history=[];self._future=[];self._last_export='';self._revision+=1;self._state()
-        self._guides()
+        if model.duration(p)>0:self._guides()
     def _guides(self,force=False):
         if not force and self._ready_guides():return
         result,obj=self._work('guides');folder=self._root/'Guides'/model.ident();folder.mkdir(parents=True)
@@ -184,11 +197,11 @@ class Api:
     def _reveal(self,path):
         if os.name=='nt':subprocess.Popen(['explorer.exe','/select,',str(Path(path))],creationflags=creation_flags())
     def _install(self,component):
-        if component not in ('stems','structure','words','chords','drums','rhythm','drumsep'):raise ValueError('Composant inconnu.')
+        if component not in ('stems','structure','words','chords','drums','rhythm','drumsep','creative'):raise ValueError('Composant inconnu.')
         if component in self._components:raise ValueError('Cette installation est déjà ouverte.')
         env=os.environ.copy();env.update(PYTHONUTF8='1',REAPER_RESOURCE_PATH=str(self._engine/'worker-state'),UV_PYTHON_INSTALL_DIR=str(self._engine/'managed-python'),UV_CACHE_DIR=str(self._engine/'.uv_cache'),REACUE_WORDS_ENGINE='off',TORCH_HOME=str(self._engine/'torch-cache'))
         env['PATH']=str(self._engine/'tools')+os.pathsep+str(self._engine/'import-tools')+os.pathsep+env.get('PATH','')
-        script=['-File',str(self._engine/'windows/install_extra.ps1'),'-Component',component] if component in ('rhythm','drumsep') else ['-File',str(self._engine/'install'/('install_'+component+'_windows.ps1')),'-Lang','fr']
+        script=['-File',str(self._engine/'windows/install_extra.ps1'),'-Component',component] if component in ('rhythm','drumsep','creative') else ['-File',str(self._engine/'install'/('install_'+component+'_windows.ps1')),'-Lang','fr']
         proc=subprocess.Popen(['powershell.exe','-NoProfile','-ExecutionPolicy','Bypass','-NoExit',*script],cwd=self._engine,env=env,creationflags=subprocess.CREATE_NEW_CONSOLE)
         self._components[component]=proc;self._notice='Une fenêtre d’installation est ouverte. Suis ses indications puis ferme-la quand elle a terminé.'
     def command(self,message):
@@ -210,12 +223,13 @@ class Api:
         cmd=m.get('command');args=m.get('args') or {};a=self._audio;p=self._project
         if cmd=='ready':return
         if cmd=='cancel':
+            self._transport_generation+=1
             if self._job:
                 if os.name=='nt':subprocess.run(['taskkill.exe','/PID',str(self._job.pid),'/T','/F'],capture_output=True,creationflags=creation_flags())
                 else:self._job.terminate()
             return
-        if self._busy and cmd not in ('stop','play'):raise ValueError('Un traitement est en cours. Patiente ou annule-le.')
-        if self._record and cmd not in ('record','stop'):raise ValueError('Arrête la prise avant cette action.')
+        if self._busy and cmd not in ('stop','play','studioControl'):raise ValueError('Un traitement est en cours. Patiente ou annule-le.')
+        if self._record and cmd not in ('record','stop','studioControl'):raise ValueError('Arrête la prise avant cette action.')
         if cmd=='installComponent':self._install(args.get('component'));return
         if cmd=='audioSettings':os.startfile('ms-settings:sound');return
         if cmd=='bandpilot':raise ValueError('La connexion directe avec BandPilot n’est pas disponible dans cette préversion Windows.')
@@ -238,6 +252,14 @@ class Api:
                 _,result=self._work('link',arguments=['--url',url]);self._import([result['audio']],True,result['title'],url)
             a.pause();self._op('Import du lien',linked);return
         if m.get('projectID')!=p['id']:raise ValueError('Le projet a changé. Recommence ton action.')
+        if cmd=='newSession':recording.command(self,dict(action='new',name=args.get('name','Répétition')));return
+        if cmd=='captureSettings':recording.command(self,dict(action='configure',settings=args));return
+        if cmd=='studioControl':recording.command(self,args);return
+        if cmd=='bridge':
+            from windows.studio_bridge import Bridge
+            if args.get('on') and not self._bridge:self._bridge=Bridge();self._bridge.update(self)
+            elif not args.get('on') and self._bridge:self._bridge.close();self._bridge=None
+            return
         if cmd=='setlist':
             name=args.get('name','').strip();paths=args.get('paths',[])
             if not name or any(x not in [s['path'] for s in self._list()] for x in paths):raise ValueError('Nom ou morceaux de setlist invalides.')
@@ -247,9 +269,10 @@ class Api:
         if cmd=='play':
             if a.running:a.pause()
             elif self._ready_guides():a.play()
-            else:self._op('Préparation des appels et du décompte',lambda:(self._guides(),a.play()))
+            else:self._op('Préparation des appels et du décompte',self._prepared_transport(a.play))
             return
         if cmd=='stop':
+            self._transport_generation+=1
             if self._record:self._stop_record()
             a.pause();a.position=a.loopStart if a.loop else 0;return
         if cmd=='seek':
@@ -290,6 +313,10 @@ class Api:
                 if self._phone:self._phone.close()
                 self._phone=None;self._send(dict(type='phone',active=False))
             return
+        if cmd=='creative':
+            from windows.creative_host import creative_task
+            if args.get('kind') not in ('generate','vocalsplit'):raise ValueError('Traitement créatif inconnu.')
+            self._op('Création musicale locale',lambda:creative_task(self,args['kind'],args.get('options',{})));return
         if cmd=='musicSettings':
             self._remember()
             if 'capo' in args:
@@ -305,7 +332,7 @@ class Api:
         if cmd=='studioTask':
             from windows.advanced_host import advanced_task
             kind=args.get('kind');options=args.get('options') or {}
-            if kind not in ('smartgrid','key','lyricsimport','lyricsexport','stemsexport','master','report','portable','sheet'):raise ValueError('Outil inconnu.')
+            if kind not in ('smartgrid','key','lyricsimport','lyricsexport','stemsexport','master','report','portable','sheet','reaperextension'):raise ValueError('Outil inconnu.')
             if kind=='smartgrid' and p.get('gridLocked'):raise ValueError('Le calage est protégé. Déverrouille-le dans Guidage avant une nouvelle analyse.')
             a.pause();self._op('Outil local : '+kind,lambda:advanced_task(self,kind,options));return
         if cmd=='analyze':
@@ -339,7 +366,7 @@ class Api:
             return
         if cmd=='record':
             if self._record:self._stop_record()
-            else:self._op('Préparation de l’enregistrement',lambda:(self._guides(),self._start_record()))
+            else:recording.command(self,dict(action='record'))
             return
         if cmd in ('undo','redo'):
             source,dest=(self._history,self._future) if cmd=='undo' else (self._future,self._history)
@@ -406,45 +433,13 @@ class Api:
             p['tracks']=tracks;model.validate(p,self._root);self._reload()
         else:raise ValueError('Commande inconnue : '+str(cmd))
         self._save()
-    def _start_record(self):
-        import sounddevice as sd
-        a=self._audio
-        if a.rate!=1 or a.pitch!=0 or a.loop:raise ValueError('Enregistre à 100 %, tonalité 0 et sans boucle.')
-        info=sd.query_devices(kind='input');channels=min(32,info['max_input_channels']);sr=int(info['default_samplerate'])
-        if not channels:raise ValueError('Aucune entrée audio disponible.')
-        q=queue.Queue(maxsize=100);path=self._root/'Audio'/(model.ident()+'-capture.wav');start=a.position-(self._project['settings']['countBars']*self._project['settings']['beatsPerBar']*model.period(self._project,a.position) if not a.running else 0);errors=[]
-        def writer():
-            with sf.SoundFile(path,'w',samplerate=sr,channels=channels,subtype='FLOAT') as f:
-                while True:
-                    block=q.get()
-                    if block is None:break
-                    f.write(block)
-        def callback(data,frames,t,status):
-            try:q.put_nowait(data.copy())
-            except queue.Full:errors.append('Le disque ne suit pas l’enregistrement. Arrête la prise.')
-        stream=sd.InputStream(samplerate=sr,channels=channels,dtype='float32',callback=callback)
-        thread=threading.Thread(target=writer,daemon=True);thread.start()
-        try:
-            stream.start()
-            if not a.running:a.play()
-        except Exception:
-            stream.close();q.put(None);thread.join(timeout=5);raise
-        self._record=(stream,q,thread,path,start,errors)
-        self._notice='Enregistrement en cours. Arrête la prise pour l’ajouter aux pistes.'
-    def _stop_record(self):
-        if not self._record:return
-        stream,q,thread,path,start,errors=self._record;stream.stop();stream.close();q.put(None);thread.join();self._record=None;self._audio.pause();self._remember()
-        info=sf.info(path)
-        for i in range(info.channels):
-            target=self._root/'Audio'/(model.ident()+'.wav')
-            command=[str(executable(self._engine,'ffmpeg')),'-nostdin','-hide_banner','-loglevel','error','-y','-i',str(path),'-af',f'pan=stereo|c0=c{i}|c1=c{i}','-ar','44100','-c:a','pcm_f32le',str(target)]
-            subprocess.run(command,check=True,capture_output=True,creationflags=creation_flags())
-            self._project['tracks'].append(model.track(target,self._root,'Prise · entrée '+str(i+1),'take',start))
-        self._save();self._reload();self._audio.mode='mix';self._notice=errors[0] if errors else 'Prise enregistrée. Vérifie son départ et ajuste la latence si nécessaire.'
+    def _start_record(self):recording.start(self)
+    def _stop_record(self):recording.stop(self)
     def _closing(self):
         if self._record or self._busy:
             if not self._window.create_confirmation_dialog('BandStudio','Un traitement ou un enregistrement est en cours. L’arrêter et quitter ?'):return False
         if self._record:self._stop_record()
+        if self._bridge:self._bridge.close();self._bridge=None
         if self._job:
             if os.name=='nt':subprocess.run(['taskkill.exe','/PID',str(self._job.pid),'/T','/F'],capture_output=True,creationflags=creation_flags())
             else:self._job.terminate()

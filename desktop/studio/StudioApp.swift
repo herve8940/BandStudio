@@ -2,60 +2,6 @@ import AppKit
 import WebKit
 import AVFoundation
 
-final class Recorder {
-    let engine=AVAudioEngine()
-    var files:[AVAudioFile]=[]
-    var paths:[URL]=[]
-    private var lastError:Error?
-    private let errorLock=NSLock()
-    private let pending=DispatchSemaphore(value:16)
-    var error:Error? {
-        get {errorLock.lock();defer{errorLock.unlock()};return lastError}
-        set {errorLock.lock();lastError=newValue;errorLock.unlock()}
-    }
-    let queue=DispatchQueue(label:"studio.recording")
-    var running=false
-    func start(root:URL) throws {
-        let input=engine.inputNode,format=engine.inputNode.outputFormat(forBus:0)
-        guard format.sampleRate > 0,format.channelCount > 0,format.channelCount <= 32 else {
-            throw StudioError("Aucune entrée audio disponible. Choisis le périphérique d’entrée dans les réglages Son du Mac.")
-        }
-        paths=[];files=[];error=nil
-        let mono=AVAudioFormat(standardFormatWithSampleRate:format.sampleRate,channels:1)!
-        for ch in 0..<Int(format.channelCount) {
-            let url=root.appendingPathComponent("Audio/prise-\(UUID().uuidString)-\(ch+1).caf")
-            paths.append(url);files.append(try AVAudioFile(forWriting:url,settings:mono.settings))
-        }
-        input.installTap(onBus:0,bufferSize:2048,format:format){[weak self] buffer,_ in
-            guard let self=self else{return}
-            guard self.pending.wait(timeout:.now()) == .success else {
-                self.error=StudioError("Le disque ne suit pas l’enregistrement. La prise a été arrêtée pour éviter une perte silencieuse.");return
-            }
-            // Copy before returning from the tap; AVAudioEngine reuses its buffers.
-            var copies:[AVAudioPCMBuffer]=[]
-            for ch in 0..<Int(format.channelCount) {
-                guard let b=AVAudioPCMBuffer(pcmFormat:mono,frameCapacity:buffer.frameLength),
-                      let src=buffer.floatChannelData?[ch],let dst=b.floatChannelData?[0] else{self.pending.signal();return}
-                b.frameLength=buffer.frameLength;dst.update(from:src,count:Int(buffer.frameLength));copies.append(b)
-            }
-            self.queue.async {
-                defer{self.pending.signal()}
-                do {for (i,b) in copies.enumerated() where i < self.files.count{try self.files[i].write(from:b)}}
-                catch{self.error=error}
-            }
-        }
-        do {try engine.start();running=true}
-        catch{input.removeTap(onBus:0);throw error}
-    }
-    func stop() throws -> [URL] {
-        guard running else{return []}
-        engine.inputNode.removeTap(onBus:0);engine.stop();running=false
-        queue.sync {files=[]}
-        // Finalized files remain available even if a disk/overload error stopped capture.
-        return paths
-    }
-}
-
 final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavigationDelegate {
     var window:NSWindow!
     var web:WKWebView!
@@ -75,7 +21,16 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     var future:[StudioProject]=[]
     var revision=0
     var recordingStart=0.0
+    var recordingHost:UInt64=0
+    var bridgeFolder:URL?
+    var bridgeSession=UUID().uuidString
+    var bridgeLock:Int32 = -1
+    var bridgePulse=0.0
+    var bridgeProcessed=Set<String>()
+    var transportOrigin=0.0
+    var transportGeneration=0
     var recordPending=false
+    var recordRequest=""
     var pendingImportTitle:String?
     var pendingSourceURL=""
     var lastExport=""
@@ -122,7 +77,8 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         web.loadFileURL(webRoot.appendingPathComponent("index.html"),allowingReadAccessTo:webRoot)
         NSApp.activate(ignoringOtherApps:true)
         timer=Timer.scheduledTimer(withTimeInterval:0.1,repeats:true){[weak self] _ in
-            guard let s=self else{return};s.audio.tick();s.sendTransport();s.updatePhone()
+            guard let s=self else{return};s.audio.tick();s.sendTransport();s.updatePhone();s.updateBridge()
+            if s.recorder.running && ((s.project.capture.mode=="punch" && s.audio.current()>=s.project.capture.punchEnd) || s.recorder.elapsed>=43100){s.perform{try s.stopRecord()}}
             if s.recorder.running, let error=s.recorder.error {s.notice=error.localizedDescription;try? s.stopRecord()}
         }
         if let requested=pendingProject {
@@ -133,7 +89,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             do{try load(URL(fileURLWithPath:path))}catch{notice=error.localizedDescription}
         }
     }
-    @objc func about() {NSApp.orderFrontStandardAboutPanel(options:[.applicationName:"BandStudio",.applicationVersion:"0.4 DEV · atelier autonome",.credits:NSAttributedString(string:"Stems, appels, décompte, paroles, accords et projets REAPER\nTraitement local sur ce Mac")])}
+    @objc func about() {NSApp.orderFrontStandardAboutPanel(options:[.applicationName:"BandStudio",.applicationVersion:"0.5 DEV · atelier autonome",.credits:NSAttributedString(string:"Stems, appels, décompte, paroles, accords et projets REAPER\nTraitement local sur ce Mac")])}
     func projectList()->[[String:String]] {
         guard let library=library else{return []}
         return ((try? FileManager.default.contentsOfDirectory(at:library,includingPropertiesForKeys:nil)) ?? [])
@@ -145,7 +101,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         web.evaluateJavaScript("window.studioReceive && window.studioReceive(\(json))",completionHandler:nil)
     }
     func sendTransport() {
-        send(["type":"transport","position":audio.current(),"playing":audio.running,"recording":recorder.running,"rate":audio.rate,"pitch":audio.pitch,"loop":audio.loop,"loopStart":audio.loopStart,"loopEnd":audio.loopEnd,"mode":audio.mode,"countRemaining":audio.countRemaining()])
+        send(["type":"transport","position":recorder.running && project.capture.mode=="live" ? recorder.elapsed : audio.current(),"captureElapsed":recorder.elapsed,"meters":recorder.meters,"playing":audio.running,"recording":recorder.running,"rate":audio.rate,"pitch":audio.pitch,"loop":audio.loop,"loopStart":audio.loopStart,"loopEnd":audio.loopEnd,"mode":audio.mode,"countRemaining":audio.countRemaining()])
         if job != nil,Date.timeIntervalSinceReferenceDate-lastBroadcast > 2 {
             lastBroadcast=Date.timeIntervalSinceReferenceDate
             send(["type":"job","name":jobName,"detail":jobDetail()])
@@ -161,7 +117,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     func sendState() {
         let object=(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(project))) ?? [:]
         let lists=(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(setlists))) ?? []
-        send(["type":"state","project":object,"duration":project.duration,"loaded":root != nil,"library":projectList(),"setlists":lists,"busy":busy,"job":jobName,"notice":notice,"undo":!history.isEmpty,"redo":!future.isEmpty,"revision":revision,"lastExport":lastExport,"guidesReady":project.guideKey==project.desiredGuideKey()])
+        send(["type":"state","project":object,"duration":project.duration,"loaded":root != nil,"library":projectList(),"setlists":lists,"busy":busy,"job":jobName,"notice":notice,"undo":!history.isEmpty,"redo":!future.isEmpty,"revision":revision,"lastExport":lastExport,"guidesReady":project.guideKey==project.desiredGuideKey(),"capture":captureState(),"bridgeEnabled":bridgeFolder != nil])
         sendTransport()
     }
     func changed() throws {revision += 1;try save();sendState()}
@@ -191,7 +147,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         UserDefaults.standard.set(url.path,forKey:"project");sendState()
         let identity=project.id
         DispatchQueue.main.async {[weak self] in
-            guard let self=self,self.project.id==identity,!self.busy else{return}
+            guard let self=self,self.project.id==identity,!self.busy,self.project.duration>0 else{return}
             self.perform{try self.withGuides{self.sendState()}}
         }
     }
@@ -305,37 +261,6 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         }
         try changed()
     }
-    func startRecord() throws {
-        try requireIdle();guard root != nil else{throw StudioError("Ouvre d’abord un projet.")}
-        guard audio.rate == 1,audio.pitch == 0,!audio.loop else{throw StudioError("Pour enregistrer, remets la vitesse à 100 %, la tonalité à 0 et désactive la boucle.")}
-        recordPending=true
-        AVCaptureDevice.requestAccess(for:.audio){[weak self] granted in
-            DispatchQueue.main.async {
-                guard let self=self else{return}
-                self.recordPending=false
-                if !granted{self.notice="Autorise le microphone pour BandStudio dans Réglages Système → Confidentialité et sécurité.";self.sendState();return}
-                self.perform {
-                    guard let root=self.root else{return}
-                    self.recordingStart=self.audio.current()-(self.audio.running ? 0 : self.audio.plannedCount(at:self.audio.current()));try self.recorder.start(root:root)
-                    do {if !self.audio.running{try self.audio.play()}}
-                    catch { _ = try? self.recorder.stop();throw error }
-                    self.notice="Enregistrement des entrées audio du Mac. Le retour logiciel est désactivé.";self.sendState()
-                }
-            }
-        }
-    }
-    func stopRecord() throws {
-        audio.pause()
-        let paths=try recorder.stop();guard let root=root else{return}
-        remember()
-        for (i,url) in paths.enumerated() {
-            let (duration,peaks)=try inspectAudio(url)
-            project.tracks.append(Track(name:"Prise · entrée \(i+1)",file:"Audio/"+url.lastPathComponent,role:"take",duration:duration,offset:recordingStart,peaks:peaks))
-        }
-        try audio.load(project,root:root);audio.mode="mix";audio.applyMix()
-        notice=recorder.error?.localizedDescription ?? "Prise enregistrée. Ajuste son départ si ton périphérique ajoute un décalage."
-        try changed()
-    }
     func exportAudio() throws {
         try requireIdle();guard root != nil else{return};audio.pause()
         let panel=NSSavePanel();panel.allowedFileTypes=["wav"];panel.nameFieldStringValue=project.name+" - mix.wav"
@@ -389,15 +314,20 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 try load(URL(fileURLWithPath:path));return
             }
             guard m["projectID"] as? String == project.id else {throw StudioError("Le projet a changé. Recommence ton action.")}
-            if command == "cancel" {job?.terminate();job=nil;return}
+            if command == "cancel" {transportGeneration += 1;job?.terminate();job=nil;return}
             if command == "reveal" {if let root=root{NSWorkspace.shared.activateFileViewerSelecting([root])};return}
             if busy && job == nil {throw StudioError("Patiente pendant l’import ou l’export audio.")}
-            if recordPending {throw StudioError("Termine l’autorisation du microphone avant de continuer.")}
-            if recorder.running && !["stop","record"].contains(command) {throw StudioError("Arrête la prise avant cette modification.")}
+            if recordPending && !["stop","studioControl"].contains(command) {throw StudioError("Termine l’autorisation du microphone avant de continuer.")}
+            if recorder.running && !["stop","record","studioControl"].contains(command) {throw StudioError("Arrête la prise avant cette modification.")}
             switch command {
-            case "play":if audio.running{audio.pause()}else{try withGuides{try self.audio.play()}}
-            case "stop":if recorder.running{try stopRecord()}else{audio.pause();audio.position=audio.loop ? audio.loopStart : 0}
-            case "record":if recorder.running{try stopRecord()}else{try withGuides{try self.startRecord()}}
+            case "creative":try creativeTask(args)
+            case "studioControl":try studioControl(args)
+            case "captureSettings":try setCapture(args)
+            case "newSession":try newSession(args["name"] as? String ?? "Répétition")
+            case "bridge":try setBridge(args["on"] as? Bool ?? false)
+            case "play":if audio.running{audio.pause()}else{transportOrigin=audio.position;try withGuides(afterPreparation{try self.audio.play()})}
+            case "stop":transportGeneration += 1;recordPending=false;recordRequest="";if recorder.running{try stopRecord()}else{audio.pause();audio.position=audio.loop ? audio.loopStart : 0}
+            case "record":if recorder.running{try stopRecord()}else if project.capture.mode=="live"{try startRecord()}else{try withGuides(afterPreparation{try self.startRecord()})}
             case "seek":try audio.seek(number(args,"time",range:0...project.duration))
             case "rate":
                 let r=try number(args,"value",range:0.5...1.5);let pos=audio.current(),playing=audio.running
@@ -423,7 +353,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                     project.tracks[index].offset=try number(args,"offset",range:-120...43200)
                     try project.validate();try reloadAudio()
                 }
-                if let role=args["role"] as? String,["drums","drum_kick","drum_snare","drum_toms","drum_cymbals","bass","vocals","guitar","piano","other","take"].contains(role),project.tracks[index].role != "source"{project.tracks[index].role=role}
+                if let role=args["role"] as? String,["drums","drum_kick","drum_snare","drum_toms","drum_cymbals","vocal_lead","vocal_backing","bass","vocals","guitar","piano","other","take"].contains(role),project.tracks[index].role != "source"{project.tracks[index].role=role}
                 audio.project=project;audio.applyMix();try changed()
             case "section":
                 let start=try number(args,"start",range:0...project.duration),end=try number(args,"end",range:0...project.duration)
@@ -505,5 +435,5 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         do{try save()}catch{notice=error.localizedDescription;sendState();return .terminateCancel}
         return .terminateNow
     }
-    func applicationWillTerminate(_ notification:Notification){quitting=true;timer?.invalidate();audio.pause();job?.terminate();phoneProcess?.terminate()}
+    func applicationWillTerminate(_ notification:Notification){quitting=true;try? setBridge(false);timer?.invalidate();audio.pause();job?.terminate();phoneProcess?.terminate()}
 }

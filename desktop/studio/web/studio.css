@@ -6,3 +6,7 @@
 .word-edit-row{display:grid;grid-template-columns:100px 100px minmax(100px,1fr) 40px;gap:8px;margin:8px 0}.word-edit-row input{min-width:0;width:100%}#wordRows{max-height:260px;overflow:auto}#wordError{color:#f5c16c}#stageKey{color:#b9c8dc}#wordEditor{margin-top:14px}.annotation-toolbar label{min-width:130px}.rail .nav{min-height:51px}
 
 #phoneQR{width:230px;max-width:100%;margin:12px auto;display:block;border-radius:8px}#phoneQR[hidden]{display:none}#phoneURL{width:100%;font-size:11px}#annotationEditor{max-height:90vh;overflow:auto}
+
+.capture-channels{max-height:340px;overflow:auto}.capture-channel{display:grid;grid-template-columns:24px 60px minmax(80px,1fr);align-items:center;gap:8px;margin:6px 0}.capture-channel input[type=checkbox]{width:auto}.capture-range{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.capture-meter{display:grid;grid-template-columns:minmax(80px,1fr) 1fr;gap:10px;font-size:12px;margin:6px 0}.capture-meter meter{width:100%}.navigation-tools{display:flex;gap:5px;flex-wrap:wrap;margin:10px 0}.navigation-tools input{max-width:100px}
+
+#view-takes .cards{align-items:start}#view-takes .cards article button{margin-top:0}#captureForm{display:grid;gap:12px}

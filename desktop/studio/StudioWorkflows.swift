@@ -15,7 +15,7 @@ extension StudioApp {
         try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
         let result=folder.appendingPathComponent("result.json"),snap=folder.appendingPathComponent("project.json")
         try snapshot(at:snap)
-        let environment=["structure":".venv-structure","separate":".venv-demucs","drumsep":".venv-demucs","smartgrid":".venv-demucs","lyrics":".venv-words","chords":".venv-chords","drums":".venv-drums"]
+        let environment=["generate":".venv-creative","vocalsplit":".venv-creative","structure":".venv-structure","separate":".venv-demucs","drumsep":".venv-demucs","smartgrid":".venv-demucs","lyrics":".venv-words","chords":".venv-chords","drums":".venv-drums"]
         let p=Process();p.executableURL=runtime.appendingPathComponent((environment[kind] ?? ".venv")+"/bin/python")
         var safeArguments=arguments
         if let index=safeArguments.firstIndex(of:"--options"),index+1<safeArguments.count {
@@ -45,8 +45,13 @@ extension StudioApp {
             }
         }
         try p.run();job=p;busy=true;jobLog=log
-        let titles=["smartgrid":"Détection des temps et débuts de mesure","drumsep":"Séparation des éléments de batterie","key":"Estimation de la tonalité","lyricsimport":"Import des paroles synchronisées","lyricsexport":"Export des paroles","stemsexport":"Export des stems","master":"Normalisation du mix","report":"Analyse des niveaux audio","portable":"Création du projet portable","sheet":"Création de la fiche PDF","guides":"Préparation du click, des appels et du décompte","separate":"Séparation des instruments","structure":"Analyse de la structure","grid":"Détection du tempo et des temps","link":"Import du lien","reaper":"Création du projet REAPER","lyrics":"Transcription des paroles","chords":"Détection des accords","drums":"Transcription de la batterie","midi":"Export MIDI","decode":"Conversion du fichier audio"]
+        let titles=["generate":"Création musicale locale","vocalsplit":"Séparation chant principal et chœurs","smartgrid":"Détection des temps et débuts de mesure","drumsep":"Séparation des éléments de batterie","key":"Estimation de la tonalité","lyricsimport":"Import des paroles synchronisées","lyricsexport":"Export des paroles","stemsexport":"Export des stems","master":"Normalisation du mix","report":"Analyse des niveaux audio","portable":"Création du projet portable","sheet":"Création de la fiche PDF","guides":"Préparation du click, des appels et du décompte","separate":"Séparation des instruments","structure":"Analyse de la structure","grid":"Détection du tempo et des temps","link":"Import du lien","reaper":"Création du projet REAPER","lyrics":"Transcription des paroles","chords":"Détection des accords","drums":"Transcription de la batterie","midi":"Export MIDI","decode":"Conversion du fichier audio"]
         jobName=kind == "rpp" ? "Import des pistes et régions REAPER" : (titles[kind] ?? kind);notice="";sendState()
+    }
+    // Stop revokes a queued transport action while guides are still rendering.
+    func afterPreparation(_ action:@escaping() throws -> Void)->() throws -> Void {
+        let generation=transportGeneration
+        return {guard self.transportGeneration==generation else{return};try action()}
     }
     func withGuides(force:Bool=false,_ action:@escaping() throws -> Void) throws {
         guard let root=root else{return}

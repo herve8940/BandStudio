@@ -59,7 +59,7 @@ func advancedSelfTest(_ directory:String,_ engine:String) throws {
     guard try StudioProject.load(root).capo == 2 else{throw StudioError("Réglages musicaux non enregistrés")}
     try app.annotation(["kind":"lyrics","start":0.2,"end":1.8,"text":"Très bien","words":[["start":0.2,"end":0.8,"text":"Très"],["start":0.9,"end":1.8,"text":"bien"]]])
     guard try StudioProject.load(root).lyrics.first?.words?.count == 2 else{throw StudioError("Horaires des mots perdus")}
-    for (kind,options) in [("lyricsimport",["text":"[00:00.00]Intro","replace":true] as [String:Any]),("lyricsexport",["format":"srt"]),("stemsexport",["format":"flac"]),("sheet",[:]),("report",[:]),("portable",[:]),("master",["lufs":-16,"peak":-1,"lra":11])] {
+    for (kind,options) in [("lyricsimport",["text":"[00:00.00]Intro","replace":true] as [String:Any]),("lyricsexport",["format":"srt"]),("stemsexport",["format":"flac"]),("sheet",[:]),("reaperextension",[:]),("report",[:]),("portable",[:]),("master",["lufs":-16,"peak":-1,"lra":11])] {
         try app.advancedTask(["kind":kind,"options":options])
         let deadline=Date().addingTimeInterval(90)
         while app.busy && Date()<deadline {_ = RunLoop.main.run(mode:.default,before:Date().addingTimeInterval(0.05))}
@@ -77,6 +77,64 @@ func advancedSelfTest(_ directory:String,_ engine:String) throws {
     print("PASS native tools, words, protected grid and drum-parts renders")
 }
 
+func recordingSelfTest(_ directory:String) throws {
+    setbuf(stdout,nil)
+    try selfTest(directory)
+    let root=URL(fileURLWithPath:directory),rate=48000.0,rec=Recorder()
+    let layout=AVAudioChannelLayout(layoutTag:kAudioChannelLayoutTag_DiscreteInOrder | 18)!
+    let format=AVAudioFormat(standardFormatWithSampleRate:rate,channelLayout:layout),mono=AVAudioFormat(standardFormatWithSampleRate:rate,channels:1)!
+    rec.selected=[CaptureChannel(input:1,name:"Kick"),CaptureChannel(input:3,name:"Snare"),CaptureChannel(input:18,name:"Ambiance")];rec.sampleRate=rate
+    for channel in rec.selected {
+        let url=root.appendingPathComponent("Audio/input-\(channel.input).wav");rec.paths.append(url)
+        rec.files.append(try AVAudioFile(forWriting:url,settings:[AVFormatIDKey:kAudioFormatLinearPCM,AVSampleRateKey:rate,AVNumberOfChannelsKey:1,AVLinearPCMBitDepthKey:24,AVLinearPCMIsFloatKey:false,AVLinearPCMIsBigEndianKey:false]))
+    }
+    let buffer=AVAudioPCMBuffer(pcmFormat:format,frameCapacity:4800)!;buffer.frameLength=4800
+    for c in 0..<18 {for i in 0..<4800{buffer.floatChannelData![c][i]=Float(c+1)/100}}
+    for i in 0..<10{rec.ingest(buffer,when:AVAudioTime(hostTime:UInt64(100+i)),mono:mono);rec.queue.sync{}}
+    rec.queue.sync{rec.files=[]}
+    guard rec.error==nil,rec.elapsed==1,rec.firstSampleHost==100 else{throw StudioError("Horloge d’enregistrement incorrecte")}
+    for (i,url) in rec.paths.enumerated(){
+        let file=try AVAudioFile(forReading:url),b=AVAudioPCMBuffer(pcmFormat:file.processingFormat,frameCapacity:48000)!;try file.read(into:b)
+        guard file.length==48000,file.fileFormat.settings[AVLinearPCMBitDepthKey] as? Int==24,abs(b.floatChannelData![0][200]-Float(rec.selected[i].input)/100)<0.00001 else{throw StudioError("Routage ou format de capture incorrect")}
+        let cropped=root.appendingPathComponent("crop-\(i).wav");try cropCapture(url,to:cropped,start:0.125,end:0.625)
+        guard try AVAudioFile(forReading:cropped).length==24000 else{throw StudioError("Découpage de punch incorrect")}
+    }
+    let app=StudioApp();app.root=root;app.project=try StudioProject.load(root);try app.audio.load(app.project,root:root)
+    app.project.capture.channels=rec.selected;app.project.sessionDuration=5;try app.project.save(root)
+    guard try StudioProject.load(root).capture.channels[2].input==18 else{throw StudioError("Configuration de capture perdue")}
+    let mailbox=root.appendingPathComponent("Bridge");try FileManager.default.createDirectory(at:mailbox,withIntermediateDirectories:true);app.bridgeFolder=mailbox
+    func request(_ action:String,project:String?=nil,id:String=UUID().uuidString,created:Double=Date().timeIntervalSince1970) throws->String {
+        let object:[String:Any]=["id":id,"session":app.bridgeSession,"projectID":project ?? app.project.id,"created":created,"args":["action":action]]
+        try JSONSerialization.data(withJSONObject:object).write(to:mailbox.appendingPathComponent("request-"+id+".json"));app.updateBridge();return id
+    }
+    app.audio.position=1;let count=app.project.cues.count,id=try request("marker")
+    guard app.project.cues.count==count+1 else{throw StudioError("Commande BandPilot sans effet")}
+    _ = try request("marker",id:id);_ = try request("marker",project:"another-project");_ = try request("marker",created:0)
+    guard app.project.cues.count==count+1 else{throw StudioError("Rejeu ou projet périmé accepté")}
+    var starts=0;let prepared=app.afterPreparation{starts += 1}
+    app.recordPending=true;app.recordRequest="pending";try app.studioControl(["action":"stop"])
+    try prepared();guard starts==0 else{throw StudioError("Stop laisse démarrer une action préparée") }
+    guard !app.recordPending,app.recordRequest.isEmpty else{throw StudioError("Stop ne révoque pas le départ en attente")}
+    print("PASS 18-channel source, selected mono WAV24, timestamps, sample-accurate punch, settings roundtrip, mailbox commands/replay/stale project, pending stop")
+}
+if CommandLine.arguments.count >= 3 && CommandLine.arguments[1] == "--recording-test" {
+    do{try recordingSelfTest(CommandLine.arguments[2]);exit(0)}catch{fputs("FAIL: \(error.localizedDescription)\n",stderr);exit(1)}
+}
+
+if CommandLine.arguments.count >= 4 && CommandLine.arguments[1] == "--creative-test" {
+    do {
+        setbuf(stdout,nil);try selfTest(CommandLine.arguments[2])
+        let root=URL(fileURLWithPath:CommandLine.arguments[2]),app=StudioApp();app.root=root;app.runtime=URL(fileURLWithPath:CommandLine.arguments[3]);app.project=try StudioProject.load(root);try app.audio.load(app.project,root:root)
+        try app.creativeTask(["kind":"generate","options":["prompt":"instrumental bass and clean guitar, slow rock groove, no drums","duration":2.0,"seed":42]])
+        let deadline=ProcessInfo.processInfo.systemUptime+900
+        while app.busy && ProcessInfo.processInfo.systemUptime<deadline{_ = RunLoop.main.run(mode:.default,before:Date().addingTimeInterval(0.05))}
+        if app.busy {app.job?.terminate();throw StudioError("Délai de génération dépassé") }
+        let restored=try StudioProject.load(root)
+        guard !app.busy,let track=restored.tracks.last,track.name=="Accompagnement généré",track.muted,abs(track.duration-2)<0.01 else{throw StudioError("Création native incorrecte : \(app.notice)")}
+        print("PASS native offline MusicGen worker, exact duration, imported muted track and project roundtrip")
+        exit(0)
+    }catch{fputs("FAIL: \(error.localizedDescription)\n",stderr);exit(1)}
+}
 if CommandLine.arguments.count >= 4 && CommandLine.arguments[1] == "--advanced-test" {
     do{try advancedSelfTest(CommandLine.arguments[2],CommandLine.arguments[3]);exit(0)}catch{fputs("FAIL: \(error.localizedDescription)\n",stderr);exit(1)}
 }

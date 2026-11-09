@@ -113,7 +113,7 @@ def analyze(audio, output, mode, engine):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument('command', choices=['grid', 'structure', 'separate','drumsep','guides','link','decode','reaper','rpp','lyrics','chords','drums','midi','smartgrid','key','lyricsimport','lyricsexport','stemsexport','master','report','portable','sheet'])
+    p.add_argument('command', choices=['generate','vocalsplit','grid', 'structure', 'separate','drumsep','guides','link','decode','reaper','rpp','lyrics','chords','drums','midi','smartgrid','key','lyricsimport','lyricsexport','stemsexport','master','report','portable','sheet','reaperextension'])
     p.add_argument('--options',default='{}')
     p.add_argument('--options-file')
     p.add_argument('--input', default='')
@@ -137,11 +137,14 @@ def main():
     os.environ['HF_HUB_OFFLINE']='1'
     sys.path.insert(0,str(engine))
     from services import guides,import_link,decode,export_reaper,export_midi,import_reaper
+    if a.command in ('generate','vocalsplit'):
+        from creative import run
+        run(a.command,a.input,a.output,engine,json.loads(Path(a.options_file).read_text() if a.options_file else a.options));return
     if a.command=='drumsep':
         if not (engine/'drumsep/49469ca8.th').is_file():raise ValueError('Le modèle DrumSep n’est pas installé.')
         separate(a.input,a.output,'49469ca8',engine,a.quality)
         return
-    if a.command in ('smartgrid','key','lyricsimport','lyricsexport','stemsexport','master','report','portable','sheet'):
+    if a.command in ('smartgrid','key','lyricsimport','lyricsexport','stemsexport','master','report','portable','sheet','reaperextension'):
         from advanced import run
         run(a.command,a.project,a.output,engine,json.loads(Path(a.options_file).read_text() if a.options_file else a.options),a.input)
         return

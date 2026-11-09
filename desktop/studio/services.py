@@ -256,6 +256,7 @@ def export_reaper(project_file,output):
         elif t['role']=='source':audible=mode=='mix' and not has_stems and not t['muted'] and not has_solo
         elif mode=='drums':audible=audible and (t['role']=='drums' or t['role'].startswith('drum_'))
         elif mode=='minus':audible=audible and t['role']!='drums' and not t['role'].startswith('drum_')
+        if t['role']=='vocals' and any(x['role'].startswith('vocal_') for x in p['tracks']) and not t['solo']:audible=False
         if t['role']=='drums' and any(x['role'].startswith('drum_') for x in p['tracks']) and not t['solo']:audible=False
         muted=not audible
         gain=t['gain'];pan=t['pan']
@@ -397,7 +398,7 @@ def import_reaper(path,output,engine,snapshot):
             for candidate,words in [('source',['original','source']),('drums',['drum','batterie']),('bass',['bass','basse']),('vocals',['vocal','chant']),('guitar',['guitar','guitare']),('piano',['piano','clavier']),('take',['prise'])]:
                 if any(w in lower for w in words):role=candidate;break
             restored_role=roles_by_file.get(Path(filename[0]).name)
-            if restored_role in ('source','drums','drum_kick','drum_snare','drum_toms','drum_cymbals','bass','vocals','guitar','piano','other','take'):role=restored_role
+            if restored_role in ('source','drums','drum_kick','drum_snare','drum_toms','drum_cymbals','vocal_lead','vocal_backing','bass','vocals','guitar','piano','other','take'):role=restored_role
             itemvp=field(item,'VOLPAN',['1','0']);gain=max(0,min(2,num(vp,0,1)*num(itemvp,0,1)));pan=max(-1,min(1,num(vp,1)+num(itemvp,1)))
             p['tracks'].append(dict(id=ident,name=name+(f' · {index+1}' if len(items)>1 else ''),file='Audio/'+target.name,role=role,duration=info.duration,offset=offset,gain=gain,pan=pan,muted=num(ms,0)!=0 or num(field(item,'MUTE',['0']),0)!=0,solo=num(ms,1)!=0,peaks=peaks.tolist()))
     if not p['tracks']:raise ValueError('Aucune piste audio à importer. Dans REAPER, rends les instruments MIDI en audio avant l’import.')

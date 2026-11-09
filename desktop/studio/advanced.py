@@ -190,16 +190,45 @@ def loudness(audio, engine, level=-16, peak=-1, spread=11):
     return result
 
 
+def mastering_filters(options):
+    low=finite(options.get('lowDB',0),-12,12)
+    mid=finite(options.get('midDB',0),-12,12)
+    high=finite(options.get('highDB',0),-12,12)
+    width=finite(options.get('width',1),0,1.5)
+    threshold=finite(options.get('compressDB',-18),-40,-3)
+    ratio=finite(options.get('ratio',1),1,6)
+    attack=finite(options.get('attackMS',20),1,100)
+    release=finite(options.get('releaseMS',150),20,1000)
+    filters=[]
+    if low:filters.append(f'bass=g={low}:f=120:t=q:w=.707')
+    if mid:filters.append(f'equalizer=f=1500:t=q:w=.7:g={mid}')
+    if high:filters.append(f'treble=g={high}:f=6000:t=q:w=.707')
+    if ratio>1:filters.append(f'acompressor=threshold={10**(threshold/20)}:ratio={ratio}:attack={attack}:release={release}:makeup=1:knee=2.828:link=maximum:detection=rms')
+    if width!=1:
+        # Mid/side width: 0 mono, 1 original; normalization follows this stage.
+        a,b=(1+width)/2,(1-width)/2
+        filters.append(f'pan=stereo|c0={a}*c0+{b}*c1|c1={b}*c0+{a}*c1')
+    return filters,dict(lowDB=low,midDB=mid,highDB=high,width=width,compressDB=threshold,ratio=ratio,attackMS=attack,releaseMS=release)
+
+
 def master(audio, target, engine, options):
-    level = finite(options.get('lufs', -16), -24, -9)
-    peak = finite(options.get('peak', -1), -3, -.3)
-    spread = finite(options.get('lra', 11), 5, 20)
-    measured = loudness(audio, engine, level, peak, spread)
-    # Two-pass EBU R128 normalization, not an AI mastering or EQ substitute.
-    filt = f'loudnorm=I={level}:TP={peak}:LRA={spread}:measured_I={measured["input_i"]}:measured_TP={measured["input_tp"]}:measured_LRA={measured["input_lra"]}:measured_thresh={measured["input_thresh"]}:offset={measured["target_offset"]}:linear=true:print_format=json'
-    ffmpeg(engine, ['-i',audio,'-af',filt,'-ar','48000','-c:a','pcm_s24le',target])
-    after = loudness(target, engine)
-    return dict(before=measured, after=after, targetLUFS=level, ceilingDBTP=peak)
+    level=finite(options.get('lufs',-16),-24,-9)
+    peak=finite(options.get('peak',-1),-3,-.3)
+    spread=finite(options.get('lra',11),5,20)
+    filters,chain=mastering_filters(options)
+    before=loudness(audio,engine,level,peak,spread)
+    processed=Path(target).with_name('.master-processing-'+uuid.uuid4().hex+'.wav')
+    try:
+        source=audio
+        if filters:
+            ffmpeg(engine,['-i',audio,'-af',','.join(filters),'-c:a','pcm_f32le',processed]);source=processed
+        measured=loudness(source,engine,level,peak,spread)
+        filt=f'loudnorm=I={level}:TP={peak}:LRA={spread}:measured_I={measured["input_i"]}:measured_TP={measured["input_tp"]}:measured_LRA={measured["input_lra"]}:measured_thresh={measured["input_thresh"]}:offset={measured["target_offset"]}:linear=true:print_format=json'
+        ffmpeg(engine,['-i',source,'-af',filt,'-ar','48000','-c:a','pcm_s24le',target])
+        after=loudness(target,engine)
+        return dict(before=before,after=after,targetLUFS=level,ceilingDBTP=peak,chain=chain,afterProcessing=measured)
+    finally:
+        processed.unlink(missing_ok=True)
 
 
 def practice_sheet(p, target, options):
@@ -282,7 +311,10 @@ def run(kind, project_file, output, engine, options, audio=''):
         folder = root / 'Exports' / (kind+'-'+uuid.uuid4().hex[:8])
         folder.mkdir(parents=True)
         name = safe_name(p['name'])
-        if kind == 'lyricsexport':
+        if kind == 'reaperextension':
+            target=folder/'BandStudio_Remote.lua';shutil.copy2(Path(engine)/'BandStudio_Remote.lua',target)
+            (folder/'LIRE-MOI.txt').write_text('Dans REAPER : Actions > Nouvelle action > Charger un ReaScript, choisir BandStudio_Remote.lua. Ouvrir BandStudio > Prises > Relier BandPilot. La télécommande pilote BandStudio ; elle ne synchronise pas les horloges audio et ne modifie pas les pistes REAPER. Ce composant est un ReaScript, pas un VST/AU.\n',encoding='utf-8')
+        elif kind == 'lyricsexport':
             fmt = options.get('format','srt')
             target = folder / (name+'.'+ ('lrc' if fmt == 'lrc' else 'srt'))
             lyric_file(p, target, fmt)

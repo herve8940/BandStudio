@@ -5,6 +5,7 @@ import math
 from pathlib import Path
 import subprocess
 import threading
+import time
 import warnings
 import numpy as np
 import soundfile as sf
@@ -45,7 +46,7 @@ def pan_gain(gain,pan):return np.array([gain*(1-max(0,pan)),gain*(1+min(0,pan))]
 
 class Audio:
     def __init__(self,engine):
-        self.engine=Path(engine);self.lock=threading.RLock();self.stream=None;self.running=False;self.position=0.;self.rate=1.;self.pitch=0.;self.mode='mix';self.loop=False;self.loopStart=0.;self.loopEnd=0.;self.project=None;self.root=None;self.data={};self.count=np.zeros((0,2),np.float32);self.loop_count=self.count;self.count_at=0;self.laps=0;self.pending_rate=None;self.error=''
+        self.engine=Path(engine);self.lock=threading.RLock();self.stream=None;self.running=False;self.position=0.;self.rate=1.;self.pitch=0.;self.mode='mix';self.loop=False;self.loopStart=0.;self.loopEnd=0.;self.project=None;self.root=None;self.data={};self.count=np.zeros((0,2),np.float32);self.loop_count=self.count;self.count_at=0;self.laps=0;self.pending_rate=None;self.error='';self.output_anchor=None
     def close(self):
         self.pause()
         if self.stream:self.stream.close();self.stream=None
@@ -71,6 +72,7 @@ class Audio:
             elif role=='source':on=self.mode=='mix' and not has_stems and not t['muted'] and not solo
             elif self.mode=='minus':on=on and role!='drums' and not role.startswith('drum_')
             elif self.mode=='drums':on=on and (role=='drums' or role.startswith('drum_'))
+            if role=='vocals' and any(x['role'].startswith('vocal_') for x in p['tracks']) and not t['solo']:on=False
             if role=='drums' and any(x['role'].startswith('drum_') for x in p['tracks']) and not t['solo']:on=False
             if not on:continue
             data=self.data[t['id']];offset=round((start-t['offset'])/self.rate*SR);begin=max(0,-offset);source=max(0,offset);n=min(frames-begin,len(data)-source)
@@ -99,10 +101,12 @@ class Audio:
         if self.loop and not self.loopStart<=self.position<self.loopEnd:self.position=self.loopStart
         self.count=self.make_count(self.position) if with_count else np.zeros((0,2),np.float32);self.count_at=0
         self.loop_count=self.make_count(self.loopStart) if self.project['settings']['countEveryLoop'] and self.loop else np.zeros((0,2),np.float32)
-        self.laps=0;self.running=True
+        self.laps=0;self.running=True;self.output_anchor=None
+        anchor_position=self.position-len(self.count)/SR*self.rate
         if hardware:
             import sounddevice as sd
             def callback(out,frames,t,status):
+                if self.output_anchor is None:self.output_anchor=(time.perf_counter()+t.outputBufferDacTime-t.currentTime,anchor_position)
                 try:out[:]=self.block(frames)
                 except Exception as e:self.error=str(e);self.running=False;out.fill(0)
             try:

@@ -61,10 +61,12 @@ struct StudioSetlist:Codable {var id=UUID().uuidString;var name:String;var paths
 
 extension StudioProject {
     enum CodingKeys:String,CodingKey {
-        case version,id,name,tracks,sections,cues,bpm,beats,notes,settings,guideFiles,guideKey,lyrics,chords,drumHits,key,sourceURL,capo,gridLocked,downbeats,analysisNote
+        case sessionDuration,capture,version,id,name,tracks,sections,cues,bpm,beats,notes,settings,guideFiles,guideKey,lyrics,chords,drumHits,key,sourceURL,capo,gridLocked,downbeats,analysisNote
     }
     init(from decoder:Decoder) throws {
         let d=try decoder.container(keyedBy:CodingKeys.self)
+        sessionDuration=try d.decodeIfPresent(Double.self,forKey:.sessionDuration) ?? 0
+        capture=try d.decodeIfPresent(CaptureSettings.self,forKey:.capture) ?? CaptureSettings()
         version=try d.decode(Int.self,forKey:.version);id=try d.decode(String.self,forKey:.id)
         name=try d.decode(String.self,forKey:.name);tracks=try d.decode([Track].self,forKey:.tracks)
         sections=try d.decodeIfPresent([Section].self,forKey:.sections) ?? []

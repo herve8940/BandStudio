@@ -10,7 +10,7 @@ import uuid
 
 ROOT=Path(__file__).resolve().parents[1]
 BUILD=ROOT/'desktop-build/standalone'
-VERSION='0.4.0'
+VERSION='0.5.0'
 
 
 def copy(source,target):
@@ -28,7 +28,8 @@ def install(update=False):
     engine_stage=support/('.Engine-install-'+ident);stage=applications/('.BandStudio-install-'+ident+'.app')
     for folder in (applications,support,library):folder.mkdir(parents=True,exist_ok=True)
     copy(BUILD/'Engine',engine_stage)
-    for name in ('.venv','.venv-demucs','.venv-structure','.venv-import','.venv-words','.venv-chords','.venv-drums'):
+    for name in ('.venv','.venv-demucs','.venv-structure','.venv-import','.venv-words','.venv-chords','.venv-drums','.venv-creative'):
+        if not (engine_stage/name).is_dir():continue
         version='3.11' if name=='.venv-structure' else '3.12';base=engine/('python'+version.replace('.',''))
         (engine_stage/name/'pyvenv.cfg').write_text(f'home = {base}/bin\ninclude-system-site-packages = false\nversion = {version}\n')
     os.rename(engine_stage,engine)

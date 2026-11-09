@@ -172,3 +172,35 @@ Les archives Windows installent ces modèles séparément ; aucun audio personne
 La normalisation utilise les filtres loudnorm de FFmpeg (mesure EBU R128) et ne constitue pas un moteur
 de mastering artistique. Le prompteur réseau utilise la bibliothèque standard Python et reste désactivé
 jusqu’à son activation par l’utilisateur.
+
+## BandStudio 0.5 creative components
+
+MusicGen Small: Meta / facebookresearch AudioCraft. Code MIT, model weights CC-BY-NC 4.0 (non-commercial). Official model revision 4c8334b02c6ec4e8664a91979669a501ec497792. https://huggingface.co/facebook/musicgen-small and https://github.com/facebookresearch/audiocraft/blob/main/LICENSE_weights . Models are downloaded from their authors; no weights are included in the Windows release.
+
+UVR MDX Karaoke 2: official TRvlvr/model_repo release, SHA-256 bf32e15105a09c0f7dddd2b67346146334d6f3ecb399ed7638eba2ab07cbf5f4. Model attribution and original terms remain with its authors; the application makes no ownership claim over the weights. https://github.com/TRvlvr/model_repo/releases/tag/all_public_uvr_models .
+
+MDX spectrum packing and inference conventions adapted from python-audio-separator (MIT), Copyright (c) 2023 karaokenerds. https://github.com/nomadkaraoke/python-audio-separator .
+
+MIT License
+
+Copyright (c) 2023 karaokenerds
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Transformers 4.44.2: Apache-2.0, Hugging Face. ONNX Runtime 1.19.2: MIT, Microsoft. SentencePiece 0.2.0: Apache-2.0, Google. Safetensors 0.4.5: Apache-2.0, Hugging Face. Their distribution license files are preserved in the isolated Python runtime.

@@ -15,7 +15,7 @@ extension StudioApp {
 
     func advancedTask(_ args:[String:Any]) throws {
         try requireIdle()
-        guard let root=root,let kind=args["kind"] as? String,["smartgrid","key","lyricsimport","lyricsexport","stemsexport","master","report","portable","sheet"].contains(kind) else{throw StudioError("Ouvre d’abord un morceau.")}
+        guard let root=root,let kind=args["kind"] as? String,["smartgrid","key","lyricsimport","lyricsexport","stemsexport","master","report","portable","sheet","reaperextension"].contains(kind) else{throw StudioError("Ouvre d’abord un morceau.")}
         let options=args["options"] as? [String:Any] ?? [:]
         let optionData=try JSONSerialization.data(withJSONObject:options)
         guard optionData.count<=2_100_000,let json=String(data:optionData,encoding:.utf8) else{throw StudioError("Paramètres trop volumineux.")}
@@ -72,5 +72,40 @@ extension StudioApp {
                 } catch {DispatchQueue.main.async{self.busy=false;self.jobName="";self.notice=error.localizedDescription;self.sendState()}}
             }
         } else {try startJob(kind,input:input,arguments:["--options",json],completion:finish)}
+    }
+}
+
+
+extension StudioApp {
+    func creativeTask(_ args:[String:Any]) throws {
+        try requireIdle()
+        guard let root=root,let kind=args["kind"] as? String,["generate","vocalsplit"].contains(kind) else{throw StudioError("Ouvre un morceau ou crée une session dans Prises.")}
+        guard project.tracks.count+2<=128 else{throw StudioError("Le projet atteint sa limite de pistes.")}
+        var source:Track?=nil
+        if kind=="vocalsplit" {
+            source=project.tracks.first(where:{$0.role=="vocals"})
+            guard source != nil else{throw StudioError("Sépare d’abord le chant du morceau avec Demucs.")}
+        }
+        let options=args["options"] as? [String:Any] ?? [:]
+        let json=String(data:try JSONSerialization.data(withJSONObject:options),encoding:.utf8)!
+        let offset=source?.offset ?? 0,sourceGain=source?.gain ?? 0.8,sourcePan=source?.pan ?? 0
+        try startJob(kind,input:try source.map{try project.audioURL($0,root:root)},arguments:["--options",json]){result in
+            let object=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
+            var tracks:[Track]=[]
+            for item in object["tracks"] as? [[String:String]] ?? [] {
+                guard let path=item["path"],let role=item["role"],["take","vocal_lead","vocal_backing"].contains(role) else{throw StudioError("Piste créative invalide.")}
+                let source=URL(fileURLWithPath:path).resolvingSymlinksInPath()
+                guard source.path.hasPrefix(result.deletingLastPathComponent().resolvingSymlinksInPath().path+"/") else{throw StudioError("Média généré hors de son dossier.")}
+                let file="Audio/"+UUID().uuidString+"-"+role+".wav";try FileManager.default.copyItem(at:source,to:root.appendingPathComponent(file))
+                let(duration,peaks)=try inspectAudio(root.appendingPathComponent(file))
+                tracks.append(Track(name:kind=="generate" ? "Accompagnement généré" : (role=="vocal_lead" ? "Chant principal" : "Chœurs"),file:file,role:role,duration:duration,offset:offset,gain:kind=="generate" ? 0.8 : sourceGain,pan:sourcePan,muted:kind=="generate" && self.project.duration>0,peaks:peaks))
+            }
+            guard !tracks.isEmpty else{throw StudioError("Aucun résultat audio.")}
+            self.remember()
+            if kind=="vocalsplit"{self.project.tracks.removeAll{$0.role.hasPrefix("vocal_")}}
+            self.project.tracks += tracks;try self.reloadAudio();self.audio.mode="mix";self.audio.applyMix();try self.changed()
+            self.notice=kind=="generate" ? "Accompagnement créé. Sur un morceau existant, la nouvelle piste est muette : active son Solo pour l’écouter. Le tempo généré reste à analyser." : "Chant principal et chœurs proposés. La piste de chant complète reste disponible en Solo pour comparer."
+            self.sendState()
+        }
     }
 }
