@@ -10,7 +10,7 @@
 ![Licence MIT](https://img.shields.io/badge/code-MIT-a78bfa)
 </div>
 
-BandStudio transforme un fichier audio en espace de travail : sépare les instruments, prépare ta partie, puis exporte un morceau validé dans REAPER. Chant, guitare, basse, claviers et batterie disposent des mêmes commandes d’écoute. Les traitements audio tournent sur ton ordinateur.
+BandStudio est un logiciel gratuit de séparation d’instruments (stems) et de préparation musicale locale : ajuste le tempo, travaille les accords et les paroles synchronisées, puis exporte un morceau validé dans REAPER. Chant, guitare, basse, claviers et batterie disposent des mêmes commandes d’écoute. Les traitements audio tournent sur ton ordinateur.
 
 ![Présentation de l’atelier BandStudio — illustration interactive disponible sur le site](site/assets/social.jpg)
 

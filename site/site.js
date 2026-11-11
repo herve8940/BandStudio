@@ -1,5 +1,6 @@
 'use strict';
-const stems=[['vocals','Chant','#dcb18d'],['guitar','Guitare','#879ff0'],['bass','Basse','#62cabe'],['drums','Batterie','#b58ce9']];
+const labels=document.documentElement.lang==='en'?['Vocals','Guitar','Bass','Drums']:['Chant','Guitare','Basse','Batterie'];
+const stems=[['vocals',labels[0],'#dcb18d'],['guitar',labels[1],'#879ff0'],['bass',labels[2],'#62cabe'],['drums',labels[3],'#b58ce9']];
 for(const [role,label,color] of stems){
  const row=document.createElement('div');row.className='stem';row.dataset.role=role;row.style.setProperty('--stem',color);
  const name=document.createElement('span');name.className='stem-label';const mark=document.createElement('i');name.append(mark,document.createTextNode(label));
