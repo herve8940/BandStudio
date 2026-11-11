@@ -22,7 +22,7 @@ BandStudio transforme un fichier audio en espace de travail : sépare les instru
 - **Organiser les morceaux** : bibliothèque en liste avec pochettes intégrées ou choisies, suppression réversible et restauration.
 - **Tout préparer** : enchaîne les analyses installées et les guides, en conservant les corrections manuelles et les étapes terminées en cas d’arrêt.
 - **Préparer la répétition** : click, appels de sections, décomptes, repères et notes. Validation explicite du mix, de la grille et des guides avant l’envoi dans REAPER.
-- **Exporter** : mix, stems WAV/FLAC/MP3/AAC, paroles LRC/SRT, fiche PDF, MIDI batterie et projet REAPER portable avec médias, démarrant à zéro sans décompte ajouté.
+- **Exporter** : mix, stems WAV/FLAC/MP3/AAC, paroles LRC/SRT, fiche PDF, MIDI batterie et projet REAPER portable avec médias et décompte initial réglable pour préparer le départ.
 
 La qualité dépend du morceau et des modèles installés. Une estimation d’IA se vérifie à l’écoute. BandStudio ne prétend pas reproduire tous les modèles de séparation spécialisés ou services de Moises. [Fonctions et limites](docs/BANDSTUDIO.md#traitement-du-morceau).
 

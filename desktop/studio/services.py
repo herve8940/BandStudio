@@ -248,8 +248,7 @@ def export_reaper(project_file,output):
     media=target/'Audio';media.mkdir(exist_ok=True)
     beats,duration=beat_grid(p)
     bpm=s['manualBPM'] if s['gridMode']=='fixed' else p.get('bpm') or s['manualBPM'];period=(beats[1]-beats[0]) if len(beats)>1 else 60/bpm
-    # REAPER starts at the song origin. Playback/audio-export count-ins stay independent.
-    preroll=0
+    preroll=s['countBars']*s['beatsPerBar']*period if s['exportCount'] else 0
     lines=['<REAPER_PROJECT 0.1 7.0 1','  SAMPLERATE 44100','  TEMPO '+str(bpm)+' '+str(s['beatsPerBar'])+' 4', '  MASTER_VOLUME 0.85']
     if beats and s['gridMode']=='detected':
         lines+=['  <TEMPOENVEX','    ACT 1 -1','    VIS 1 0 0','    ARM 1','    DEFSHAPE 1 -1 -1']
@@ -286,6 +285,17 @@ def export_reaper(project_file,output):
         lines += ['  <TRACK','    NAME '+quote(t['name']),f'    VOLPAN {gain:.8f} {pan:.8f}',f'    MUTESOLO {int(muted)} 0 0',
                   '    <ITEM','      BEAT 0',f'      POSITION {max(0,offset):.9f}',f'      SOFFS {skip:.9f}',f'      LENGTH {max(0,t["duration"]-skip):.9f}',
                   '      VOLPAN 1 0 1 -1','      NAME '+quote(t['name']),'      <SOURCE WAVE','        FILE '+quote('Audio/'+name),'      >','    >','  >']
+    if preroll>0:
+        count=render_count(p,root,period,preroll,media/'count-in.wav')
+        lines+=['  <TRACK','    NAME "Décompte"',f'    VOLPAN {s["countGain"]} {s["countPan"]}','    <ITEM','      POSITION 0',f'      LENGTH {preroll:.9f}','      <SOURCE WAVE','        FILE "Audio/count-in.wav"','      >','    >','  >']
+        if s['exportGuides'] and s['callsEnabled'] and (s['countBars']>1 or not s['countVoice']):
+            first=next((x for x in p['sections'] if x['start']<=.1 and x.get('announce') is not False),None)
+            relative=p.get('guideFiles',{}).get('call:'+first['id']) if first else None
+            if relative:
+                import soundfile as sf
+                initial=media/'initial-call.wav';shutil.copy2(root/relative,initial)
+                length=min(sf.info(initial).duration,preroll-(s['beatsPerBar']*period if s['countVoice'] else 0))
+                lines+=['  <TRACK','    NAME "Annonce de départ"',f'    VOLPAN {s["callsGain"]} {s["callsPan"]}','    <ITEM','      POSITION 0',f'      LENGTH {length:.9f}','      <SOURCE WAVE','        FILE "Audio/initial-call.wav"','      >','    >','  >']
     lines+=['>'];rpp=target/(safe_name(p['name'])+'.rpp');rpp.write_text('\n'.join(lines)+'\n')
     # Annotations have no native RPP representation. Bind their timing to this exact export.
     metadata={key:p.get(key) for key in ['settings','notes','lyrics','chords','drumHits','key','sourceURL','capo','downbeats','gridLocked','analysisNote']}
