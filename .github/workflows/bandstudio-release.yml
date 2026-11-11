@@ -28,7 +28,7 @@ jobs:
         shell: pwsh
         run: |
           $env:BANDSTUDIO_TEST_ENGINE = "$pwd/dist/bandstudio/stage/BandStudio-DEV/engine"
-          python -m pytest -q tests/test_studio_windows.py tests/test_studio_windows_startup.py tests/test_studio_compute.py tests/test_studio_services.py tests/test_studio_preparation.py tests/test_studio_support.py
+          python -m pytest -q tests/test_studio_artwork.py tests/test_studio_windows.py tests/test_studio_windows_startup.py tests/test_studio_compute.py tests/test_studio_services.py tests/test_studio_preparation.py tests/test_studio_support.py
       - name: Reproduce and repair analysis dependency failure
         run: python tools/check_studio_analysis.py --report dist/checks
       - run: python tools/check_studio_windows.py dist/bandstudio/BandStudio-1.1.0-Windows-x64.zip --report dist/checks

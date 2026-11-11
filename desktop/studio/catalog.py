@@ -21,13 +21,19 @@ def cover(path):
     return ''
 
 
+def entry(path):
+    path=Path(path)
+    from artwork import info
+    p=json.loads((path/'project.json').read_text(encoding='utf-8'))
+    return dict(path=str(path),name=p.get('name') or path.stem,artwork=cover(path),**info(path,p.get('name') or path.stem))
+
+
 def entries(library):
     result=[]
     for path in sorted(Path(library).glob('*.bandstudio')):
         try:
             member(library,path)
-            p=json.loads((path/'project.json').read_text(encoding='utf-8'))
-            result.append(dict(path=str(path),name=p.get('name') or path.stem,artwork=cover(path)))
+            result.append(entry(path.resolve()))
         except (OSError,ValueError):continue
     return result
 
@@ -74,6 +80,9 @@ if __name__=='__main__':
     import sys
     action,library=sys.argv[1:3]
     if action=='extract':value=extract(sys.argv[3],library,sys.argv[4])
+    elif action=='seed':
+        from artwork import seed
+        seed(library,sys.argv[3],sys.argv[4],json.loads(sys.argv[5]));value=True
     elif action=='remove':value=remove(library,sys.argv[3])
     elif action=='restore':value=restore(library)
     else:raise ValueError('Action inconnue.')

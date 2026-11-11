@@ -29,7 +29,7 @@ Windows : extraire le ZIP complet dans un nouveau dossier puis ouvrir BandStudio
 
 Windows : correction des formes d’onde des morceaux longs (débordement d’entiers après 68 secondes). Les anciens affichages sont recalculés à l’ouverture sans modifier l’audio. La fenêtre démarre maximisée et le transport reste accessible sur les petits écrans.
 
-Mes morceaux : liste avec pochettes intégrées aux fichiers ou miniatures des liens importés, choix manuel d’une image et suppression réversible dans la corbeille BandStudio.
+Mes morceaux : recherche automatique des pochettes par titre et artiste, y compris pour les morceaux déjà importés. Les pochettes existantes restent conservées. Clique sur une pochette pour préciser les informations, choisir un album ou une image locale. Recherche en arrière-plan, cache hors ligne et relance des pochettes manquantes. Seuls le titre et l’artiste sont envoyés à MusicBrainz ; aucun audio n’est transmis.
 
 Tout préparer : enchaînement des analyses installées puis des guides, depuis Séparer & analyser ou Pistes & structure. Les pistes déjà séparées et les repères protégés sont conservés. Une interruption conserve les étapes terminées. La validation finale reste à faire après écoute.
 

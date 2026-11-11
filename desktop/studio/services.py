@@ -85,7 +85,7 @@ def import_link(url,output,engine):
     from catalog import extract
     picture=next((p for p in folder.glob('source.*') if p.suffix in ('.jpg','.jpeg','.png','.webp','.avif')),files[0])
     artwork=str(folder/'Artwork.jpg') if extract(picture,folder,engine) else None
-    atomic(output,dict(audio=str(target),title=str(info.get('title') or 'Morceau importé'),sourceURL=url,artwork=artwork))
+    atomic(output,dict(audio=str(target),title=str(info.get('title') or 'Morceau importé'),sourceURL=url,artwork=artwork,musicMetadata={k:v for k,v in dict(title=info.get('track'),artist=info.get('artist'),album=info.get('album')).items() if v}))
 
 
 def beat_grid(project):

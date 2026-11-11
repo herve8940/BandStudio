@@ -30,6 +30,8 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     var pendingImportTitle:String?
     var pendingSourceURL=""
     var pendingArtwork:String?
+    var pendingMusicMetadata="{}"
+    var artworkBusy=false
     var lastExport=""
     var setlists:[StudioSetlist]=[]
     var pendingProject:URL?
@@ -97,6 +99,9 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 var item=["name":url.deletingPathExtension().lastPathComponent,"path":url.path]
                 if let data=try? Data(contentsOf:url.appendingPathComponent("project.json")),let p=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any],let name=p["name"] as? String {item["name"]=name}
                 if let data=try? Data(contentsOf:url.appendingPathComponent("Artwork.jpg")),data.count<=512_000 {item["artwork"]="data:image/jpeg;base64,"+data.base64EncodedString()}
+                if let data=try? Data(contentsOf:url.appendingPathComponent("Artwork.json")),data.count<=128_000,let art=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any] {
+                    for key in ["title","artist","album","artworkStatus","artworkMessage"] {if let value=art[key] as? String {item[key]=value}}
+                }
                 return item
             }
     }
@@ -191,8 +196,8 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         guard !urls.isEmpty else{return}
         busy=true;audio.pause();notice="Import des fichiers audio…";sendState()
         let current=project,currentRoot=root
-        let importedTitle=pendingImportTitle,importedURL=pendingSourceURL,artwork=pendingArtwork
-        pendingImportTitle=nil;pendingSourceURL="";pendingArtwork=nil
+        let importedTitle=pendingImportTitle,importedURL=pendingSourceURL,artwork=pendingArtwork,metadata=pendingMusicMetadata
+        pendingImportTitle=nil;pendingSourceURL="";pendingArtwork=nil;pendingMusicMetadata="{}"
         DispatchQueue.global(qos:.userInitiated).async {
             do {
                 var p=new ? StudioProject() : current
@@ -218,6 +223,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 }
                 if new {_ = try? self.catalogCall(["extract",dest.path,artwork ?? urls[0].path,self.runtime.path])}
                 p.preparation?.fingerprint=nil;p.preparation?.validatedAt=nil;try p.save(dest)
+                if new {_ = try? self.catalogCall(["seed",dest.path,urls[0].path,self.runtime.path,metadata])}
                 DispatchQueue.main.async {
                     self.busy=false
                     self.perform{try self.load(dest);self.notice="Import terminé. Tu peux écouter le morceau ou lancer sa préparation.";self.sendState()}
@@ -322,6 +328,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         if supportCommand(command,args){return}
         if command != "ready" {StudioDiagnostics.shared.event("command",["command":command,"playing":audio.running,"position":audio.current(),"busy":busy])}
         perform {
+            if command == "artwork" {try artworkCommand(args);return}
             if command == "ready" {sendState();sendUpdate();if automaticUpdates{checkUpdates()};return}
             if command == "import" {importSong();return}
             if command == "open" {openProject();return}
