@@ -73,7 +73,7 @@ def separate(audio, output, model, engine, quality='standard'):
         net=load_model(torch.load(checkpoint,map_location='cpu',weights_only=False))
     else:
         net=get_model(model)
-    # Bounded CPU operation is portable on Intel and does not interrupt playback.
+    # Keep the complete song and output on the CPU; only model chunks use CUDA.
     x, sr = sf.read(audio, dtype='float32', always_2d=True)
     x = convert_audio(torch.from_numpy(x.T), sr, net.samplerate, net.audio_channels)
     ref = x.mean(0)
@@ -83,8 +83,15 @@ def separate(audio, output, model, engine, quality='standard'):
     else:
         x = (x - mean) / std
         shifts,overlap={'fast':(0,.1),'standard':(1,.25),'careful':(2,.5)}[quality]
-        sources = apply_model(net, x[None], device='cpu', shifts=shifts,
-                              split=True, overlap=overlap, progress=True, num_workers=0)[0]
+        from compute import run, demucs_segment
+        def inference(info):
+            segment=demucs_segment(info)
+            if segment is not None:segment=min(segment,float(getattr(net,'max_allowed_segment',getattr(net,'segment',segment))))
+            with torch.inference_mode():
+                return apply_model(net, x[None], device=info['device'], shifts=shifts,
+                    split=True, overlap=overlap, progress=True, num_workers=0, segment=segment)[0].cpu()
+        sources,compute=run(torch,'drumsep' if model=='49469ca8' else 'separate',inference,
+            cleanup=lambda:net.to('cpu'),notify=lambda info:progress(output,'separation',**info))
         sources = sources * std + mean
     # Preserve relative stem levels; never normalize each stem independently.
     folder = Path(output).parent / 'stems'
@@ -144,6 +151,8 @@ def main():
     os.environ['REACUE_CPU_THREADS']='4'
     os.environ['HF_HUB_OFFLINE']='1'
     sys.path.insert(0,str(engine))
+    from compute import versions
+    versions(a.command)
     progress(a.output, a.command)
     from services import guides,import_link,decode,export_reaper,export_midi,import_reaper
     if a.command in ('generate','vocalsplit'):

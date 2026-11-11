@@ -50,8 +50,14 @@ def install_hooks():
     threading.excepthook = thread_crash
 
 def summary():
-    return {'application':'BandStudio', 'version':VERSION, 'os':platform.system(),
-            'os_version':platform.release(), 'architecture':platform.machine(), 'python':platform.python_version()}
+    info={'application':'BandStudio', 'version':VERSION, 'os':platform.system(),
+          'os_version':platform.release(), 'architecture':platform.machine(), 'python':platform.python_version()}
+    try:
+        build=json.loads(Path(__file__).with_name('build.json').read_text(encoding='utf-8'))
+        commit=build.get('commit','')
+        if re.fullmatch('[0-9a-f]{40}',commit):info['commit']=commit
+    except (OSError,ValueError,TypeError):pass
+    return info
 
 def export_report(destination):
     with zipfile.ZipFile(destination, 'w', zipfile.ZIP_DEFLATED) as archive:

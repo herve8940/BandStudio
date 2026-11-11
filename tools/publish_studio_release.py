@@ -23,7 +23,18 @@ def main():
         platforms[info['platform']]={'url':f'https://github.com/{repo}/releases/download/{tag}/{asset.name}','sha256':info['sha256']}
         assets.append(str(asset))
     assets+=list(map(str,dist.rglob('BandStudio-1.1.0-Windows-x64.zip*')))
-    notes=dist/'notes.md';notes.write_text('BandStudio · préparation musicale pour tous les musiciens.\n\nWindows : extraire le ZIP complet dans un nouveau dossier puis ouvrir BandStudio.exe. macOS : les paquets update sont destinés aux installations existantes.\n\nCorrectif Windows : préparation des DLL téléchargées après vérification SHA-256, pour éviter le blocage Python.Runtime.Loader.Initialize. Le test Windows reproduit cette erreur, vérifie le démarrage corrigé puis un second lancement. Une ancienne installation qui ne démarre pas doit être remplacée par ce ZIP ; conserver ses projets.\n\nTests de mixage, exports, interface et installation Windows exécutés avant publication. Les moteurs IA facultatifs et les périphériques audio nécessitent une validation sur le matériel utilisé.\n\nRévision : '+sha+'\n',encoding='utf-8')
+    notes=dist/'notes.md';notes.write_text(f'''BandStudio · préparation musicale pour tous les musiciens.
+
+Windows : extraire le ZIP complet dans un nouveau dossier puis ouvrir BandStudio.exe. Les installations existantes peuvent recevoir le code à la fermeture via les mises à jour automatiques. Les paquets update macOS sont destinés aux installations existantes.
+
+Correctifs d’analyse : compatibilité NumPy / soxr, sélection CUDA pour Demucs et Beat This, segments courts pour les cartes de 4 Go et reprise CPU en cas de manque de mémoire GPU. Après mise à jour, relancer **Réglages → Analyses locales → Rythme avancé → Installer / vérifier** pour réparer un environnement existant. Les modèles et morceaux sont conservés.
+
+Un second clic sur Play pendant la préparation des guides ne démarre plus un travail concurrent. Les diagnostics précisent le traitement, les versions des bibliothèques, le matériel détecté et le périphérique de calcul utilisé.
+
+Tests Windows : reproduction puis réparation de l’erreur NumPy, imports Beat This, rééchantillonnage soxr, inférence Demucs sur CPU, démarrage avec DLL téléchargées, audio et exports. La sélection CUDA et le repli sont testés par simulation ; aucune mesure sur une GTX 1650 physique n’est revendiquée.
+
+Révision : {sha}
+''',encoding='utf-8')
     exists=subprocess.run(['gh','release','view',tag],capture_output=True).returncode==0
     if not exists:gh('release','create',tag,*assets,'--target',sha,'--title','BandStudio 1.1 · '+sha[:7],'--notes-file',str(notes),'--latest=true')
     # A retried job may find a release whose first upload was interrupted.

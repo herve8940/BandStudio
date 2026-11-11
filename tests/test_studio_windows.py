@@ -63,6 +63,21 @@ def test_installer_paths_are_not_the_users_reaper_directory():
     assert 'js_api=api' in (ROOT/'desktop/studio/windows/launcher.py').read_text()
 
 
+def test_second_play_during_guide_preparation_does_not_start_another_job(tmp_path,monkeypatch):
+    p=fixture(tmp_path/'song.bandstudio');api=Api(ENGINE,tmp_path)
+    api._project=p;api._root=tmp_path/'song.bandstudio';api._audio.load(p,api._root)
+    api._busy=True
+    monkeypatch.setattr(api,'_op',lambda *args:pytest.fail('Duplicate preparation'))
+    assert api.command(dict(command='play',projectID=p['id']))['ok']
+    assert api._busy and not api._audio.running
+
+
+def test_optional_component_installations_cannot_modify_same_runtime_concurrently(tmp_path):
+    api=Api(ENGINE,tmp_path);api._components['stems']=object()
+    with pytest.raises(ValueError,match='déjà ouverte'):api._install('rhythm')
+    with pytest.raises(ValueError,match='Termine l’installation'):api._work('smartgrid')
+
+
 def test_slowdown_preserves_pitch_when_ffmpeg_is_available(tmp_path):
     from platform_tools import executable
     if not executable(ENGINE,'ffmpeg').exists():pytest.skip('Prepared engine required')

@@ -47,6 +47,7 @@ def prepare_runtime(source, engine):
         shutil.copy2(ROOT / name, engine / name)
     shutil.copy2(ROOT / 'desktop/studio/worker.py', engine / 'worker.py')
     shutil.copy2(ROOT / 'desktop/studio/services.py',engine/'services.py')
+    shutil.copy2(ROOT / 'desktop/studio/compute.py',engine/'compute.py')
     shutil.copy2(ROOT / 'desktop/studio/preparation.py',engine/'preparation.py')
     shutil.copy2(ROOT / 'desktop/studio/platform_tools.py',engine/'platform_tools.py')
     shutil.copy2(ROOT / 'desktop/studio/advanced.py',engine/'advanced.py')
@@ -63,7 +64,7 @@ def build(source, prepare=False):
         prepare_runtime(source, engine)
     if engine.exists():
         (engine/'BandStudio_Remote.lua').unlink(missing_ok=True)
-        for name in ('worker.py','services.py','listening.py','diagnostics.py','updater.py','preparation.py','platform_tools.py','advanced.py','phone.py','creative.py'):
+        for name in ('worker.py','services.py','listening.py','diagnostics.py','compute.py','updater.py','preparation.py','platform_tools.py','advanced.py','phone.py','creative.py'):
             shutil.copy2(ROOT/'desktop/studio'/name,engine/name)
         revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
         (engine/'build.json').write_text(json.dumps({'version':'1.1.0','commit':revision,'runtime':1}))

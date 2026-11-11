@@ -33,6 +33,14 @@ Pour une ancienne installation bloquée : télécharger le nouveau ZIP et l’ex
 
 Si l’erreur persiste, joindre le fichier `%LOCALAPPDATA%/BandStudio/Logs/startup.log` au signalement, après vérification de son contenu. Le journal `application.log` indique aussi l’étape de démarrage et le nombre de bibliothèques préparées. Référence : [diagnostic du blocage des DLL téléchargées](https://github.com/pyinstaller/pyinstaller/issues/8294).
 
+## NVIDIA et réparation des analyses Windows
+
+La séparation des pistes (Demucs / DrumSep) et le rythme avancé (Beat This) utilisent CUDA lorsque PyTorch réussit un calcul de contrôle sur la carte. Sur une GTX 1650 de 4 Go, la séparation traite des segments de 4 secondes en gardant le morceau complet en mémoire CPU. Une erreur CUDA ou un manque de mémoire déclenche une reprise sur le processeur ; ce choix apparaît dans la progression et les logs. Les tests sans GPU vérifient la sélection et la reprise, mais ne mesurent pas les performances d’une GTX 1650 physique. Les autres outils utilisent leurs propres moteurs et peuvent rester sur le processeur.
+
+Dans **Réglages → Analyses locales**, installer/vérifier **Séparer les stems** prépare la version CUDA de PyTorch lorsqu’une NVIDIA est détectée. Un pilote NVIDIA compatible est nécessaire. La présence de la carte seule ne prouve pas que l’environnement Python sait l’utiliser : les logs `analysis.environment` et `analysis.compute` indiquent le matériel détecté, les versions et le périphérique réellement sélectionné.
+
+L’erreur `numpy.core.multiarray failed to import` peut venir de NumPy 2 avec soxr 0.3.7 dans l’environnement rythmique. Après la mise à jour de BandStudio, relancer **Installer / vérifier → Rythme avancé** remet NumPy 1.26.4, vérifie les imports et conserve les modèles et les morceaux. Attendre la fin d’une installation et fermer sa fenêtre avant d’en lancer une autre. Les nouveaux environnements de séparation utilisent aussi cette version compatible de NumPy.
+
 ## macOS
 
 Pour une installation de développement disposant déjà d’un moteur ReaCue local et de ses environnements Python, depuis la racine du dépôt :

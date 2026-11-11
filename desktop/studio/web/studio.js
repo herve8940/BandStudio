@@ -49,7 +49,7 @@ function jobProgress(data){
   'structure-loading':'Chargement des modèles d’analyse…',
   'structure-analysis':'Analyse musicale en cours…',
   'structure-saving':'Organisation des sections…',
-  separate:'Séparation des instruments en cours…',drumsep:'Séparation de la batterie en cours…',
+  separate:'Séparation des instruments en cours…',separation:'Séparation des instruments en cours…',drumsep:'Séparation de la batterie en cours…',
   grid:'Recherche du tempo et des temps…',smartgrid:'Recherche des temps et débuts de mesure…',
   lyrics:'Transcription et alignement des paroles…',chords:'Recherche des accords…',
   drums:'Recherche des frappes de batterie…',guides:'Création du click et des annonces…',
@@ -59,6 +59,10 @@ function jobProgress(data){
  if(data.stage==='structure-analysis')text=data.device==='cpu'?'Analyse sur le processeur · cela peut prendre plusieurs minutes…':['mps','cuda'].includes(data.device)?'Analyse avec accélération graphique…':text;
  const percentages=[...String(data.detail||'').replace(/\r/g,'\n').matchAll(/^\s*(\d{1,3})%\|/gm)].map(m=>Number(m[1])).filter(p=>p<=100);
  if(percentages.length)text='Calcul audio : '+percentages.at(-1)+' %';
+ if(['separation','smartgrid'].includes(data.stage)){
+  if(data.device==='cuda')text+=' · NVIDIA CUDA';
+  else if(data.device==='cpu')text+=data.fallback?' · Reprise sur le processeur':' · Processeur';
+ }
  if(typeof data.elapsed==='number'&&Number.isFinite(data.elapsed)&&data.elapsed>=0){
   const seconds=Math.floor(data.elapsed),minutes=Math.floor(seconds/60);
   text+=' · '+(minutes?minutes+' min ':'')+(seconds%60)+' s écoulées';
