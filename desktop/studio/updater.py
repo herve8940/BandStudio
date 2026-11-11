@@ -62,6 +62,7 @@ def allowed_path(name):
     if not name.startswith('engine/'):return False
     relative=PurePosixPath(*path.parts[1:])
     if relative.name=='build.json':return len(relative.parts)==1
+    if len(relative.parts)==1 and relative.name.startswith('requirements-'):return relative.suffix=='.txt'
     if len(relative.parts)==1:return relative.suffix=='.py'
     return relative.parts[0] in ('web','windows','install','tools') and relative.suffix in ('.py','.js','.css','.html','.svg','.ps1','.txt','.ico')
 

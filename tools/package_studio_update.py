@@ -29,6 +29,13 @@ def build(output,platform_name,app=None):
             archive.writestr(path,content)
         if platform_name.startswith('windows'):archive.write(ROOT/'desktop/studio/windows/adapter.js','engine/web/adapter.js')
         for source in ROOT.glob('reacue_*.py'):archive.write(source,'engine/'+source.name)
+        for source in ROOT.glob('tools/setup_studio_*.py'):archive.write(source,'engine/tools/'+source.name)
+        for component in ('stems','structure','words','chords','drums','whisper'):
+            archive.write(ROOT/('requirements-'+component+'.txt'),'engine/requirements-'+component+'.txt')
+            script=ROOT/'install'/('install_'+component+'_windows.ps1')
+            if platform_name.startswith('windows') and script.is_file():
+                text=script.read_text(encoding='utf-8-sig').replace('ReaCue','BandStudio')
+                archive.writestr('engine/install/'+script.name,b'\xef\xbb\xbf'+text.replace('\r\n','\n').replace('\n','\r\n').encode('utf-8'))
         archive.writestr('engine/build.json',json.dumps({'version':'1.1.0','commit':commit,'runtime':1}))
         if app:
             for source in app.rglob('*'):

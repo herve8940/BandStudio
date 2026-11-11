@@ -23,8 +23,9 @@ def main():
     diagnostics.install_hooks();diagnostics.event("startup",**diagnostics.summary())
     import webview
     from windows.host import Api
-    logroot=Path(os.environ.get('LOCALAPPDATA',str(Path.home())))/'BandStudioDev';logroot.mkdir(parents=True,exist_ok=True)
-    logging.basicConfig(filename=str(logroot/'application.log'),level=logging.INFO,encoding='utf-8')
+    logroot=diagnostics.directory();logroot.mkdir(parents=True,exist_ok=True)
+    from logging.handlers import RotatingFileHandler
+    logging.basicConfig(handlers=[RotatingFileHandler(logroot/'webview.log',maxBytes=1_000_000,backupCount=2,encoding='utf-8')],level=logging.INFO)
     api=Api(ENGINE,logroot/'UITestProjects' if args.gui_smoke else None)
     window=webview.create_window('BandStudio · Préparation pour REAPER',str(ENGINE/'web/index.html'),js_api=api,width=1360,height=900,min_size=(960,660),background_color='#0b1121')
     api._window=window

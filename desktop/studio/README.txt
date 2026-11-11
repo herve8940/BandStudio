@@ -1,4 +1,4 @@
-BandStudio 1.0.1 — préparer les morceaux pour REAPER
+BandStudio 1.1.0 — préparer les morceaux pour REAPER
 
 DÉMARRER
 Ouvre BandStudio dans Applications. Importe un fichier audio ou une vidéo, ou ouvre
@@ -23,7 +23,7 @@ DrumSep : grosse caisse, caisse claire, toms, cymbales/charleston. Chant princip
 chœurs : UVR, à partir du stem de chant. Aucun modèle ne garantit une isolation parfaite.
 Les pistes gardent leur niveau relatif. Original et stems ne sont pas superposés dans
 le mix. Mute, solo, volume, panoramique et départ de chaque piste restent modifiables.
-Le lecteur propose Original, Mix, Sans batterie et Batterie seule ; vitesse 50–150 %,
+Le lecteur propose Original, Mix, Sans mon instrument et Mon instrument seul ; vitesse 50–150 %,
 transposition ±12 demi-tons. Les voix des guides conservent leur hauteur.
 Espace : lecture/pause. Flèches : mesure précédente/suivante. Maj + flèches : repères.
 M : ajouter un repère. Les boucles permettent de vérifier un passage avant validation.
@@ -73,3 +73,10 @@ BandStudioDev est conservée pour éviter de perdre l’accès aux morceaux pré
 BandPilot reste indépendant et consacré à la console. Les commandes croisées,
 l’enregistreur intégré et la télécommande REAPER ont été retirés du parcours.
 L’enregistrement, le montage final et le mixage se poursuivent dans REAPER.
+
+DIAGNOSTICS ET MISES À JOUR
+Réglages permet de consulter les logs locaux, exporter un diagnostic et ouvrir un
+signalement GitHub. Vérifie le diagnostic avant de le partager : aucun audio ni
+projet n’y est inclus. Les mises à jour publiées depuis main sont téléchargées
+automatiquement puis appliquées à la fermeture, après vérification de leur empreinte.
+Les modèles, projets et préférences sont conservés. Désactivation possible dans Réglages.

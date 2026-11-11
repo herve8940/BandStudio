@@ -5,10 +5,10 @@ using System.Windows.Forms;
 class Bootstrap {
     [STAThread] static void Main() {
         string root=AppDomain.CurrentDomain.BaseDirectory;
-        string logs=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"BandStudioDev");
-        Directory.CreateDirectory(logs);
-        string log=Path.Combine(logs,"demarrage.log");
+        string logs=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"BandStudio","Logs");
+        string log=Path.Combine(logs,"startup.log");
         try {
+            Directory.CreateDirectory(logs);
             var info=new ProcessStartInfo(Path.Combine(root,"engine","python","python.exe"),"\""+Path.Combine(root,"engine","windows","launcher.py")+"\"");
             info.WorkingDirectory=root; info.UseShellExecute=false; info.CreateNoWindow=true; info.RedirectStandardOutput=true; info.RedirectStandardError=true;
             info.EnvironmentVariables["PYTHONUTF8"]="1";

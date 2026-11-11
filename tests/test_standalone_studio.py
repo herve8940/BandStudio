@@ -192,7 +192,8 @@ def test_native_ui_commands_and_project_binding(tmp_path,windows):
             page.locator('#exportSheet').click()
             assert page.evaluate('window.sent.at(-1).args.kind')=='sheet'
             page.locator('#lyricsFile').set_input_files({'name':'paroles.lrc','mimeType':'text/plain','buffer':b'[00:01.00]Bonjour\n[00:02.00]Refrain'})
-            page.wait_for_function('window.sent.at(-1)?.args.kind === "lyricsimport"')
+            expect(page.locator('#lyricsFile')).to_have_value('')
+            assert page.evaluate('window.sent.at(-1)?.args.kind')=='lyricsimport'
             assert page.evaluate('window.sent.at(-1).args.options.replace') is False
             page.locator('.rail [data-view=guides]').click()
             page.locator('#lockGrid').check()
