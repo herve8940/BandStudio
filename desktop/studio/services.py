@@ -75,14 +75,17 @@ def import_link(url,output,engine):
           '--no-js-runtimes','--js-runtimes','deno:'+str(executable(engine,'deno')),
           '--socket-timeout','25','--retries','2','--max-filesize','1G',
           '--match-filter','!is_live & duration <= 10800','--ffmpeg-location',engine/'import-tools',
-          '--write-info-json','--no-progress','-f','bestaudio/best','-o',folder/'source.%(ext)s','--',url]
+          '--write-info-json','--write-thumbnail','--no-progress','-f','bestaudio/best','-o',folder/'source.%(ext)s','--',url]
     run(args,timeout=3600)
     metadata=next(folder.glob('source.info.json'),None)
     info=json.loads(metadata.read_text()) if metadata else {}
-    files=[p for p in folder.glob('source.*') if p.suffix not in ('.json','.part','.ytdl')]
+    files=[p for p in folder.glob('source.*') if p.suffix not in ('.json','.part','.ytdl','.jpg','.jpeg','.png','.webp','.avif')]
     if len(files)!=1:raise RuntimeError('Aucun fichier audio unique reçu. Choisis un lien vers un morceau ou une vidéo.')
     target=folder/'import.wav';decode(files[0],target,engine)
-    atomic(output,dict(audio=str(target),title=str(info.get('title') or 'Morceau importé'),sourceURL=url))
+    from catalog import extract
+    picture=next((p for p in folder.glob('source.*') if p.suffix in ('.jpg','.jpeg','.png','.webp','.avif')),files[0])
+    artwork=str(folder/'Artwork.jpg') if extract(picture,folder,engine) else None
+    atomic(output,dict(audio=str(target),title=str(info.get('title') or 'Morceau importé'),sourceURL=url,artwork=artwork))
 
 
 def beat_grid(project):
@@ -131,14 +134,15 @@ def voice_wav(text,folder,settings):
     import scipy.signal
     text=str(text).strip()[:240]
     if not text:return None
-    digest=hashlib.sha256((settings['voice']+str(settings['speechRate'])+text).encode()).hexdigest()[:24]
+    digest=hashlib.sha256(('speech-v3:'+str(os.name)+settings['language']+settings['voice']+str(settings['speechRate'])+text).encode()).hexdigest()[:24]
     target=folder/(digest+'.wav')
     if target.exists():return target
     raw=folder/(digest+('.speech.wav' if os.name=='nt' else '.aiff'))
     if os.name=='nt':
         request=folder/(digest+'.speech.json')
         atomic(request,dict(text=text,voice=settings['voice'],language=settings['language'],rate=settings['speechRate'],output=str(raw.resolve())))
-        run(['powershell.exe','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',Path(__file__).parent/'windows/speak.ps1','-RequestFile',request],timeout=60)
+        voice_info=run(['powershell.exe','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',Path(__file__).parent/'windows/speak.ps1','-RequestFile',request],timeout=60)
+        print(voice_info.decode('utf-8',errors='replace').strip(),flush=True)
         request.unlink(missing_ok=True)
     else:run(['/usr/bin/say','-v',settings['voice'],'-r',str(settings['speechRate']),'-o',raw,'--',text],timeout=60)
     x,sr=sf.read(raw,dtype='float32',always_2d=True)
@@ -147,8 +151,22 @@ def voice_wav(text,folder,settings):
     x=x[max(0,int(active[0]) - int(sr*.003)):min(len(x),int(active[-1])+int(sr*.03))]
     g=math.gcd(sr,44100);x=scipy.signal.resample_poly(x,44100//g,sr//g,axis=0)
     if x.shape[1]==1:x=np.repeat(x,2,axis=1)
-    sf.write(target,x[:,:2],44100,subtype='FLOAT');raw.unlink(missing_ok=True)
+    x=x[:,:2];x*=.9/max(float(np.max(np.abs(x))),1e-6)
+    fade=min(220,len(x)//2);ramp=np.linspace(0,1,fade,dtype='float32')[:,None]
+    x[:fade]*=ramp;x[-fade:]*=ramp[::-1]
+    sf.write(target,x,44100,subtype='FLOAT');raw.unlink(missing_ok=True)
     return target
+
+
+def announcement_text(item, language):
+    if item.get('callText'):return item['callText']
+    name=item['name']
+    # Translate standard section names, while preserving custom names and cues.
+    pairs={'couplet':'verse','refrain':'chorus','pré-refrain':'pre-chorus','pont':'bridge','silence':'break','introduction':'intro','fin':'ending'}
+    mapping=pairs if language=='en' else {v:k for k,v in pairs.items()}
+    match=re.fullmatch(r'(.+?)(\s+\d+)?',name.strip())
+    if match and match[1].casefold() in mapping:return mapping[match[1].casefold()]+(match[2] or '')
+    return name
 
 
 def guides(project_file,output):
@@ -180,7 +198,7 @@ def guides(project_file,output):
                  for item in p.get('sections',[])}
     for item in p.get('sections',[])+ (p.get('cues',[]) if s['speakCues'] else []):
         if item.get('announce') is False or not s['callsEnabled']:continue
-        text=item.get('callText') or item['name'];target=item.get('start',item.get('time',0))
+        text=announcement_text(item,s['language']);target=item.get('start',item.get('time',0))
         path=voice_wav(text,cache,s)
         if path:
             file_map['call:'+item['id']]=str(path)
@@ -230,7 +248,8 @@ def export_reaper(project_file,output):
     media=target/'Audio';media.mkdir(exist_ok=True)
     beats,duration=beat_grid(p)
     bpm=s['manualBPM'] if s['gridMode']=='fixed' else p.get('bpm') or s['manualBPM'];period=(beats[1]-beats[0]) if len(beats)>1 else 60/bpm
-    preroll=s['countBars']*s['beatsPerBar']*period if s['exportCount'] else 0
+    # REAPER starts at the song origin. Playback/audio-export count-ins stay independent.
+    preroll=0
     lines=['<REAPER_PROJECT 0.1 7.0 1','  SAMPLERATE 44100','  TEMPO '+str(bpm)+' '+str(s['beatsPerBar'])+' 4', '  MASTER_VOLUME 0.85']
     if beats and s['gridMode']=='detected':
         lines+=['  <TEMPOENVEX','    ACT 1 -1','    VIS 1 0 0','    ARM 1','    DEFSHAPE 1 -1 -1']
@@ -267,17 +286,6 @@ def export_reaper(project_file,output):
         lines += ['  <TRACK','    NAME '+quote(t['name']),f'    VOLPAN {gain:.8f} {pan:.8f}',f'    MUTESOLO {int(muted)} 0 0',
                   '    <ITEM','      BEAT 0',f'      POSITION {max(0,offset):.9f}',f'      SOFFS {skip:.9f}',f'      LENGTH {max(0,t["duration"]-skip):.9f}',
                   '      VOLPAN 1 0 1 -1','      NAME '+quote(t['name']),'      <SOURCE WAVE','        FILE '+quote('Audio/'+name),'      >','    >','  >']
-    if preroll>0:
-        count=render_count(p,root,period,preroll,media/'count-in.wav')
-        lines+=['  <TRACK','    NAME "Décompte"',f'    VOLPAN {s["countGain"]} {s["countPan"]}','    <ITEM','      POSITION 0',f'      LENGTH {preroll:.9f}','      <SOURCE WAVE','        FILE "Audio/count-in.wav"','      >','    >','  >']
-        if s['exportGuides'] and s['callsEnabled'] and (s['countBars']>1 or not s['countVoice']):
-            first=next((x for x in p['sections'] if x['start']<=.1 and x.get('announce') is not False),None)
-            relative=p.get('guideFiles',{}).get('call:'+first['id']) if first else None
-            if relative:
-                import soundfile as sf
-                initial=media/'initial-call.wav';shutil.copy2(root/relative,initial)
-                length=min(sf.info(initial).duration,preroll-(s['beatsPerBar']*period if s['countVoice'] else 0))
-                lines+=['  <TRACK','    NAME "Annonce de départ"',f'    VOLPAN {s["callsGain"]} {s["callsPan"]}','    <ITEM','      POSITION 0',f'      LENGTH {length:.9f}','      <SOURCE WAVE','        FILE "Audio/initial-call.wav"','      >','    >','  >']
     lines+=['>'];rpp=target/(safe_name(p['name'])+'.rpp');rpp.write_text('\n'.join(lines)+'\n')
     # Annotations have no native RPP representation. Bind their timing to this exact export.
     metadata={key:p.get(key) for key in ['settings','notes','lyrics','chords','drumHits','key','sourceURL','capo','downbeats','gridLocked','analysisNote']}

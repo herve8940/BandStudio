@@ -35,7 +35,7 @@ def main():
     from logging.handlers import RotatingFileHandler
     logging.basicConfig(handlers=[RotatingFileHandler(logroot/'webview.log',maxBytes=1_000_000,backupCount=2,encoding='utf-8')],level=logging.INFO)
     api=Api(ENGINE,logroot/'UITestProjects' if args.gui_smoke else None)
-    window=webview.create_window('BandStudio · Préparation pour REAPER',str(ENGINE/'web/index.html'),js_api=api,width=1360,height=900,min_size=(960,660),background_color='#0b1121')
+    window=webview.create_window('BandStudio · Préparation pour REAPER',str(ENGINE/'web/index.html'),js_api=api,width=1100,height=720,min_size=(720,440),maximized=True,background_color='#0b1121')
     api._window=window
     if not args.gui_smoke:window.events.loaded+=api._loaded
     window.events.closing+=api._closing

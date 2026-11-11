@@ -20,7 +20,7 @@ function renderPreparation(){
  $('deliveryMetrics').replaceChildren(...metrics.map(([label,value])=>{const e=node('div');e.append(node('small','',label),node('strong','',String(value)));return e;}));
  $('deliveryTracks').replaceChildren(...tracks.map(t=>{const row=node('div','delivery-track');row.append(node('span','track-dot'),node('span','',t.name),node('small','',t.muted?'Muette':t.solo?'Solo':roles[t.role]||'Piste'));row.firstChild.style.background=colors[t.role]||colors.other;return row;}));
  const modes={original:'Original',mix:'Mix des pistes'};const [kind,target]=listenMode(transport.mode);if(target)modes[transport.mode]=(kind==='minus'?'Sans ':'Solo · ')+instruments[target];
- $('deliveryOptions').textContent='Écoute : '+(modes[transport.mode]||'Mix des pistes')+' · Guides '+(s.exportGuides?'inclus':'exclus')+' · Décompte initial '+(s.exportCount?s.countBars+' mesure(s)':'exclu');
+ $('deliveryOptions').textContent='Écoute : '+(modes[transport.mode]||'Mix des pistes')+' · Guides '+(s.exportGuides?'inclus':'exclus')+' · Départ REAPER à 0:00 (sans décompte ajouté)';
  $('validateProject').disabled=!loaded||state.busy||ready;
  $('sendReaper').disabled=$('saveReaper').disabled=!loaded||state.busy||!ready;
  $('validationHint').textContent=ready?'La préparation est enregistrée et validée.':!loaded?'Importe ou ouvre un morceau pour commencer.':'Toute modification des pistes, du mix ou des repères demande une nouvelle validation.';
@@ -62,4 +62,24 @@ document.addEventListener('keydown',e=>{
  if(direction){e.preventDefault();navigate(direction);}
  if(e.code==='KeyM'){e.preventDefault();openEditor('cue');}
 });
+renderPreparation();
+
+$('restoreProject').onclick=()=>send('restoreProject');
+const preparePanel=node('article','prepare-all');
+preparePanel.append(node('h3','','Préparer le morceau en un clic'),node('p','','Enchaîne les analyses installées, puis crée le click et les annonces. Les pistes déjà séparées et le calage protégé sont conservés. Écoute le résultat avant de valider.'));
+const planText=node('small');planText.id='analysisPlan';
+function prepareAll(){send('prepareAll',{model:$('model').value,quality:$('separationQuality').value,language:$('lyricsLanguage').value});}
+const prepareButton=button('✧ Tout préparer',prepareAll,'primary');prepareButton.id='prepareAll';
+preparePanel.append(planText,prepareButton,button('Installer les analyses manquantes',()=>view('settings')));
+$('view-prepare').querySelector('.page-heading').after(preparePanel);
+const structurePrepare=button('✧ Tout préparer',prepareAll);structurePrepare.id='prepareAllStructure';navigation.prepend(structurePrepare);
+const beforeBatchRender=renderPreparation;
+renderPreparation=function(){
+ beforeBatchRender();
+ const labels={separate:'Séparation',grid:'Tempo',smartgrid:'Temps et mesures',structure:'Structure',key:'Tonalité',lyrics:'Paroles',chords:'Accords',guides:'Click et annonces'};
+ const plan=state.analysisPlan||[];
+ planText.textContent='Étapes prévues : '+(plan.map(k=>labels[k]||k).join(' → ')||'ouvre un morceau pour commencer');
+ const disabled=!state.loaded||state.busy||!state.project.tracks.some(t=>t.role==='source');
+ prepareButton.disabled=structurePrepare.disabled=disabled;
+};
 renderPreparation();

@@ -20,6 +20,7 @@ from windows.audio import Audio,SR
 from windows import recording
 import diagnostics
 import updater
+import catalog
 
 COMPONENTS={'generate':'creative','vocalsplit':'creative','separate':'stems','drumsep':'drumsep','structure':'structure','lyrics':'words','chords':'chords','drums':'drums','smartgrid':'rhythm'}
 ENVIRONMENTS={'generate':'.venv-creative','vocalsplit':'.venv-creative','separate':'.venv-demucs','drumsep':'.venv-demucs','structure':'.venv-structure','lyrics':'.venv-words','chords':'.venv-chords','drums':'.venv-drums','smartgrid':'.venv-demucs'}
@@ -28,6 +29,7 @@ class Api:
     def __init__(self,engine,library=None):
         self._engine=Path(engine).resolve();self._library=Path(library or Path.home()/'Music/BandStudioDev');self._library.mkdir(parents=True,exist_ok=True)
         self._project=model.fresh();self._root=None;self._audio=Audio(self._engine);self._window=None;self._busy=False;self._job_name='';self._job=None;self._job_log=None;self._notice='';self._revision=0;self._history=[];self._future=[];self._last_export='';self._stop=threading.Event();self._lock=threading.RLock();self._record=None;self._components={};self._phone=None;self._bridge=None;self._transport_generation=0;self._checking_update=False
+        self._cancelled=threading.Event()
         try:self._setlists=json.loads((self._library/'setlists.json').read_text(encoding='utf-8'))
         except (OSError,ValueError):self._setlists=[]
     def _send(self,value):
@@ -35,11 +37,21 @@ class Api:
             try:self._window.evaluate_js('window.studioReceive && window.studioReceive('+json.dumps(value,ensure_ascii=True,allow_nan=False)+')')
             except Exception:pass
     def _list(self):
-        return [dict(name=p.stem,path=str(p)) for p in sorted(self._library.glob('*.bandstudio')) if (p/'project.json').is_file()]
+        return catalog.entries(self._library)
+    def _plan(self):
+        available={k:python_for(self._engine,v).is_file() for k,v in ENVIRONMENTS.items()}
+        available['smartgrid']=available['smartgrid'] and any((self._engine/'.venv-demucs').glob('**/site-packages/beat_this'))
+        steps=[]
+        if available['separate'] and not any(t['role'] in ('drums','bass','vocals','other','guitar','piano') for t in self._project['tracks']):steps.append('separate')
+        if not self._project.get('gridLocked'):steps.append('smartgrid' if available['smartgrid'] else 'grid')
+        if available['structure']:steps.append('structure')
+        steps.append('key')
+        steps += [k for k in ('lyrics','chords') if available[k]]
+        return steps+['guides']
     def _ready_guides(self):
         return bool(self._root and self._project['guideKey']==model.guide_key(self._project) and all(model.relative_file(self._root,p).is_file() for p in self._project['guideFiles'].values()))
     def _state(self):
-        self._send(dict(type='state',project=self._project,duration=model.duration(self._project),loaded=self._root is not None,library=self._list(),setlists=self._setlists,busy=self._busy,job=self._job_name,notice=self._notice,undo=bool(self._history),redo=bool(self._future),revision=self._revision,lastExport=self._last_export,guidesReady=self._ready_guides(),platform='windows',components={k:python_for(self._engine,v).is_file() for k,v in ENVIRONMENTS.items()}))
+        self._send(dict(type='state',project=self._project,duration=model.duration(self._project),loaded=self._root is not None,library=self._list(),trashAvailable=bool(catalog.trashed(self._library)),analysisPlan=self._plan(),setlists=self._setlists,busy=self._busy,job=self._job_name,notice=self._notice,undo=bool(self._history),redo=bool(self._future),revision=self._revision,lastExport=self._last_export,guidesReady=self._ready_guides(),platform='windows',components={k:python_for(self._engine,v).is_file() for k,v in ENVIRONMENTS.items()}))
         self._transport()
     def _transport(self):
         a=self._audio
@@ -90,17 +102,17 @@ class Api:
             if not target.exists():shutil.copytree(example,target)
             projects=self._list()
         if projects and self._root is None:self._op('Ouverture du morceau',lambda:self._load(Path(projects[0]['path'])))
-    def _op(self,title,work):
+    def _op(self,title,work,rollback=True):
         with self._lock:
             if self._busy:raise ValueError('Un traitement est déjà en cours. Patiente ou annule-le.')
-            self._busy=True;self._job_name=title;self._notice=''
+            self._busy=True;self._job_name=title;self._notice='';self._cancelled.clear()
         self._state()
         def run():
             before=copy.deepcopy(self._project);root=self._root
             try:work()
             except Exception as error:
                 diagnostics.event("job.error",operation=title,kind=type(error).__name__,error=error);traceback.print_exc();self._notice=str(error)
-                if self._root==root and self._project['id']==before['id']:
+                if rollback and self._root==root and self._project['id']==before['id']:
                     self._project=before
                     if root:
                         try:self._reload();model.save(before,root)
@@ -115,6 +127,7 @@ class Api:
                 if self._transport_generation==generation:action()
         return ready
     def _work(self,kind,input=None,arguments=()):
+        if self._cancelled.is_set():raise RuntimeError('Traitement annulé.')
         diagnostics.event('job.start', task=kind, environment=ENVIRONMENTS.get(kind,'.venv'))
         if kind in ENVIRONMENTS and self._components:raise ValueError('Termine l’installation des composants et ferme sa fenêtre avant de lancer une analyse.')
         if kind in ENVIRONMENTS and not python_for(self._engine,ENVIRONMENTS[kind]).is_file():raise ValueError('Installe le composant '+COMPONENTS[kind]+' dans Réglages → Analyses locales, puis relance ce traitement.')
@@ -129,8 +142,12 @@ class Api:
         env=os.environ.copy();env.update(PYTHONUTF8='1',PYTHONIOENCODING='utf-8',PYTHONUNBUFFERED='1',PYTHONDONTWRITEBYTECODE='1',HF_HUB_OFFLINE='1',PATH=str(self._engine/'import-tools')+os.pathsep+env.get('PATH',''))
         self._job_started=time.monotonic();self._job_log=folder/'traitement.log'
         with self._job_log.open('wb') as log:
-            proc=subprocess.Popen(args,stdout=log,stderr=log,cwd=folder,env=env,creationflags=creation_flags());self._job=proc;status=proc.wait()
+            with self._lock:
+                if self._cancelled.is_set():raise RuntimeError('Traitement annulé.')
+                proc=subprocess.Popen(args,stdout=log,stderr=log,cwd=folder,env=env,creationflags=creation_flags());self._job=proc
+            status=proc.wait()
         self._job=None
+        if self._cancelled.is_set():raise RuntimeError('Traitement annulé.')
         diagnostics.event('job.finish', task=kind, exit=status, elapsed=round(time.monotonic()-self._job_started,2))
         if status:
             lines=self._job_log.read_text(errors='replace').strip().splitlines()
@@ -149,6 +166,7 @@ class Api:
         pos,mode=self._audio.position,self._audio.mode;self._audio.load(self._project,self._root);self._audio.position=min(pos,model.duration(self._project));self._audio.mode=mode
     def _load(self,root):
         p=model.load(root);prep=p.get('preparation') or {}
+        model.save(p,root) # Persist repaired legacy waveforms.
         self._audio.loop=False;self._audio.rate=prep.get('rate',1);self._audio.pitch=prep.get('pitch',0)
         self._audio.load(p,root)
         if prep:self._audio.mode=prep.get('mode','mix')
@@ -169,7 +187,7 @@ class Api:
         args=[str(executable(self._engine,'ffmpeg')),'-nostdin','-hide_banner','-loglevel','error','-y','-protocol_whitelist','file,pipe,crypto,data','-i',str(source),'-map','0:a:0','-vn','-ac','2','-ar','44100','-c:a','pcm_f32le',str(target)]
         r=subprocess.run(args,capture_output=True,creationflags=creation_flags(),timeout=1800)
         if r.returncode:raise ValueError('Fichier audio illisible : '+r.stderr.decode(errors='replace')[-700:])
-    def _import(self,files,new=True,title=None,url=''):
+    def _import(self,files,new=True,title=None,url='',artwork=None):
         if new:
             p=model.fresh(title or Path(files[0]).stem)
             try:p['settings'].update(json.loads((self._library/'defaults.json').read_text()))
@@ -185,6 +203,7 @@ class Api:
                 for candidate,words in [('drums',['drum','batterie']),('bass',['bass','basse']),('vocals',['vocal','chant']),('guitar',['guitar','guitare']),('piano',['piano','clavier'])]:
                     if any(w in name.lower() for w in words):role=candidate;break
             p['tracks'].append(model.track(target,root,'Original' if new else name,role))
+        if new:catalog.extract(artwork or files[0],root,self._engine)
         model.save(p,root);self._load(root);self._notice='Morceau importé. Tu peux lancer la lecture ou préparer les analyses.'
     def _import_rpp(self,path):
         result,obj=self._work('rpp',path);source=Path(obj['project']).resolve()
@@ -222,6 +241,21 @@ class Api:
     def _set_rate(self,rate,pitch,resume=False):
         self._audio.pause();self._audio.rate=model.number(rate,.5,1.5);self._audio.pitch=model.number(pitch,-12,12);self._audio.prepare()
         if resume:self._audio.play()
+    def _prepare_all(self,args):
+        from windows.advanced_host import advanced_task
+        steps=self._plan()
+        for index,kind in enumerate(steps,1):
+            before=copy.deepcopy(self._project)
+            self._job_name=f'Tout préparer · {index}/{len(steps)} · '+kind;self._state()
+            try:
+                if self._cancelled.is_set():raise RuntimeError('Traitement annulé.')
+                if kind in ('smartgrid','key'):advanced_task(self,kind,{})
+                elif kind=='guides':self._guides()
+                else:self._analysis(kind,args)
+            except Exception as error:
+                self._project=before;self._reload();self._save(invalidate=False)
+                raise RuntimeError(f'Arrêt à l’étape {index}/{len(steps)} ({kind}). Les étapes terminées sont conservées. {error}') from error
+        self._notice='Préparation terminée. Écoute le résultat, ajuste les propositions, puis valide le morceau.'
     def _dialog(self,kind,**options):
         import webview
         return self._window.create_file_dialog(getattr(webview.FileDialog,kind),**options)
@@ -273,6 +307,7 @@ class Api:
                 diagnostics.export_report(target);self._notice='Diagnostic exporté. Vérifie-le avant de le joindre au signalement.'
             return
         if cmd=='cancel':
+            self._cancelled.set()
             self._transport_generation+=1
             if self._job:
                 if os.name=='nt':subprocess.run(['taskkill.exe','/PID',str(self._job.pid),'/T','/F'],capture_output=True,creationflags=creation_flags())
@@ -282,6 +317,7 @@ class Api:
         if self._record and cmd not in ('record','stop','studioControl'):raise ValueError('Arrête la prise avant cette action.')
         if cmd=='installComponent':self._install(args.get('component'));return
         if cmd=='audioSettings':os.startfile('ms-settings:sound');return
+        if cmd=='voiceSettings':os.startfile('ms-settings:speech');return
         if cmd in ('bandpilot','bridge','studioControl','record','newSession','captureSettings'):
             raise ValueError('BandStudio prépare les morceaux. L’enregistrement se poursuit dans REAPER.')
         if cmd in ('import','addTracks'):
@@ -296,11 +332,32 @@ class Api:
             path=args['path']
             if path not in [x['path'] for x in self._list()]:raise ValueError('Morceau hors de la bibliothèque.')
             a.pause();self._op('Ouverture du morceau',lambda:self._load(Path(path)));return
+        if cmd=='deleteProject':
+            path=catalog.member(self._library,args['path']);active=self._root is not None and path==self._root.resolve()
+            if active:a.close();a.data.clear()
+            try:catalog.remove(self._library,path)
+            except Exception:
+                if active:self._reload()
+                raise
+            if active:
+                self._audio=Audio(self._engine);self._project=model.fresh();self._root=None;self._history=[];self._future=[];self._last_export='';self._revision+=1
+            self._notice='Morceau déplacé dans la corbeille BandStudio. Tu peux le restaurer depuis Mes morceaux.';return
+        if cmd=='restoreProject':
+            catalog.restore(self._library);self._notice='Morceau restauré dans la bibliothèque.';return
+        if cmd=='projectArtwork':
+            path=catalog.member(self._library,args['path'])
+            files=self._dialog('OPEN',file_types=('Images (*.jpg;*.jpeg;*.png;*.webp)',))
+            if files:
+                def artwork():
+                    if not catalog.extract(files[0],path,self._engine):raise ValueError('Image illisible. Choisis une image JPG, PNG ou WebP.')
+                    self._notice='Pochette enregistrée.'
+                self._op('Ajout de la pochette',artwork)
+            return
         if cmd=='link':
             from services import checked_url
             url=checked_url(args.get('url',''))
             def linked():
-                _,result=self._work('link',arguments=['--url',url]);self._import([result['audio']],True,result['title'],url)
+                _,result=self._work('link',arguments=['--url',url]);self._import([result['audio']],True,result['title'],url,result.get('artwork'))
             a.pause();self._op('Import du lien',linked);return
         if m.get('projectID')!=p['id']:raise ValueError('Le projet a changé. Recommence ton action.')
         if cmd=='newSession':recording.command(self,dict(action='new',name=args.get('name','Répétition')));return
@@ -390,6 +447,9 @@ class Api:
             kind=args.get('kind')
             if kind not in ('grid','structure','separate','drumsep','lyrics','chords','drums'):raise ValueError('Analyse inconnue.')
             self._op('Analyse locale : '+kind,lambda:self._analysis(kind,args));return
+        if cmd=='prepareAll':
+            if not any(t['role']=='source' for t in p['tracks']):raise ValueError('Importe le morceau original avant de lancer la préparation complète.')
+            a.pause();self._op('Préparation complète',lambda:self._prepare_all(args),rollback=False);return
         if cmd=='validateProject':
             if args.get('reviewed') is not True:raise ValueError('Confirme l’écoute et les repères dans Valider & envoyer.')
             def validate_preparation():

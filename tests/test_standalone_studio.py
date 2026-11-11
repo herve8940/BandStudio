@@ -235,5 +235,35 @@ def test_native_ui_commands_and_project_binding(tmp_path,windows):
             assert page.evaluate('window.sent.at(-1).args.open') is True
             page.evaluate('window.studioReceive({type:"transport",position:0,rate:.9,pitch:0,mode:"mix"})')
             expect(page.locator('#sendReaper')).to_be_disabled()
+            project['tracks'].append({**project['tracks'][0],'id':'source','role':'source','name':'Original'})
+            library=[{'name':'Morceau <b>test</b>','path':'/Music/Test.bandstudio','artwork':''}]
+            page.evaluate('v=>window.studioReceive({type:"state",project:v.project,duration:100,loaded:true,library:v.library,trashAvailable:true,analysisPlan:["grid","structure","key","guides"],revision:8})',dict(project=project,library=library))
+            page.locator('.rail [data-view=prepare]').click()
+            expect(page.locator('#analysisPlan')).to_contain_text('Tempo → Structure → Tonalité → Click et annonces')
+            page.locator('#prepareAll').click()
+            assert page.evaluate('window.sent.at(-1).command')=='prepareAll'
+            page.locator('.rail [data-view=library]').click()
+            expect(page.locator('#library .song-row')).to_have_count(1)
+            expect(page.locator('#library h3')).to_have_text('Morceau <b>test</b>')
+            page.locator('.song-art').click()
+            assert page.evaluate('window.sent.at(-1).args.path')=='/Music/Test.bandstudio'
+            assert page.evaluate('window.sent.at(-1).command')=='projectArtwork'
+            page.get_by_role('button',name='Supprimer',exact=True).click()
+            expect(page.locator('#deleteProjectDialog')).to_be_visible()
+            page.get_by_role('button',name='Garder le morceau').click()
+            assert page.evaluate('window.sent.at(-1).command')!='deleteProject'
+            page.get_by_role('button',name='Supprimer',exact=True).click()
+            page.locator('#confirmDeleteProject').click()
+            assert page.evaluate('window.sent.at(-1).command')=='deleteProject'
+            page.locator('#restoreProject').click()
+            assert page.evaluate('window.sent.at(-1).command')=='restoreProject'
+            for width,height in [(1280,650),(960,540),(800,500),(720,440)]:
+                page.set_viewport_size({'width':width,'height':height})
+                assert page.evaluate('document.documentElement.scrollWidth <= innerWidth+1')
+                box=page.locator('#play').bounding_box()
+                assert box['y']>=0 and box['y']+box['height']<=height
+                page.locator('.rail [data-view=studio]').click()
+                page.locator('#prepareAllStructure').click()
+                assert page.evaluate('window.sent.at(-1).command')=='prepareAll'
             assert not errors,errors
         finally:browser.close();host.shutdown();host.server_close()
