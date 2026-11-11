@@ -38,6 +38,9 @@ def test_verified_library_unblocks_without_touching_user_files_and_restart_is_id
 def test_tampered_library_is_not_unblocked(tmp_path):
     engine,dll,manifest,value,stream=runtime(tmp_path)
     dll.write_bytes(b'changed after packaging')
+    # Truncating the unnamed stream can clear ADS on Windows; mark the changed
+    # file again so this actually exercises a tampered, downloaded library.
+    stream.write_bytes(ZONE)
     with pytest.raises(StartupError,match='modifiée'):unblock_bundled_libraries(engine)
     assert stream.read_bytes()==ZONE
 
