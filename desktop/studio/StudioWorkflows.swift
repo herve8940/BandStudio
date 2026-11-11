@@ -309,7 +309,7 @@ extension StudioApp {
             steps.append(smart ? "smartgrid" : "grid")
         }
         if available(".venv-structure"){steps.append("structure")}
-        steps.append("key")
+        if project.key.isEmpty{steps.append("key")}
         if available(".venv-words"){steps.append("lyrics")}
         if available(".venv-chords"){steps.append("chords")}
         return steps+["guides"]

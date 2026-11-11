@@ -45,7 +45,7 @@ class Api:
         if available['separate'] and not any(t['role'] in ('drums','bass','vocals','other','guitar','piano') for t in self._project['tracks']):steps.append('separate')
         if not self._project.get('gridLocked'):steps.append('smartgrid' if available['smartgrid'] else 'grid')
         if available['structure']:steps.append('structure')
-        steps.append('key')
+        if not self._project.get('key'):steps.append('key')
         steps += [k for k in ('lyrics','chords') if available[k]]
         return steps+['guides']
     def _ready_guides(self):
@@ -246,7 +246,8 @@ class Api:
         steps=self._plan()
         for index,kind in enumerate(steps,1):
             before=copy.deepcopy(self._project)
-            self._job_name=f'Tout préparer · {index}/{len(steps)} · '+kind;self._state()
+            titles={'separate':'Séparation','grid':'Tempo','smartgrid':'Temps et mesures','structure':'Structure','key':'Tonalité','lyrics':'Paroles','chords':'Accords','guides':'Click et annonces'}
+            self._job_name=f'Tout préparer · {index}/{len(steps)} · '+titles[kind];self._state()
             try:
                 if self._cancelled.is_set():raise RuntimeError('Traitement annulé.')
                 if kind in ('smartgrid','key'):advanced_task(self,kind,{})
