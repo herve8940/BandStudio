@@ -73,7 +73,7 @@ jobs:
         browser: [chromium, webkit]
     env:
       BANDSTUDIO_BROWSER: ${{ matrix.browser }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -81,7 +81,15 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install pytest playwright numpy scipy soundfile
-      - run: python -m playwright install --with-deps chromium webkit
+      - name: Install browser and system dependencies
+        timeout-minutes: 6
+        run: |
+          # Avoid the intermittently stalled Azure mirror (runner-images issue 14594).
+          # Keep the official HTTPS Ubuntu mirrors and all APT signature checks.
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
+          fi
+          python -m playwright install --with-deps "$BANDSTUDIO_BROWSER"
       - run: python -m pytest -q tests/test_standalone_studio.py tests/test_studio_support.py
   publish:
     needs: [windows, mac, interface]
