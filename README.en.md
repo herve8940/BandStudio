@@ -2,9 +2,9 @@
 
 **Your song. Your way.** Local song preparation for every musician.
 
-[Website](https://herve8940.github.io/BandStudio/) · [Downloads](https://github.com/herve8940/BandStudio/releases/tag/bandstudio-main) · [Français](README.md) · [Report a bug](https://github.com/herve8940/BandStudio/issues/new/choose)
+[Website](https://herve8940.github.io/BandStudio/en.html) · [Downloads](https://github.com/herve8940/BandStudio/releases/tag/bandstudio-main) · [Français](README.md) · [Report a bug](https://github.com/herve8940/BandStudio/issues/new/choose)
 
-Split a song into stems, practise your part, and hand a reviewed project to REAPER. Vocals, guitar, bass, keyboards and drums share the same instrument selector, solo and backing-track controls.
+BandStudio is free software for local stem separation and song practice: adjust tempo, work on chords and synchronized lyrics, then export a reviewed project to REAPER. Vocals, guitar, bass, keyboards and drums share the same instrument selector, solo and backing-track controls.
 
 - Local 4/6-stem separation, mixing and optional drum/vocal sub-stems.
 - Tempo and key detection, speed adjustment, pitch shifting, loops and count-ins.
@@ -17,6 +17,6 @@ Split a song into stems, practise your part, and hand a reviewed project to REAP
 
 Windows packaging, speech, WebView2 and offline audio are exercised in CI; actual audio devices and optional AI engines still need hardware testing. AI output needs musical review. Specialized separation models and cloud services from commercial products are not all reproduced.
 
-**[BandPilot](https://herve8940.github.io/BandPilot/)** complements BandStudio with mixer control, guided sound checks and rehearsals. Both applications work independently; REAPER receives the prepared music.
+**[BandPilot](https://herve8940.github.io/BandPilot/en.html)** complements BandStudio with mixer control, guided sound checks and rehearsals. Both applications work independently; REAPER receives the prepared music.
 
 BandStudio grew from ReaCue. The [legacy REAPER documentation](README_REACUE.md) remains available. Code: [MIT](LICENSE). Optional models retain their own terms, including noncommercial restrictions for some structure/drum components: [third-party notices](THIRD_PARTY_NOTICES.md).
