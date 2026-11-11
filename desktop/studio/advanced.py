@@ -60,7 +60,7 @@ def musical_grid(beats, downbeats, duration):
                 gridStatus=status)
 
 
-def smart_grid(audio, engine):
+def smart_grid(audio, engine, notify=lambda info: None):
     import soundfile as sf
     import torch
     from beat_this.inference import Audio2Beats
@@ -74,9 +74,12 @@ def smart_grid(audio, engine):
     if sf.info(audio).duration > 1800:
         raise ValueError('L’analyse rythmique avancée accepte un morceau de 30 minutes maximum.')
     signal, sr = sf.read(audio, dtype='float32', always_2d=True)
-    predictor = Audio2Beats(checkpoint_path=str(checkpoint), device='cpu', dbn=False)
-    with torch.inference_mode():
-        beats, downbeats = predictor(signal.mean(axis=1), sr)
+    from compute import run
+    def inference(info):
+        predictor = Audio2Beats(checkpoint_path=str(checkpoint), device=info['device'], dbn=False)
+        with torch.inference_mode():
+            return predictor(signal.mean(axis=1), sr)
+    (beats, downbeats), _ = run(torch,'smartgrid',inference,notify=notify)
     return musical_grid(beats, downbeats, len(signal) / sr)
 
 
@@ -302,7 +305,7 @@ def run(kind, project_file, output, engine, options, audio=''):
     root = Path(p['_root']).resolve()
     length = max((t['duration']+t['offset'] for t in p['tracks'] if not t['role'].startswith('guide_')), default=0)
     if kind == 'smartgrid':
-        result = smart_grid(audio, engine)
+        result = smart_grid(audio, engine, notify=lambda info:atomic(Path(output).parent/'progress.json',dict(stage='smartgrid',**info)))
     elif kind == 'key':
         result = detect_key(audio)
     elif kind == 'lyricsimport':

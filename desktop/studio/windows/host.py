@@ -62,10 +62,11 @@ class Api:
                     try:status=json.loads((self._job_log.parent/'progress.json').read_text(encoding='utf-8'))
                     except (OSError,ValueError):status={}
                     if not isinstance(status,dict):status={}
-                    self._send(dict(type='job',detail=detail[-1] if detail else '',stage=status.get('stage'),device=status.get('device'),elapsed=max(0,time.monotonic()-self._job_started)))
+                    self._send(dict(type='job',detail=detail[-1] if detail else '',stage=status.get('stage'),device=status.get('device'),fallback=bool(status.get('fallback')),elapsed=max(0,time.monotonic()-self._job_started)))
                 except OSError:pass
             for name,proc in list(self._components.items()):
                 if proc.poll() is not None:
+                    diagnostics.event('component.finish', component=name, exit=proc.returncode)
                     del self._components[name];self._notice='Installation terminée.' if proc.returncode==0 else 'L’installation a été interrompue ou a échoué. Consulte la fenêtre d’installation.';self._state()
     def _check_updates(self):
         if self._checking_update:return
@@ -98,7 +99,7 @@ class Api:
             before=copy.deepcopy(self._project);root=self._root
             try:work()
             except Exception as error:
-                diagnostics.event("job.error",kind=type(error).__name__,error=error);traceback.print_exc();self._notice=str(error)
+                diagnostics.event("job.error",operation=title,kind=type(error).__name__,error=error);traceback.print_exc();self._notice=str(error)
                 if self._root==root and self._project['id']==before['id']:
                     self._project=before
                     if root:
@@ -114,6 +115,8 @@ class Api:
                 if self._transport_generation==generation:action()
         return ready
     def _work(self,kind,input=None,arguments=()):
+        diagnostics.event('job.start', task=kind, environment=ENVIRONMENTS.get(kind,'.venv'))
+        if kind in ENVIRONMENTS and self._components:raise ValueError('Termine l’installation des composants et ferme sa fenêtre avant de lancer une analyse.')
         if kind in ENVIRONMENTS and not python_for(self._engine,ENVIRONMENTS[kind]).is_file():raise ValueError('Installe le composant '+COMPONENTS[kind]+' dans Réglages → Analyses locales, puis relance ce traitement.')
         folder=(self._root or self._library/'.Imports')/'Analyses'/model.ident();folder.mkdir(parents=True)
         snapshot=folder/'project.json';atomic(snapshot,{**self._project,'_root':str(self._root or folder),'_mode':self._audio.mode,'_rate':self._audio.rate,'_pitch':self._audio.pitch})
@@ -128,8 +131,13 @@ class Api:
         with self._job_log.open('wb') as log:
             proc=subprocess.Popen(args,stdout=log,stderr=log,cwd=folder,env=env,creationflags=creation_flags());self._job=proc;status=proc.wait()
         self._job=None
+        diagnostics.event('job.finish', task=kind, exit=status, elapsed=round(time.monotonic()-self._job_started,2))
         if status:
-            lines=self._job_log.read_text(errors='replace').strip().splitlines();raise RuntimeError((lines[-1] if lines else 'Traitement annulé ou interrompu.')[-1500:])
+            lines=self._job_log.read_text(errors='replace').strip().splitlines()
+            if any('numpy.core.multiarray failed to import' in line or '_ARRAY_API not found' in line for line in lines):
+                component='Rythme avancé' if kind=='smartgrid' else COMPONENTS.get(kind,'concerné')
+                raise RuntimeError('Incompatibilité NumPy dans le moteur d’analyse. Réinstalle '+component+' dans Réglages → Analyses locales, puis relance le traitement. Tes morceaux sont conservés.')
+            raise RuntimeError((lines[-1] if lines else 'Traitement annulé ou interrompu.')[-1500:])
         return result,json.loads(result.read_text(encoding='utf-8'))
     def _remember(self):self._history.append(copy.deepcopy(self._project));self._history=self._history[-80:];self._future=[]
     def _save(self,invalidate=True):
@@ -221,11 +229,12 @@ class Api:
         if os.name=='nt':subprocess.Popen(['explorer.exe','/select,',str(Path(path))],creationflags=creation_flags())
     def _install(self,component):
         if component not in ('stems','structure','words','chords','drums','rhythm','drumsep','creative'):raise ValueError('Composant inconnu.')
-        if component in self._components:raise ValueError('Cette installation est déjà ouverte.')
+        if self._components:raise ValueError('Une installation est déjà ouverte. Termine-la et ferme sa fenêtre avant d’en lancer une autre.')
         env=os.environ.copy();env.update(PYTHONUTF8='1',REAPER_RESOURCE_PATH=str(self._engine/'worker-state'),UV_PYTHON_INSTALL_DIR=str(self._engine/'managed-python'),UV_CACHE_DIR=str(self._engine/'.uv_cache'),REACUE_WORDS_ENGINE='off',TORCH_HOME=str(self._engine/'torch-cache'))
         env['PATH']=str(self._engine/'tools')+os.pathsep+str(self._engine/'import-tools')+os.pathsep+env.get('PATH','')
         script=['-File',str(self._engine/'windows/install_extra.ps1'),'-Component',component] if component in ('rhythm','drumsep','creative') else ['-File',str(self._engine/'install'/('install_'+component+'_windows.ps1')),'-Lang','fr']
         proc=subprocess.Popen(['powershell.exe','-NoProfile','-ExecutionPolicy','Bypass','-NoExit',*script],cwd=self._engine,env=env,creationflags=subprocess.CREATE_NEW_CONSOLE)
+        diagnostics.event('component.start', component=component)
         self._components[component]=proc;self._notice='Une fenêtre d’installation est ouverte. Suis ses indications puis ferme-la quand elle a terminé.'
     def command(self,message):
         """The only method exposed to the local WebView; never accepts executable code."""
@@ -305,6 +314,7 @@ class Api:
         if cmd=='play':
             if a.running:a.pause()
             elif self._ready_guides():a.play()
+            elif self._busy:self._notice='Préparation audio en cours. Patiente avant de relancer la lecture.'
             else:self._op('Préparation des appels et du décompte',self._prepared_transport(a.play))
             return
         if cmd=='stop':

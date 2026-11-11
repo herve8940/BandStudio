@@ -7,7 +7,8 @@ soundfile>=0.12
 # Mac Intel : PyTorch n'existe plus pour Mac Intel après 2.2.2, qui exige numpy < 2
 torch==2.2.2 ; sys_platform == "darwin" and platform_machine == "x86_64"
 torchaudio==2.2.2 ; sys_platform == "darwin" and platform_machine == "x86_64"
-numpy<2 ; sys_platform == "darwin" and platform_machine == "x86_64"
+# Beat This / soxr 0.3.7 share this environment on every OS and require NumPy 1.x.
+numpy==1.26.4
 # Mac Apple Silicon, Windows, Linux (torchaudio < 2.9 : torchaudio.save, utilisé par Demucs 4.0.1)
 torch>=2.5.1,<2.9 ; sys_platform != "darwin" or platform_machine != "x86_64"
 torchaudio>=2.5.1,<2.9 ; sys_platform != "darwin" or platform_machine != "x86_64"
