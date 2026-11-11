@@ -23,7 +23,15 @@ Référence fonctionnelle : [traitement d’un morceau dans Moises](https://help
 
 ## Windows
 
-Télécharger la version principale depuis les Releases, extraire le ZIP complet dans un dossier accessible en écriture et lancer `BandStudio.exe`. Installer les composants manquants depuis Réglages. Le paquet embarque Python et FFmpeg ; WebView2 est nécessaire. Les essais CI utilisent Windows et un dossier avec accents/espaces. Le pilote de la carte son et les analyses IA demandent une vérification sur le PC cible.
+Télécharger la version principale depuis les Releases, extraire le ZIP complet dans un dossier accessible en écriture et lancer `BandStudio.exe`. Installer les composants manquants depuis Réglages. Le paquet embarque Python et FFmpeg ; WebView2 et .NET Framework 4.8 sont nécessaires. Les essais CI utilisent Windows et un dossier avec accents/espaces, avec les bibliothèques marquées comme téléchargées par Windows. Le pilote de la carte son et les analyses IA demandent une vérification sur le PC cible.
+
+### Erreur `Python.Runtime.Loader.Initialize` au démarrage
+
+Windows peut transmettre aux DLL le marquage de provenance Internet du ZIP téléchargé. .NET refuse alors de charger `Python.Runtime.dll`, avant l’ouverture de l’interface. Le lanceur des nouveaux paquets prépare automatiquement les bibliothèques du moteur : il vérifie leur SHA-256 contre l’inventaire créé à la construction avant de retirer ce marquage. Les fichiers inconnus ou modifiés sont exclus ; aucune politique Windows n’est changée.
+
+Pour une ancienne installation bloquée : télécharger le nouveau ZIP et l’extraire dans un nouveau dossier. Autre solution pour le ZIP officiel déjà téléchargé : clic droit → **Propriétés → Débloquer → Appliquer**, puis extraire à nouveau dans un nouveau dossier. Conserver les anciens projets. Une application qui ne démarre pas ne peut pas récupérer sa mise à jour automatique.
+
+Si l’erreur persiste, joindre le fichier `%LOCALAPPDATA%/BandStudio/Logs/startup.log` au signalement, après vérification de son contenu. Le journal `application.log` indique aussi l’étape de démarrage et le nombre de bibliothèques préparées. Référence : [diagnostic du blocage des DLL téléchargées](https://github.com/pyinstaller/pyinstaller/issues/8294).
 
 ## macOS
 
@@ -41,7 +49,7 @@ Les mises à jour `macos-x64` et `macos-arm64` ne contiennent que l’applicatio
 ## Logs et signalement
 
 - macOS : `~/Library/Logs/BandStudio/application.log`.
-- Windows : `%LOCALAPPDATA%/BandStudio/Logs/application.log` ; le journal du lanceur reste dans `%LOCALAPPDATA%/BandStudioDev/demarrage.log`.
+- Windows : `%LOCALAPPDATA%/BandStudio/Logs/application.log`, `webview.log` et `startup.log` (lancement par `BandStudio.exe`).
 - Rotation : 1 Mo par fichier, trois archives. Actions, erreurs et traitements sont tracés sans les arguments contenant le morceau ou les paroles.
 - **Réglages → Afficher les logs / Exporter le diagnostic / Signaler un bug sur GitHub**. L’export ne contient ni média ni projet. Les chemins personnels et URL sont masqués au mieux ; vérifier le fichier avant partage.
 - Les journaux détaillés des moteurs restent dans `Analyses/<identifiant>/traitement.log` du projet et ne sont pas joints automatiquement.

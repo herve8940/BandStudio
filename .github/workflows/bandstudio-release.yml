@@ -28,7 +28,7 @@ jobs:
         shell: pwsh
         run: |
           $env:BANDSTUDIO_TEST_ENGINE = "$pwd/dist/bandstudio/stage/BandStudio-DEV/engine"
-          python -m pytest -q tests/test_studio_windows.py tests/test_studio_services.py tests/test_studio_preparation.py tests/test_studio_support.py
+          python -m pytest -q tests/test_studio_windows.py tests/test_studio_windows_startup.py tests/test_studio_services.py tests/test_studio_preparation.py tests/test_studio_support.py
       - run: python tools/check_studio_windows.py dist/bandstudio/BandStudio-1.1.0-Windows-x64.zip --report dist/checks
       - run: python tools/package_studio_update.py --platform windows-x64
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

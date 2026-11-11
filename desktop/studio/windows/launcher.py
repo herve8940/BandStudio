@@ -21,6 +21,14 @@ def main():
         smoke(ENGINE,args.smoke);return
     import diagnostics
     diagnostics.install_hooks();diagnostics.event("startup",**diagnostics.summary())
+    from windows.startup import unblock_bundled_libraries, load_clr
+    if os.name == 'nt':
+        preparation = unblock_bundled_libraries(ENGINE)
+        diagnostics.event('startup.libraries', **preparation)
+        print('Préparation des bibliothèques Windows : '+json.dumps(preparation), flush=True)
+        load_clr()
+        from importlib.metadata import version
+        diagnostics.event('startup.clr', pythonnet=version('pythonnet'), clr_loader=version('clr-loader'))
     import webview
     from windows.host import Api
     logroot=diagnostics.directory();logroot.mkdir(parents=True,exist_ok=True)
@@ -57,6 +65,8 @@ def main():
 
 if __name__=='__main__':
     try:main()
-    except Exception:
+    except Exception as error:
+        import diagnostics
+        diagnostics.event('startup.failed', kind=type(error).__name__, error=error)
         import traceback
         traceback.print_exc();sys.exit(1)

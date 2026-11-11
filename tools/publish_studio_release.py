@@ -23,7 +23,7 @@ def main():
         platforms[info['platform']]={'url':f'https://github.com/{repo}/releases/download/{tag}/{asset.name}','sha256':info['sha256']}
         assets.append(str(asset))
     assets+=list(map(str,dist.rglob('BandStudio-1.1.0-Windows-x64.zip*')))
-    notes=dist/'notes.md';notes.write_text('BandStudio · préparation musicale pour tous les musiciens.\n\nWindows : extraire le ZIP complet puis ouvrir BandStudio.exe. macOS : les paquets update sont destinés aux installations existantes.\n\nTests de mixage, exports, interface et installation Windows exécutés avant publication. Les moteurs IA facultatifs et les périphériques audio nécessitent une validation sur le matériel utilisé.\n\nRévision : '+sha+'\n')
+    notes=dist/'notes.md';notes.write_text('BandStudio · préparation musicale pour tous les musiciens.\n\nWindows : extraire le ZIP complet dans un nouveau dossier puis ouvrir BandStudio.exe. macOS : les paquets update sont destinés aux installations existantes.\n\nCorrectif Windows : préparation des DLL téléchargées après vérification SHA-256, pour éviter le blocage Python.Runtime.Loader.Initialize. Le test Windows reproduit cette erreur, vérifie le démarrage corrigé puis un second lancement. Une ancienne installation qui ne démarre pas doit être remplacée par ce ZIP ; conserver ses projets.\n\nTests de mixage, exports, interface et installation Windows exécutés avant publication. Les moteurs IA facultatifs et les périphériques audio nécessitent une validation sur le matériel utilisé.\n\nRévision : '+sha+'\n',encoding='utf-8')
     exists=subprocess.run(['gh','release','view',tag],capture_output=True).returncode==0
     if not exists:gh('release','create',tag,*assets,'--target',sha,'--title','BandStudio 1.1 · '+sha[:7],'--notes-file',str(notes),'--latest=true')
     # A retried job may find a release whose first upload was interrupted.
@@ -45,5 +45,6 @@ def main():
     else:gh('release','upload','bandstudio-main',str(feed),'--clobber')
     windows=list(map(str,dist.rglob('BandStudio-1.1.0-Windows-x64.zip*')))
     gh('release','upload','bandstudio-main',*windows,'--clobber')
+    gh('release','edit','bandstudio-main','--notes-file',str(notes))
 
 if __name__=='__main__':main()

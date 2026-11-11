@@ -66,6 +66,12 @@ def build(output):
     bases=list(managed.glob('cpython-3.12.*-windows-x86_64-*'));assert len(bases)==1,bases
     shutil.copytree(bases[0],engine/'python');python=engine/'python/python.exe';assert python.is_file()
     subprocess.run([uv,'pip','install','--python',str(python),'--system','--break-system-packages','-r',str(ROOT/'desktop/studio/windows/requirements.txt')],check=True)
+    # Keep this with the runtime, outside code-only updates. Only unchanged
+    # libraries from this inventory may have their download marker removed.
+    libraries = [dict(path=p.relative_to(engine/'python').as_posix(), sha256=hashlib.sha256(p.read_bytes()).hexdigest())
+                 for p in sorted((engine/'python').rglob('*')) if p.is_file() and p.suffix.lower() in ('.dll', '.pyd')]
+    assert any(p['path'].lower()=='lib/site-packages/pythonnet/runtime/python.runtime.dll' for p in libraries)
+    (engine/'python/runtime-libraries.json').write_text(json.dumps({'schema':1,'libraries':libraries},indent=2),encoding='utf-8')
     (engine/'tools').mkdir(exist_ok=True);shutil.copy2(uv,engine/'tools/uv.exe')
     download('https://raw.githubusercontent.com/astral-sh/uv/'+importlib.metadata.version('uv')+'/LICENSE-MIT',engine/'tools/uv-LICENSE-MIT')
     cache=output/'downloads';cache.mkdir(exist_ok=True)
