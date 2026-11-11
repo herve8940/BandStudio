@@ -245,9 +245,26 @@ def test_native_ui_commands_and_project_binding(tmp_path,windows):
             page.locator('.rail [data-view=library]').click()
             expect(page.locator('#library .song-row')).to_have_count(1)
             expect(page.locator('#library h3')).to_have_text('Morceau <b>test</b>')
+            # Existing imports start a background lookup without an analysis job.
+            assert page.evaluate('window.sent.filter(m=>m.command==="artwork").at(-1).args')=={'path':'/Music/Test.bandstudio','action':'sync'}
+            page.evaluate('window.studioReceive({type:"artworkResult",path:"/Music/Test.bandstudio",message:"Précise le titre et l’artiste."})')
             page.locator('.song-art').click()
+            expect(page.locator('#artworkDialog')).to_be_visible()
+            page.locator('#artworkTitle').fill('Dani California')
+            page.locator('#artworkArtist').fill('RHCP')
+            page.get_by_role('button',name='Rechercher sur Internet').click()
+            assert page.evaluate('window.sent.at(-1).args')=={'path':'/Music/Test.bandstudio','action':'search','title':'Dani California','artist':'RHCP'}
+            expect(page.locator('#artworkForm button[type=submit]')).to_be_disabled()
+            page.evaluate('window.studioReceive({type:"artworkResult",path:"/Music/Test.bandstudio",message:"Choisis un album",candidates:[{id:"album-id",album:"Stadium <b>Arcadium</b>",artist:"RHCP",title:"Dani California",date:"2006"}]})')
+            expect(page.locator('#artworkChoices strong')).to_have_text('Stadium <b>Arcadium</b>')
+            assert page.locator('#artworkChoices b').count()==0
+            page.get_by_role('button',name='Utiliser cet album').click()
+            assert page.evaluate('window.sent.at(-1).args')=={'path':'/Music/Test.bandstudio','action':'apply','id':'album-id'}
+            page.evaluate('window.studioReceive({type:"artworkResult",path:"/Music/Test.bandstudio",message:"Pochette enregistrée."})')
+            page.locator('#artworkFile').click()
             assert page.evaluate('window.sent.at(-1).args.path')=='/Music/Test.bandstudio'
             assert page.evaluate('window.sent.at(-1).command')=='projectArtwork'
+            expect(page.locator('#artworkDialog')).not_to_be_visible()
             page.get_by_role('button',name='Supprimer',exact=True).click()
             expect(page.locator('#deleteProjectDialog')).to_be_visible()
             page.get_by_role('button',name='Garder le morceau').click()
@@ -257,6 +274,12 @@ def test_native_ui_commands_and_project_binding(tmp_path,windows):
             assert page.evaluate('window.sent.at(-1).command')=='deleteProject'
             page.locator('#restoreProject').click()
             assert page.evaluate('window.sent.at(-1).command')=='restoreProject'
+            library.append({'name':'Nouvel import','path':'/Music/New.bandstudio','artwork':''})
+            page.evaluate('v=>window.studioReceive({type:"state",project:v.project,duration:100,loaded:true,library:v.library,revision:9})',dict(project=project,library=library))
+            assert page.evaluate('window.sent.at(-1).args')=={'path':'/Music/New.bandstudio','action':'sync'}
+            # Repeated state broadcasts do not enqueue the same import again.
+            page.evaluate('v=>window.studioReceive({type:"state",project:v.project,duration:100,loaded:true,library:v.library,revision:10})',dict(project=project,library=library))
+            assert page.evaluate('window.sent.filter(m=>m.command==="artwork"&&m.args.action==="sync").length')==2
             for width,height in [(1280,650),(960,540),(800,500),(720,440)]:
                 page.set_viewport_size({'width':width,'height':height})
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth+1')

@@ -31,7 +31,7 @@ def extract(zip_path,target):
 
 def source_files():
     files=[ROOT/'LICENSE',ROOT/'THIRD_PARTY_NOTICES.md']
-    for name in ['services.py','listening.py','diagnostics.py','compute.py','catalog.py','updater.py','preparation.py','platform_tools.py','worker.py','advanced.py','phone.py','creative.py']:files.append(ROOT/'desktop/studio'/name)
+    for name in ['services.py','listening.py','diagnostics.py','compute.py','catalog.py','artwork.py','updater.py','preparation.py','platform_tools.py','worker.py','advanced.py','phone.py','creative.py']:files.append(ROOT/'desktop/studio'/name)
     files += [ROOT/'desktop/studio/assets/BandStudio.ico']
     files+=list((ROOT/'desktop/studio/windows').glob('*.py'))+list((ROOT/'desktop/studio/windows').glob('*.js'))+list((ROOT/'desktop/studio/windows').glob('*.ps1'))
     files+=[p for p in (ROOT/'desktop/studio/web').iterdir() if p.suffix in ('.html','.js','.css','.svg','.ico')]

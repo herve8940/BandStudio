@@ -71,3 +71,12 @@ Au démarrage, l’application vérifie ce manifeste sur GitHub. Le télécharge
 Désactiver **Mettre à jour automatiquement** avant une session sans changement souhaité. **Vérifier maintenant** permet un contrôle manuel ; si l’option automatique reste désactivée, l’application ne remplace pas ses fichiers à la fermeture. Réactiver l’option pour appliquer le paquet téléchargé à la prochaine fermeture.
 
 Les sauvegardes sont dans `~/Library/Application Support/BandStudio/Updates` sur Mac et `%LOCALAPPDATA%/BandStudio/Updates` sous Windows. `last-update.json` identifie la sauvegarde de la dernière installation. Une installation manuelle initiale de la version 1.1 est nécessaire pour activer le système dans les anciennes versions.
+
+
+### Pochettes automatiques
+
+À l’ouverture de BandStudio et après un import, les morceaux sans pochette sont recherchés en arrière-plan dans MusicBrainz et Cover Art Archive. Les tags titre/artiste/album du fichier sont conservés avant la conversion audio ; les anciens projets utilisent leur nom, avec les conventions « Artiste - Titre » et « Titre - Artiste ». Une correspondance exacte titre + artiste sur un album officiel permet l’ajout automatique. Les pochettes déjà présentes sont conservées.
+
+Dans **Mes morceaux**, cliquer sur la pochette permet de corriger le titre et l’artiste, rechercher puis choisir un album, ou sélectionner une image locale. **Rechercher les pochettes manquantes** relance aussi les recherches précédemment infructueuses. **Suspendre** arrête la file après la recherche en cours ; la lecture et les analyses restent disponibles. Les résultats ne sont pas garantis pour tous les morceaux : un titre seul, un fichier mal nommé ou un album absent du catalogue peut nécessiter un choix manuel.
+
+Seuls le titre et l’artiste sont envoyés au catalogue ; aucun audio ni chemin de fichier n’est transmis. `Artwork.jpg` et les métadonnées `Artwork.json` restent dans le projet, utilisables hors ligne. Les recherches infructueuses sont mémorisées sept jours (une heure en cas d’indisponibilité réseau), sauf relance manuelle. Le service est appelé avec un identifiant BandStudio, des requêtes espacées et des téléchargements bornés. Aucun compte ni clé API n’est nécessaire. Documentation : [recherche MusicBrainz](https://musicbrainz.org/doc/MusicBrainz_API/Search), [Cover Art Archive](https://musicbrainz.org/doc/Cover_Art_Archive/API).

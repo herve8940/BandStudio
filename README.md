@@ -19,7 +19,7 @@ BandStudio transforme un fichier audio en espace de travail : sépare les instru
 - **Séparer et mixer** : 4 ou 6 stems, volumes, panoramiques, mute, solo, original et mix. Choisis ton instrument pour l’isoler ou jouer sans lui. Sous-pistes de batterie et chant principal/chœurs avec les moteurs facultatifs.
 - **Travailler un passage** : boucles, vitesse de 50 à 150 %, transposition de ±12 demi-tons, progression du tempo et capo pour les accords affichés.
 - **Comprendre le morceau** : tempo, temps et débuts de mesure, tonalité, sections modifiables, accords et paroles synchronisées. Les corrections manuelles sont conservées.
-- **Organiser les morceaux** : bibliothèque en liste avec pochettes intégrées ou choisies, suppression réversible et restauration.
+- **Organiser les morceaux** : bibliothèque en liste avec pochettes recherchées automatiquement par titre/artiste (y compris les anciens imports), intégrées ou choisies, suppression réversible et restauration.
 - **Tout préparer** : enchaîne les analyses installées et les guides, en conservant les corrections manuelles et les étapes terminées en cas d’arrêt.
 - **Préparer la répétition** : click, appels de sections, décomptes, repères et notes. Validation explicite du mix, de la grille et des guides avant l’envoi dans REAPER.
 - **Exporter** : mix, stems WAV/FLAC/MP3/AAC, paroles LRC/SRT, fiche PDF, MIDI batterie et projet REAPER portable avec médias et décompte initial réglable pour préparer le départ.

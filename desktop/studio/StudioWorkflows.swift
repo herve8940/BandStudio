@@ -107,6 +107,7 @@ extension StudioApp {
             let data=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
             guard let path=data["audio"] as? String else {throw StudioError("Aucun audio reçu.")}
             self.pendingImportTitle=data["title"] as? String;self.pendingSourceURL=value;self.pendingArtwork=data["artwork"] as? String
+            if let tags=data["musicMetadata"],let encoded=try? JSONSerialization.data(withJSONObject:tags) {self.pendingMusicMetadata=String(data:encoded,encoding:.utf8) ?? "{}"}
             self.importFiles([URL(fileURLWithPath:path)],new:true)
         }
     }
@@ -330,5 +331,35 @@ extension StudioApp {
             if self.busy {self.jobName="Tout préparer · \(index+1)/\(steps.count) · "+self.jobName;self.sendState()}
         }
         try next(0)
+    }
+}
+
+
+extension StudioApp {
+    func artworkCommand(_ args:[String:Any]) throws {
+        guard let path=args["path"] as? String else{return}
+        guard !artworkBusy,projectList().contains(where:{$0["path"]==path}) else {
+            send(["type":"artworkResult","path":path,"message":"Ce morceau n’est pas disponible pour la recherche."]);return
+        }
+        let payload=try JSONSerialization.data(withJSONObject:args)
+        guard let text=String(data:payload,encoding:.utf8),text.utf8.count<4096 else {throw StudioError("Recherche trop longue.")}
+        artworkBusy=true
+        // Keep playback/import/analysis available while the separate helper uses
+        // the network. Space helpers as well as requests to respect MusicBrainz.
+        DispatchQueue.global(qos:.utility).asyncAfter(deadline:.now()+1.1) {
+            var result:[String:Any]=[:]
+            do {
+                let p=Process();p.executableURL=self.runtime.appendingPathComponent(".venv/bin/python")
+                p.arguments=[self.runtime.appendingPathComponent("artwork.py").path,self.library.path,self.runtime.path,text]
+                let pipe=Pipe();p.standardOutput=pipe;p.standardError=FileHandle.nullDevice
+                try p.run();let data=pipe.fileHandleForReading.readDataToEndOfFile();p.waitUntilExit()
+                result=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any] ?? ["message":"Recherche indisponible. Réessaie plus tard."]
+            } catch {result=["message":"Recherche indisponible. Réessaie plus tard."]}
+            let response=result
+            DispatchQueue.main.async {
+                self.artworkBusy=false
+                var message=response;message["type"]="artworkResult";message["path"]=path;self.send(message)
+            }
+        }
     }
 }

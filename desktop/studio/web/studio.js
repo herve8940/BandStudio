@@ -43,12 +43,13 @@ function renderSections(){$('sections').replaceChildren();state.project.sections
 function renderLibrary(){
  const list=$('library');list.replaceChildren();
  (state.library||[]).forEach(p=>{
-  const row=node('article','song-row'),art=button('',()=>send('projectArtwork',{path:p.path}),'song-art');
+  const row=node('article','song-row'),art=button('',()=>openArtwork(p),'song-art');
   art.title=p.artwork?'Changer la pochette':'Ajouter une pochette';art.setAttribute('aria-label',art.title+' · '+p.name);
   if(p.artwork?.startsWith('data:image/jpeg;base64,')){const img=node('img');img.src=p.artwork;img.alt='Pochette de '+p.name;art.append(img);}
   else{art.append(node('span','','♫'));art.classList.add('no-art');}
   const info=node('div','song-info');info.append(node('small','','PROJET LOCAL'),node('h3','',p.name));
-  if(!p.artwork)info.append(node('small','','Pochette à ajouter'));
+  if(p.artist)info.append(node('small','',p.artist+(p.album?' · '+p.album:'')));
+  if(!p.artwork)info.append(node('small','',p.artworkMessage||'Recherche automatique de la pochette…'));
   const actions=node('div','song-actions');
   actions.append(button('Ouvrir',()=>{send('library',{path:p.path});view('studio');},'primary'),button('＋ Setlist',()=>appendSetlist(p.path)),button('Supprimer',()=>askDeleteProject(p),'danger'));
   row.append(art,info,actions);row.querySelectorAll('button').forEach(b=>b.disabled=!!state.busy);list.append(row);

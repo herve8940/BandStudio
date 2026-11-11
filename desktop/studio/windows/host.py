@@ -21,6 +21,7 @@ from windows import recording
 import diagnostics
 import updater
 import catalog
+import artwork
 
 COMPONENTS={'generate':'creative','vocalsplit':'creative','separate':'stems','drumsep':'drumsep','structure':'structure','lyrics':'words','chords':'chords','drums':'drums','smartgrid':'rhythm'}
 ENVIRONMENTS={'generate':'.venv-creative','vocalsplit':'.venv-creative','separate':'.venv-demucs','drumsep':'.venv-demucs','structure':'.venv-structure','lyrics':'.venv-words','chords':'.venv-chords','drums':'.venv-drums','smartgrid':'.venv-demucs'}
@@ -29,7 +30,7 @@ class Api:
     def __init__(self,engine,library=None):
         self._engine=Path(engine).resolve();self._library=Path(library or Path.home()/'Music/BandStudioDev');self._library.mkdir(parents=True,exist_ok=True)
         self._project=model.fresh();self._root=None;self._audio=Audio(self._engine);self._window=None;self._busy=False;self._job_name='';self._job=None;self._job_log=None;self._notice='';self._revision=0;self._history=[];self._future=[];self._last_export='';self._stop=threading.Event();self._lock=threading.RLock();self._record=None;self._components={};self._phone=None;self._bridge=None;self._transport_generation=0;self._checking_update=False
-        self._cancelled=threading.Event()
+        self._cancelled=threading.Event();self._artwork_busy=False
         try:self._setlists=json.loads((self._library/'setlists.json').read_text(encoding='utf-8'))
         except (OSError,ValueError):self._setlists=[]
     def _send(self,value):
@@ -187,7 +188,7 @@ class Api:
         args=[str(executable(self._engine,'ffmpeg')),'-nostdin','-hide_banner','-loglevel','error','-y','-protocol_whitelist','file,pipe,crypto,data','-i',str(source),'-map','0:a:0','-vn','-ac','2','-ar','44100','-c:a','pcm_f32le',str(target)]
         r=subprocess.run(args,capture_output=True,creationflags=creation_flags(),timeout=1800)
         if r.returncode:raise ValueError('Fichier audio illisible : '+r.stderr.decode(errors='replace')[-700:])
-    def _import(self,files,new=True,title=None,url='',artwork=None):
+    def _import(self,files,new=True,title=None,url='',artwork=None,metadata=None):
         if new:
             p=model.fresh(title or Path(files[0]).stem)
             try:p['settings'].update(json.loads((self._library/'defaults.json').read_text()))
@@ -204,7 +205,11 @@ class Api:
                     if any(w in name.lower() for w in words):role=candidate;break
             p['tracks'].append(model.track(target,root,'Original' if new else name,role))
         if new:catalog.extract(artwork or files[0],root,self._engine)
-        model.save(p,root);self._load(root);self._notice='Morceau importé. Tu peux lancer la lecture ou préparer les analyses.'
+        model.save(p,root)
+        if new:
+            from artwork import seed
+            seed(root,files[0],self._engine,metadata)
+        self._load(root);self._notice='Morceau importé. Tu peux lancer la lecture ou préparer les analyses.'
     def _import_rpp(self,path):
         result,obj=self._work('rpp',path);source=Path(obj['project']).resolve()
         if not source.is_relative_to(result.parent.resolve()):raise ValueError('Dossier d’import invalide.')
@@ -295,6 +300,19 @@ class Api:
             updater.set_enabled(args.get('enabled',True));self._send(dict(type='update',automatic=updater.enabled(),message='Préférence enregistrée.'))
             if updater.enabled():self._check_updates()
             return
+        if cmd=='artwork':
+            if self._artwork_busy:
+                self._send(dict(type='artworkResult',path=args.get('path'),message='Une recherche est déjà en cours.'));return
+            self._artwork_busy=True
+            def lookup():
+                try:
+                    result=artwork.run(self._library,self._engine,args)
+                    catalog.member(self._library,args['path']);result['entry']=catalog.entry(args['path'])
+                except Exception as error:
+                    diagnostics.event('artwork.error',kind=type(error).__name__);result=dict(message='Ce morceau n’est plus disponible.')
+                finally:self._artwork_busy=False
+                self._send(dict(type='artworkResult',path=args.get('path'),**result))
+            threading.Thread(target=lookup,daemon=True).start();return
         if cmd=='ready':return
         if cmd=='diagnostic':diagnostics.event('web.error',message=str(args.get('message',''))[:2000],line=args.get('line',0));return
         if cmd=='showLogs':self._reveal(diagnostics.directory()/'application.log');return
@@ -349,16 +367,16 @@ class Api:
             path=catalog.member(self._library,args['path'])
             files=self._dialog('OPEN',file_types=('Images (*.jpg;*.jpeg;*.png;*.webp)',))
             if files:
-                def artwork():
+                def assign_artwork():
                     if not catalog.extract(files[0],path,self._engine):raise ValueError('Image illisible. Choisis une image JPG, PNG ou WebP.')
                     self._notice='Pochette enregistrée.'
-                self._op('Ajout de la pochette',artwork)
+                self._op('Ajout de la pochette',assign_artwork)
             return
         if cmd=='link':
             from services import checked_url
             url=checked_url(args.get('url',''))
             def linked():
-                _,result=self._work('link',arguments=['--url',url]);self._import([result['audio']],True,result['title'],url,result.get('artwork'))
+                _,result=self._work('link',arguments=['--url',url]);self._import([result['audio']],True,result['title'],url,result.get('artwork'),result.get('musicMetadata'))
             a.pause();self._op('Import du lien',linked);return
         if m.get('projectID')!=p['id']:raise ValueError('Le projet a changé. Recommence ton action.')
         if cmd=='newSession':recording.command(self,dict(action='new',name=args.get('name','Répétition')));return
