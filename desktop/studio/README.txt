@@ -17,6 +17,25 @@ Les analyses proposent un résultat ; l’écoute et les corrections manuelles r
 prioritaires. Les calculs sont locaux. Les modèles facultatifs nécessitent un premier
  téléchargement ; la séparation peut prendre plusieurs minutes sur un Mac Intel.
 
+BIBLIOTHÈQUE ET PRÉPARATION COMPLÈTE
+Mes morceaux affiche une liste avec pochette. Les images intégrées aux fichiers et
+les miniatures des liens sont récupérées à l’import ; clique sur l’image pour choisir
+une pochette lorsqu’elle manque. Supprimer déplace le projet et ses médias dans la
+corbeille BandStudio (.Trash dans la bibliothèque). Restaurer le dernier morceau
+supprimé permet de les récupérer ; une restauration ne remplace jamais un autre projet.
+
+Tout préparer est disponible dans Séparer & analyser et Pistes & structure. Les étapes
+prévues sont affichées : analyses installées, puis click et annonces. Les stems déjà
+présents, le calage protégé, la tonalité renseignée et les corrections manuelles sont
+conservés. Une erreur ou une annulation arrête la suite et conserve les étapes terminées.
+Installe les moteurs manquants dans Réglages avant de recommencer. La validation finale
+se fait après écoute.
+
+Sous Windows, choisis Français ou English dans Click & cues. Système utilise une voix
+locale OneCore, ou une voix de bureau de la même langue si nécessaire. Réglages → Voix
+Windows ouvre l’installation des voix françaises et anglaises. Aucun texte n’est envoyé
+à un service en ligne. Un débit de 180 mots/minute convient aux annonces.
+
 STEMS ET ÉCOUTE
 Demucs : 4 pistes, 4 pistes affinées, ou 6 pistes (guitare et piano expérimentaux).
 DrumSep : grosse caisse, caisse claire, toms, cymbales/charleston. Chant principal et
@@ -49,7 +68,9 @@ Le projet contient des pistes audio indépendantes, les états muet/solo du mix,
 volumes, panoramiques, régions, repères, le tempo et les guides choisis. Vitesse et
 transposition sont appliquées aux médias exportés ; les repères et annotations suivent
 la même échelle de temps. Les sources du morceau ne sont pas modifiées.
-Le décompte initial décale ensemble les pistes, le tempo et les régions.
+L’export REAPER part à 0:00, sans ajouter le décompte avant la musique. Les offsets
+choisis pour les pistes restent respectés. Le décompte d’écoute et des exports audio
+reste indépendant et réglable dans Click & cues.
 Un fichier d’annotations conserve paroles, accords et batterie ; validation.json décrit
 la préparation exportée. Ces fichiers accompagnent le .rpp et son dossier Audio.
 Sans REAPER installé, l’export reste disponible avec Afficher le dernier export.

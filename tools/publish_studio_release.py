@@ -27,11 +27,15 @@ def main():
 
 Windows : extraire le ZIP complet dans un nouveau dossier puis ouvrir BandStudio.exe. Les installations existantes peuvent recevoir le code à la fermeture via les mises à jour automatiques. Les paquets update macOS sont destinés aux installations existantes.
 
-Correctifs d’analyse : compatibilité NumPy / soxr, sélection CUDA pour Demucs et Beat This, segments courts pour les cartes de 4 Go et reprise CPU en cas de manque de mémoire GPU. Après mise à jour, relancer **Réglages → Analyses locales → Rythme avancé → Installer / vérifier** pour réparer un environnement existant. Les modèles et morceaux sont conservés.
+Windows : correction des formes d’onde des morceaux longs (débordement d’entiers après 68 secondes). Les anciens affichages sont recalculés à l’ouverture sans modifier l’audio. La fenêtre démarre maximisée et le transport reste accessible sur les petits écrans.
 
-Un second clic sur Play pendant la préparation des guides ne démarre plus un travail concurrent. Les diagnostics précisent le traitement, les versions des bibliothèques, le matériel détecté et le périphérique de calcul utilisé.
+Mes morceaux : liste avec pochettes intégrées aux fichiers ou miniatures des liens importés, choix manuel d’une image et suppression réversible dans la corbeille BandStudio.
 
-Tests Windows : reproduction puis réparation de l’erreur NumPy, imports Beat This, rééchantillonnage soxr, inférence Demucs sur CPU, démarrage avec DLL téléchargées, audio et exports. La sélection CUDA et le repli sont testés par simulation ; aucune mesure sur une GTX 1650 physique n’est revendiquée.
+Tout préparer : enchaînement des analyses installées puis des guides, depuis Séparer & analyser ou Pistes & structure. Les pistes déjà séparées et les repères protégés sont conservés. Une interruption conserve les étapes terminées. La validation finale reste à faire après écoute.
+
+REAPER : suppression du décompte ajouté avant le morceau. Les pistes et les repères gardent leur alignement à partir de 0:00. Le décompte d’écoute et des exports audio reste réglable.
+
+Annonces Windows : voix locales OneCore en français et anglais, normalisation du niveau et cache distinct par langue. Si une langue manque, l’application indique comment l’ajouter dans Réglages → Voix Windows. Aucun texte n’est envoyé à un service vocal en ligne.
 
 Révision : {sha}
 ''',encoding='utf-8')

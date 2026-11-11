@@ -106,7 +106,7 @@ extension StudioApp {
         try startJob("link",arguments:["--url",value]) {result in
             let data=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
             guard let path=data["audio"] as? String else {throw StudioError("Aucun audio reçu.")}
-            self.pendingImportTitle=data["title"] as? String;self.pendingSourceURL=value
+            self.pendingImportTitle=data["title"] as? String;self.pendingSourceURL=value;self.pendingArtwork=data["artwork"] as? String
             self.importFiles([URL(fileURLWithPath:path)],new:true)
         }
     }
@@ -256,5 +256,79 @@ extension StudioApp {
         if let i=updated.firstIndex(where:{$0.id==id}){updated[i]=item}else{updated.append(item)}
         try JSONEncoder().encode(updated).write(to:library.appendingPathComponent("setlists.json"),options:.atomic)
         setlists=updated;notice="Setlist enregistrée. Chaque morceau s’arrête à sa fin.";sendState()
+    }
+}
+
+extension StudioApp {
+    func catalogCall(_ arguments:[String]) throws -> Any {
+        let p=Process();p.executableURL=runtime.appendingPathComponent(".venv/bin/python")
+        p.arguments=[runtime.appendingPathComponent("catalog.py").path]+arguments
+        let pipe=Pipe();p.standardOutput=pipe;p.standardError=FileHandle.nullDevice
+        try p.run();let data=pipe.fileHandleForReading.readDataToEndOfFile();p.waitUntilExit()
+        guard p.terminationStatus==0 else {throw StudioError("La bibliothèque n’a pas pu être modifiée. Le projet est conservé.")}
+        return try JSONSerialization.jsonObject(with:data,options:.fragmentsAllowed)
+    }
+    func hasTrashedProjects()->Bool {
+        let fm=FileManager.default
+        let trash=library.appendingPathComponent(".Trash")
+        return ((try? fm.contentsOfDirectory(at:trash,includingPropertiesForKeys:nil)) ?? []).contains{folder in
+            ((try? fm.contentsOfDirectory(at:folder,includingPropertiesForKeys:nil)) ?? []).contains{$0.pathExtension=="bandstudio"}
+        }
+    }
+    func catalogCommand(_ command:String,_ args:[String:Any]) throws {
+        try requireIdle()
+        if command=="restoreProject" {
+            _ = try catalogCall(["restore",library.path]);notice="Morceau restauré dans la bibliothèque.";sendState();return
+        }
+        guard let path=args["path"] as? String,projectList().contains(where:{$0["path"]==path}) else {throw StudioError("Morceau hors de la bibliothèque.")}
+        if command=="deleteProject" {
+            let active=root?.standardizedFileURL.path==URL(fileURLWithPath:path).standardizedFileURL.path
+            if active{audio.pause()}
+            _ = try catalogCall(["remove",library.path,path])
+            if active {project=StudioProject();try audio.load(project,root:library);root=nil;history=[];future=[];lastExport="";revision += 1;UserDefaults.standard.removeObject(forKey:"project")}
+            notice="Morceau déplacé dans la corbeille BandStudio. Tu peux le restaurer depuis Mes morceaux.";sendState();return
+        }
+        let panel=NSOpenPanel();panel.allowedFileTypes=["jpg","jpeg","png","webp"];panel.message="Choisis la pochette du morceau."
+        panel.beginSheetModal(for:window){answer in
+            guard answer == .OK,let image=panel.url else{return}
+            self.busy=true;self.jobName="Ajout de la pochette";self.sendState()
+            DispatchQueue.global(qos:.userInitiated).async {
+                let ok=(try? self.catalogCall(["extract",path,image.path,self.runtime.path])) as? Bool ?? false
+                DispatchQueue.main.async {self.busy=false;self.jobName="";self.notice=ok ? "Pochette enregistrée." : "Image illisible. Choisis une image JPG, PNG ou WebP.";self.sendState()}
+            }
+        }
+    }
+    func analysisPlan()->[String] {
+        let fm=FileManager.default
+        func available(_ env:String)->Bool {fm.fileExists(atPath:runtime.appendingPathComponent(env+"/bin/python").path)}
+        var steps:[String]=[]
+        if available(".venv-demucs"),!project.tracks.contains(where:{["drums","bass","vocals","other","guitar","piano"].contains($0.role)}){steps.append("separate")}
+        if !project.gridLocked {
+            let libs=runtime.appendingPathComponent(".venv-demucs/lib")
+            let smart=((try? fm.contentsOfDirectory(at:libs,includingPropertiesForKeys:nil)) ?? []).contains{fm.fileExists(atPath:$0.appendingPathComponent("site-packages/beat_this").path)}
+            steps.append(smart ? "smartgrid" : "grid")
+        }
+        if available(".venv-structure"){steps.append("structure")}
+        if project.key.isEmpty{steps.append("key")}
+        if available(".venv-words"){steps.append("lyrics")}
+        if available(".venv-chords"){steps.append("chords")}
+        return steps+["guides"]
+    }
+    func prepareAll(_ args:[String:Any]) throws {
+        try requireIdle()
+        guard root != nil,project.tracks.contains(where:{$0.role=="source"}) else {throw StudioError("Importe le morceau original avant de lancer la préparation complète.")}
+        audio.pause()
+        let steps=analysisPlan(),identity=project.id,generation=transportGeneration
+        func next(_ index:Int) throws {
+            guard self.project.id==identity,self.transportGeneration==generation else{return}
+            if index==steps.count {self.notice="Préparation terminée. Écoute le résultat, ajuste les propositions, puis valide le morceau.";self.sendState();return}
+            let kind=steps[index]
+            let finish:()throws->Void = {try next(index+1)}
+            if kind=="guides" {try self.withGuides(finish)}
+            else if ["smartgrid","key"].contains(kind){try self.advancedTask(["kind":kind],completion:finish)}
+            else{try self.runAnalysis(kind,model:args["model"] as? String ?? "htdemucs",language:args["language"] as? String ?? "auto",quality:args["quality"] as? String ?? "standard",completion:finish)}
+            if self.busy {self.jobName="Tout préparer · \(index+1)/\(steps.count) · "+self.jobName;self.sendState()}
+        }
+        try next(0)
     }
 }

@@ -111,24 +111,24 @@ def test_manual_downbeat_accent_uses_the_chosen_beat_without_moving_pulses(tmp_p
         assert (high>low*5) if i%4==3 else (low>high*5)
 
 
-def test_portable_reaper_export_keeps_counts_regions_pan_and_original_mute(tmp_path,monkeypatch):
+def test_portable_reaper_export_starts_at_zero_with_regions_pan_and_original_mute(tmp_path,monkeypatch):
     p=project(tmp_path);generate(p,tmp_path,monkeypatch)
     p['tracks'].append({**p['tracks'][0],'id':'drums','role':'drums','name':'Batterie','solo':True})
     snapshot=tmp_path/'snapshot.json';snapshot.write_text(json.dumps(p));out=tmp_path/'result.json'
     services.export_reaper(snapshot,out)
     result=json.loads(out.read_text());rpp=Path(result['path']);text=rpp.read_text()
-    assert result['preroll']==4
+    assert result['preroll']==0
     assert 'TEMPO 120 4 4' in text
-    assert 'MARKER 2 12.000000000 "Refrain" 1' in text
-    assert 'MARKER 3 15.000000000 "Stop" 0' in text
+    assert 'MARKER 2 8.000000000 "Refrain" 1' in text
+    assert 'MARKER 3 11.000000000 "Stop" 0' in text
     assert 'MUTESOLO 1 0 0' in text
     assert 'VOLPAN 0.90000000 1.00000000' in text
-    assert 'Annonce de départ' in text
+    assert 'Annonce de départ' not in text
+    assert 'POSITION 0.000000000' in text
     assert str(tmp_path) not in text
     for line in text.splitlines():
         if line.strip().startswith('FILE '):assert (rpp.parent/line.strip()[6:-1]).is_file()
-    count,sr=sf.read(rpp.parent/'Audio/count-in.wav');assert len(count)==4*sr
-    assert np.max(np.abs(count[int(2*sr):]))>.2
+    assert not (rpp.parent/'Audio/count-in.wav').exists()
 
 
 @pytest.mark.parametrize('url',['file:///etc/passwd','javascript:alert(1)','https://user:pass@example.com/a','https://example.com/a\n--exec=oops'])
@@ -162,13 +162,13 @@ def test_reaper_audio_region_count_roundtrip(tmp_path,monkeypatch):
     rpp=Path(json.loads((tmp_path/'export.json').read_text())['path'])
     output=tmp_path/'import/result.json';services.import_reaper(rpp,output,ENGINE,snapshot)
     imported=json.loads((Path(json.loads(output.read_text())['project'])/'project.json').read_text())
-    assert imported['tracks'][0]['offset']==4
+    assert imported['tracks'][0]['offset']==0
     assert imported['tracks'][0]['duration']==pytest.approx(12,abs=.001)
-    assert [(x['name'],x['start'],x['end']) for x in imported['sections']]==[('Intro',4,12),('Refrain',12,16)]
-    assert imported['cues'][0]['time']==15
+    assert [(x['name'],x['start'],x['end']) for x in imported['sections']]==[('Intro',0,8),('Refrain',8,12)]
+    assert imported['cues'][0]['time']==11
     assert imported['settings']['countBars']==0
     assert imported['settings']['manualBPM']==120
-    assert imported['lyrics'][0]['start']==5 and imported['lyrics'][0]['manual'] is True
+    assert imported['lyrics'][0]['start']==1 and imported['lyrics'][0]['manual'] is True
 
 
 def test_reaper_import_keeps_source_offset_and_item_rate(tmp_path):
@@ -198,3 +198,24 @@ def test_reaper_import_keeps_source_offset_and_item_rate(tmp_path):
     assert track['role']=='drums' and track['pan']==-.5 and track['gain']==.7
     x,sr=sf.read(root/track['file']);window=x[int(sr):int(2*sr),0];freq=np.argmax(abs(np.fft.rfft(window)))
     assert abs(freq-440)<=2 # slowdown preserves pitch
+
+
+def test_announcement_language_keeps_custom_text_and_translates_section_names():
+    assert services.announcement_text({'name':'Refrain 2'},'en')=='chorus 2'
+    assert services.announcement_text({'name':'Verse 3'},'fr')=='couplet 3'
+    assert services.announcement_text({'name':'Refrain','callText':'Guitar solo'},'en')=='Guitar solo'
+    assert services.announcement_text({'name':'Solo de Léa'},'en')=='Solo de Léa'
+
+
+def test_voice_cache_separates_languages_and_normalizes(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(services,'os',SimpleNamespace(name='posix'))
+    def synth(argv,**kwargs):
+        dest=Path(argv[argv.index('-o')+1]);x=np.sin(np.arange(6000)*.1)*.05;sf.write(dest,x,22050,format='AIFF')
+    monkeypatch.setattr(services,'run',synth)
+    settings=dict(voice='Test',speechRate=180,language='fr')
+    first=services.voice_wav('Intro',tmp_path,settings)
+    second=services.voice_wav('Intro',tmp_path,{**settings,'language':'en'})
+    assert first!=second and first.is_file() and second.is_file()
+    data,sr=sf.read(first);assert sr==44100 and data.shape[1]==2 and np.max(abs(data))==pytest.approx(.9,abs=.001)
+    assert np.max(abs(data[[0,-1]]))==0

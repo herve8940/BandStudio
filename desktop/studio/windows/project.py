@@ -8,7 +8,7 @@ import uuid
 import numpy as np
 import soundfile as sf
 
-GUIDE_DEFAULTS=dict(clickEnabled=False,clickGain=.45,clickPan=0,subdivision=1,beatsPerBar=4,firstBeat=0,gridMode='detected',manualBPM=120,countBars=2,countClick=True,countVoice=True,countGain=.8,countPan=0,countEveryLoop=False,countOnSeek=True,callsEnabled=True,callsGain=.9,callsPan=0,leadBeats=8,voice='Système',language='fr',speechRate=210,speakCues=True,regionCountEnabled=True,regionCountBeats=4,exportGuides=True,exportCount=True,loopStep=0,loopEvery=4,loopMaxRate=1)
+GUIDE_DEFAULTS=dict(clickEnabled=False,clickGain=.45,clickPan=0,subdivision=1,beatsPerBar=4,firstBeat=0,gridMode='detected',manualBPM=120,countBars=2,countClick=True,countVoice=True,countGain=.8,countPan=0,countEveryLoop=False,countOnSeek=True,callsEnabled=True,callsGain=.9,callsPan=0,leadBeats=8,voice='Système',language='fr',speechRate=180,speakCues=True,regionCountEnabled=True,regionCountBeats=4,exportGuides=True,exportCount=True,loopStep=0,loopEvery=4,loopMaxRate=1)
 
 def ident():return str(uuid.uuid4())
 
@@ -70,22 +70,30 @@ def load(root):
     for t in p['tracks']:
         info=sf.info(relative_file(root,t['file']))
         if abs(info.duration-t['duration'])>.1:raise ValueError('La durée d’un média a changé : '+t['name'])
+        # Old Windows builds used int32 indices: multiplying by 720 overflowed
+        # after 67 seconds at 44.1 kHz. Repair the cached display, never the audio.
+        if t.get('peaksVersion',0)<2:
+            t['peaks']=waveform(relative_file(root,t['file']));t['peaksVersion']=2
     return p
 
 def save(p,root):
     from services import atomic
     validate(p,root);atomic(Path(root)/'project.json',p)
 
-def track(path,root,name,role,offset=0):
+def waveform(path):
     path=Path(path);info=sf.info(path);peaks=np.zeros(720,dtype=np.float32);at=0
     for data in sf.blocks(path,blocksize=65536,dtype='float32',always_2d=True):
-        bins=np.minimum(719,(np.arange(len(data))+at)*720//info.frames);np.maximum.at(peaks,bins,np.abs(data).max(axis=1));at+=len(data)
-    return dict(id=ident(),name=name,file=path.relative_to(root).as_posix(),role=role,duration=info.duration,offset=offset,gain=.8,pan=0,muted=False,solo=False,peaks=peaks.tolist())
+        bins=np.minimum(719,(np.arange(len(data),dtype=np.int64)+at)*720//info.frames);np.maximum.at(peaks,bins,np.abs(data).max(axis=1));at+=len(data)
+    return peaks.tolist()
+
+def track(path,root,name,role,offset=0):
+    path=Path(path);info=sf.info(path)
+    return dict(id=ident(),name=name,file=path.relative_to(root).as_posix(),role=role,duration=info.duration,offset=offset,gain=.8,pan=0,muted=False,solo=False,peaks=waveform(path),peaksVersion=2)
 
 def guide_key(p):
     value={k:p[k] for k in ['settings','bpm','beats','sections','cues']};value['duration']=duration(p)
     # Platform names prevent accidentally reusing Mac voice assets after editing on Windows.
-    return 'windows-guides-2:'+hashlib.sha256(json.dumps(value,sort_keys=True,allow_nan=False).encode()).hexdigest()
+    return 'windows-guides-3:'+hashlib.sha256(json.dumps(value,sort_keys=True,allow_nan=False).encode()).hexdigest()
 
 def period(p,at):
     import bisect

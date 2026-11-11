@@ -83,3 +83,99 @@ def test_slowdown_preserves_pitch_when_ffmpeg_is_available(tmp_path):
     if not executable(ENGINE,'ffmpeg').exists():pytest.skip('Prepared engine required')
     p=fixture(tmp_path);a=Audio(ENGINE);a.rate=.75;a.load(p,tmp_path);a.mode='drums';a.render(tmp_path/'slow.wav',0,1.5,False)
     x,sr=sf.read(tmp_path/'slow.wav');assert len(x)==88200 and strength(x,880)>.02 and strength(x,660)<.002
+
+
+def test_long_waveforms_do_not_overflow_windows_int32_and_legacy_cache_is_repaired(tmp_path,monkeypatch):
+    # Reproduce NumPy 1.x's Windows default integer type, including on macOS CI.
+    arange=np.arange
+    monkeypatch.setattr(np,'arange',lambda *args,**kwargs:arange(*args,**({'dtype':np.int32}|kwargs)))
+    p=model.fresh('Long');path=tmp_path/'long.wav'
+    with sf.SoundFile(path,'w',samplerate=44100,channels=1,subtype='FLOAT') as f:
+        for _ in range(202):f.write(np.full(65536,.25,dtype=np.float32))
+    track=model.track(path,tmp_path,'Original','source');p['tracks']=[track]
+    assert min(track['peaks'])==pytest.approx(.25)
+    track['peaks']=[0.0]*720;track.pop('peaksVersion');model.save(p,tmp_path)
+    stamp=(path.stat().st_size,path.stat().st_mtime_ns)
+    restored=model.load(tmp_path)['tracks'][0]
+    assert min(restored['peaks'])==pytest.approx(.25) and restored['peaksVersion']==2
+    assert stamp==(path.stat().st_size,path.stat().st_mtime_ns)
+
+
+def test_library_remove_loaded_song_is_reversible_and_rejects_external_paths(tmp_path):
+    import catalog
+    root=tmp_path/'Songs';root.mkdir();song=root/'song.bandstudio';p=fixture(song)
+    api=Api(ENGINE,root);api._project=p;api._root=song;api._audio.load(p,song)
+    assert api.command(dict(command='deleteProject',args={'path':str(song)}))['ok']
+    assert api._root is None and not api._audio.data and not song.exists()
+    assert api._list()==[] and len(catalog.trashed(root))==1
+    assert api.command(dict(command='restoreProject'))['ok']
+    assert model.load(song)['id']==p['id'] and len(api._list())==1
+    outside=tmp_path/'external.bandstudio';fixture(outside)
+    assert not api.command(dict(command='deleteProject',args={'path':str(outside)}))['ok']
+    assert (outside/'Audio/source.wav').is_file()
+    catalog.remove(root,song);fixture(song)
+    restored=Path(catalog.restore(root));assert restored!=song and restored.is_dir() and song.is_dir()
+
+
+@pytest.mark.parametrize('failure',['none','error','cancel'])
+def test_prepare_all_runs_serially_and_preserves_completed_steps(tmp_path,monkeypatch,failure):
+    from windows import advanced_host
+    root=tmp_path/'song.bandstudio';p=fixture(root);api=Api(ENGINE,tmp_path);api._root=root;api._project=p
+    events=[];monkeypatch.setattr(api,'_plan',lambda:['separate','grid','structure','key','guides'])
+    monkeypatch.setattr(api,'_state',lambda:None);monkeypatch.setattr(api,'_reload',lambda:None)
+    def analyze(kind,args):
+        events.append(kind)
+        if kind=='structure' and failure=='error':
+            api._project['notes']='partial';raise ValueError('model failed')
+        api._project['notes']=kind;api._save()
+        if kind=='grid' and failure=='cancel':api._cancelled.set()
+    monkeypatch.setattr(api,'_analysis',analyze)
+    monkeypatch.setattr(advanced_host,'advanced_task',lambda *a:events.append('key'))
+    monkeypatch.setattr(api,'_guides',lambda:events.append('guides'))
+    if failure=='none':
+        api._prepare_all({});assert events==['separate','grid','structure','key','guides']
+    else:
+        with pytest.raises(RuntimeError,match='étapes terminées sont conservées'):api._prepare_all({})
+        assert events==(['separate','grid','structure'] if failure=='error' else ['separate','grid'])
+        assert model.load(root)['notes']=='grid'
+    assert api._project['sections']==p['sections']
+
+
+def test_prepare_plan_preserves_existing_stems_and_locked_grid(tmp_path):
+    api=Api(tmp_path/'no-components',tmp_path/'library');api._project=fixture(tmp_path/'song.bandstudio');api._project['gridLocked']=True
+    assert api._plan()==['key','guides']
+    api._project['key']='Dm';assert api._plan()==['guides']
+
+
+def test_catalog_extracts_embedded_artwork_and_keeps_existing_cover_on_failure(tmp_path):
+    import catalog
+    from platform_tools import executable
+    import subprocess
+    if not executable(ENGINE,'ffmpeg').is_file():pytest.skip('Prepared engine required')
+    folder=tmp_path/'song.bandstudio';fixture(folder)
+    mp3=tmp_path/'tagged.mp3'
+    subprocess.run([str(executable(ENGINE,'ffmpeg')),'-v','error','-y','-i',str(folder/'Audio/source.wav'),'-i',str(ROOT/'desktop/studio/assets/BandStudio.png'),'-map','0:a','-map','1:v','-c:a','libmp3lame','-c:v','mjpeg','-id3v2_version','3','-disposition:v','attached_pic',str(mp3)],check=True)
+    assert catalog.extract(mp3,folder,ENGINE)
+    assert catalog.entries(tmp_path)[0]['artwork'].startswith('data:image/jpeg;base64,')
+    original=(folder/'Artwork.jpg').read_bytes()
+    assert not catalog.extract(folder/'Audio/source.wav',folder,ENGINE)
+    assert (folder/'Artwork.jpg').read_bytes()==original
+
+
+@pytest.mark.skipif(os.name!='nt',reason='Actual Windows voices')
+def test_windows_announcements_use_requested_language_or_explain_missing_voice(tmp_path):
+    import subprocess
+    script=ROOT/'desktop/studio/windows/speak.ps1'
+    for language,text in [('en','Chorus in four, three, two, one.'),('fr','Refrain dans quatre, trois, deux, un.')]:
+        wave=tmp_path/(language+'.wav');request=tmp_path/(language+'.json')
+        request.write_text(json.dumps(dict(voice='Système',language=language,rate=180,text=text,output=str(wave))),encoding='utf-8')
+        result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',str(script),'-RequestFile',str(request)],capture_output=True,timeout=60)
+        log=(result.stdout+result.stderr).decode(errors='replace')
+        if language=='fr' and result.returncode:
+            assert 'Voix fr absente' in log,log
+        else:
+            assert result.returncode==0,log
+            data,sr=sf.read(wave);assert len(data)>sr*.2 and np.max(abs(data))>.01
+            assert ('['+language+'-') in log,log
+            # A valid installed OneCore voice must not silently fail into SAPI.
+            assert 'OneCore unavailable:' not in log,log

@@ -13,7 +13,7 @@ extension StudioApp {
         try changed();notice="Réglages musicaux enregistrés.";sendState()
     }
 
-    func advancedTask(_ args:[String:Any]) throws {
+    func advancedTask(_ args:[String:Any],completion:(() throws -> Void)?=nil) throws {
         try requireIdle()
         guard let root=root,let kind=args["kind"] as? String,["smartgrid","key","lyricsimport","lyricsexport","stemsexport","master","report","portable","sheet"].contains(kind) else{throw StudioError("Ouvre d’abord un morceau.")}
         let options=args["options"] as? [String:Any] ?? [:]
@@ -54,7 +54,7 @@ extension StudioApp {
                 self.lastExport=object["path"] as? String ?? ""
                 self.notice=kind == "master" ? "Mix normalisé en WAV 24 bits, avec mesures avant/après. Le projet original est conservé." : "Export terminé. Utilise Afficher l’export pour le retrouver."
             }
-            self.sendState()
+            try completion?();self.sendState()
         }
         if kind == "master" {
             audio.pause();busy=true;jobName="Préparation du mix musical";sendState()

@@ -29,6 +29,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     var recordRequest=""
     var pendingImportTitle:String?
     var pendingSourceURL=""
+    var pendingArtwork:String?
     var lastExport=""
     var setlists:[StudioSetlist]=[]
     var pendingProject:URL?
@@ -91,8 +92,13 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     func projectList()->[[String:String]] {
         guard let library=library else{return []}
         return ((try? FileManager.default.contentsOfDirectory(at:library,includingPropertiesForKeys:nil)) ?? [])
-            .filter{$0.pathExtension == "bandstudio"}.sorted{$0.lastPathComponent < $1.lastPathComponent}
-            .map{["name":$0.deletingPathExtension().lastPathComponent,"path":$0.path]}
+            .filter{$0.pathExtension == "bandstudio" && $0.resolvingSymlinksInPath().deletingLastPathComponent()==library.resolvingSymlinksInPath() && FileManager.default.fileExists(atPath:$0.appendingPathComponent("project.json").path)}.sorted{$0.lastPathComponent < $1.lastPathComponent}
+            .map{url in
+                var item=["name":url.deletingPathExtension().lastPathComponent,"path":url.path]
+                if let data=try? Data(contentsOf:url.appendingPathComponent("project.json")),let p=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any],let name=p["name"] as? String {item["name"]=name}
+                if let data=try? Data(contentsOf:url.appendingPathComponent("Artwork.jpg")),data.count<=512_000 {item["artwork"]="data:image/jpeg;base64,"+data.base64EncodedString()}
+                return item
+            }
     }
     func send(_ value:[String:Any]) {
         guard let web=web,let data=try? JSONSerialization.data(withJSONObject:value),let json=String(data:data,encoding:.utf8) else{return}
@@ -120,7 +126,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     func sendState() {
         let object=(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(project))) ?? [:]
         let lists=(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(setlists))) ?? []
-        send(["type":"state","project":object,"duration":project.duration,"loaded":root != nil,"library":projectList(),"setlists":lists,"busy":busy,"job":jobName,"notice":notice,"undo":!history.isEmpty,"redo":!future.isEmpty,"revision":revision,"lastExport":lastExport,"guidesReady":project.guideKey==project.desiredGuideKey()])
+        send(["type":"state","project":object,"duration":project.duration,"loaded":root != nil,"library":projectList(),"analysisPlan":analysisPlan(),"trashAvailable":hasTrashedProjects(),"setlists":lists,"busy":busy,"job":jobName,"notice":notice,"undo":!history.isEmpty,"redo":!future.isEmpty,"revision":revision,"lastExport":lastExport,"guidesReady":project.guideKey==project.desiredGuideKey()])
         sendTransport()
     }
     func changed(invalidate:Bool=true) throws {
@@ -185,8 +191,8 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         guard !urls.isEmpty else{return}
         busy=true;audio.pause();notice="Import des fichiers audio…";sendState()
         let current=project,currentRoot=root
-        let importedTitle=pendingImportTitle,importedURL=pendingSourceURL
-        pendingImportTitle=nil;pendingSourceURL=""
+        let importedTitle=pendingImportTitle,importedURL=pendingSourceURL,artwork=pendingArtwork
+        pendingImportTitle=nil;pendingSourceURL="";pendingArtwork=nil
         DispatchQueue.global(qos:.userInitiated).async {
             do {
                 var p=new ? StudioProject() : current
@@ -210,6 +216,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                     let role=new ? "source" : Self.role(name)
                     p.tracks.append(Track(name:new ? "Original" : name,file:relative,role:role,duration:duration,peaks:peaks))
                 }
+                if new {_ = try? self.catalogCall(["extract",dest.path,artwork ?? urls[0].path,self.runtime.path])}
                 p.preparation?.fingerprint=nil;p.preparation?.validatedAt=nil;try p.save(dest)
                 DispatchQueue.main.async {
                     self.busy=false
@@ -234,7 +241,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             }
         }
     }
-    func runAnalysis(_ kind:String,model:String,language:String="auto",quality:String="standard") throws {
+    func runAnalysis(_ kind:String,model:String,language:String="auto",quality:String="standard",completion:(() throws -> Void)?=nil) throws {
         guard ["grid","structure","separate","drumsep","lyrics","chords","drums"].contains(kind),["htdemucs","htdemucs_6s","htdemucs_ft"].contains(model) else {throw StudioError("Traitement inconnu.")}
         if kind == "grid" && project.gridLocked {throw StudioError("Le calage est protégé. Déverrouille-le dans Guidage avant une nouvelle analyse.")}
         let desired=kind == "lyrics" ? "vocals" : (["drums","drumsep"].contains(kind) ? "drums" : "source")
@@ -242,6 +249,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         try startJob(kind,input:project.audioURL(source,root:root),arguments:["--model",model,"--language",language,"--quality",quality]) {result in
             if ["lyrics","chords","drums"].contains(kind) {try self.applyTextAnalysis(kind,result:result)}
             else{try self.applyAnalysis(kind,result:result);self.notice="Analyse terminée. Les corrections manuelles sont conservées."}
+            try completion?()
         }
     }
     func applyAnalysis(_ kind:String,result:URL) throws {
@@ -322,6 +330,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             }
             if command == "audioSettings" {NSWorkspace.shared.open(URL(string:"x-apple.systempreferences:com.apple.Sound-Settings.extension")!);return}
             if command == "link" {try importURL(args["url"] as? String ?? "");return}
+            if ["deleteProject","restoreProject","projectArtwork"].contains(command) {try catalogCommand(command,args);return}
             if command == "library" {
                 guard let path=args["path"] as? String,projectList().contains(where:{$0["path"] == path}) else{return}
                 try load(URL(fileURLWithPath:path));return
@@ -394,6 +403,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 if command == "redo",let next=future.popLast(){history.append(project);project=next}
                 if let root=root{try audio.load(project,root:root)};try changed()
             case "addTracks":chooseAudio(new:false)
+            case "prepareAll":try prepareAll(args)
             case "analyze":try runAnalysis(args["kind"] as? String ?? "grid",model:args["model"] as? String ?? "htdemucs",language:args["language"] as? String ?? "auto",quality:args["quality"] as? String ?? "standard")
             case "export":try withGuides{try self.exportAudio()}
             case "exportCues":try exportCues()
