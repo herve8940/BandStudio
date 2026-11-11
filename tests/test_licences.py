@@ -35,13 +35,13 @@ def test_citation_cff_valid():
     titles = " ".join(r["title"] for r in d["references"])
     for t in ("SongFormer", "MuQ", "Foundation Model for Music Informatics", "Hybrid Transformers"):
         assert t in titles
-    init = (ROOT / "reacue_mcp" / "__init__.py").read_text(encoding="utf-8")
-    ver = re.search(r'__version__\s*=\s*"([^"]+)"', init).group(1)
+    init = (ROOT / "desktop/studio/diagnostics.py").read_text(encoding="utf-8")
+    ver = re.search(r"VERSION\s*=\s*['\"]([^'\"]+)['\"]", init).group(1)
     assert d["version"].replace("-beta", "b1") == ver
 
 
 @pytest.mark.parametrize("doc,anchor,words", [
-    ("README.md", "#licences-responsibilities-and-disclaimers",
+    ("README_REACUE.md", "#licences-responsibilities-and-disclaimers",
      ("as is", "non-commercial", "CC BY-NC 4.0", "not affiliated", "not legal advice", "no audio and no lyrics")),
     ("LISEZMOI.md", "#licences-responsabilités-et-avertissements",
      ("tel quel", "non commercial", "CC BY-NC 4.0", "ni affilié", "pas un avis juridique", "ni audio ni paroles")),
@@ -233,7 +233,7 @@ def test_settings_tab_licences_and_noncommercial():
     lua = (ROOT / "reaper" / "ReaCue_tab_settings.lua").read_text(encoding="utf-8")
     assert "open_licences" in lua and "THIRD_PARTY_NOTICES.md" in lua
     assert "Usage non commercial uniquement" in lua and "Non-commercial use only" in lua
-    assert "https://github.com/herve8940/reacue/blob/main/THIRD_PARTY_NOTICES.md" in lua
+    assert "https://github.com/herve8940/BandStudio/blob/main/THIRD_PARTY_NOTICES.md" in lua
 
 
 def test_settings_tab_licences_runs(tmp_path):
@@ -261,4 +261,4 @@ def test_settings_tab_licences_runs(tmp_path):
     assert Path(target) == install / "THIRD_PARTY_NOTICES.md"
     assert "open '" in lua.eval("opened[1]")
     (install / "THIRD_PARTY_NOTICES.md").unlink()
-    assert M.licences_target() == "https://github.com/herve8940/reacue/blob/main/THIRD_PARTY_NOTICES.md"
+    assert M.licences_target() == "https://github.com/herve8940/BandStudio/blob/main/THIRD_PARTY_NOTICES.md"

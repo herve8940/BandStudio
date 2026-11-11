@@ -1,3 +1,5 @@
+> **BandStudio** : consulte le [guide actuel](docs/BANDSTUDIO.md) et le [site](https://herve8940.github.io/BandStudio/). Ce document décrit le moteur historique ReaCue.
+
 # ReaCue
 
 **Des morceaux prêts pour le live dans REAPER, en un clic — et un prompteur sur le téléphone de chaque musicien.**
@@ -219,8 +221,8 @@ très gros caractères pour la scène) :
 
 ## Installation
 
-1. Télécharge le [paquet macOS](https://github.com/herve8940/reacue/releases/download/main-build/ReaCue-macOS.zip)
-   ou le [paquet Windows](https://github.com/herve8940/reacue/releases/download/main-build/ReaCue-Windows.zip),
+1. Télécharge le [paquet macOS](https://github.com/herve8940/BandStudio/releases/download/main-build/ReaCue-macOS.zip)
+   ou le [paquet Windows](https://github.com/herve8940/BandStudio/releases/download/main-build/ReaCue-Windows.zip),
    puis extrais tout le dossier `ReaCue` **là où il restera**, par
    exemple `Documents/ReaCue`. Ne déplace plus le dossier ensuite (ou relance l'installation si tu le fais).
 2. Lance REAPER une fois (pour que son dossier de réglages existe), puis **quitte REAPER** : l'installateur
@@ -249,7 +251,7 @@ très gros caractères pour la scène) :
 L'installateur peut être relancé à tout moment (changer de langue, réparer une installation) : tes réglages
 et tes morceaux préparés sont conservés.
 
-La [release de main](https://github.com/herve8940/reacue/releases/tag/main-build) est mise à jour automatiquement
+La [release de main](https://github.com/herve8940/BandStudio/releases/tag/main-build) est mise à jour automatiquement
 après vérification des paquets et de l'installation de base sur Mac Intel, Apple Silicon et Windows.
 Les ZIP contiennent le programme et les installateurs de la plateforme ; Python, les dépendances et les
 modèles facultatifs sont téléchargés pendant l'installation. `BUILD_INFO.json` identifie le commit source

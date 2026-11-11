@@ -1,0 +1,14 @@
+name: Proposer une amélioration / Feature request
+description: Un besoin musical ou une amélioration de l’atelier
+title: '[Idée] '
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: Quel besoin musical veux-tu résoudre ?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposition et exemple d’utilisation

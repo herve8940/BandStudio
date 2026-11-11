@@ -1,0 +1,38 @@
+name: Signaler un bug / Report a bug
+description: Un problème reproductible dans BandStudio
+title: '[Bug] '
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version de BandStudio
+      placeholder: 1.1.0 et révision si disponible
+    validations:
+      required: true
+  - type: dropdown
+    id: system
+    attributes:
+      label: Système
+      options: [Windows 11, Windows 10, macOS Intel, macOS Apple Silicon]
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Étapes pour reproduire
+      description: Décris les clics, le résultat observé et le résultat attendu.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostic et matériel audio
+      description: Réglages → Exporter le diagnostic. Vérifie le fichier avant de le joindre. Aucun morceau, parole, secret ou donnée personnelle.
+  - type: checkboxes
+    id: checked
+    attributes:
+      label: Vérification
+      options:
+        - label: J’ai recherché un problème similaire et vérifié les pièces jointes.
+          required: true

@@ -1,0 +1,7 @@
+/* BandPilot palette on preserved Studio screens, scoped to the desktop host. */
+:root{--bg:#0b1121;--panel:#141d31;--inset:#0d1629;--well:#10182a;--row:#19233a;--edge:#374665;--raise:#25314b;--track-off:#374665;--ink:#e5ebfa;--ink2:#bdc9e1;--mute:#a6b5cf;--mute2:#9eafcc;--dim:#7c8ca8;--sig:#a778fa;--led:#63e0bc;--lcd:#c9aeff;--smpte:#35d3e9;--sans:Inter,system-ui,-apple-system,sans-serif;--cond:var(--sans);--r:10px}
+body.rc{background:var(--bg)}
+.rc-top{background:linear-gradient(150deg,#19233a,#10182a)}
+.rc-nav button.on{background:linear-gradient(135deg,#8152e5,#49328c);color:#fff;border-color:#ad8bfa}
+.rc-logo{background:linear-gradient(135deg,#35d3e9,#a778fa)}
+.rc-btn,.rc-view-tools button{border-radius:9px}

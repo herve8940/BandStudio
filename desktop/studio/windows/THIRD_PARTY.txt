@@ -1,0 +1,33 @@
+BandStudio Windows development distribution — additional third-party notices
+
+This portable ZIP includes a Python runtime and dependencies, unlike the source-only
+installers described in THIRD_PARTY_NOTICES.md. The notices and licences shipped in
+engine/python (including Lib/site-packages/*.dist-info) are preserved unmodified.
+BUNDLED_PACKAGES.json records installed Python distribution versions.
+
+CPython / python-build-standalone: https://github.com/astral-sh/python-build-standalone
+Python Software Foundation and additional runtime licences: see engine/python.
+pywebview: https://github.com/r0x0r/pywebview (BSD-3-Clause).
+pythonnet: https://github.com/pythonnet/pythonnet (MIT).
+sounddevice / PortAudio: https://github.com/spatialaudio/python-sounddevice (MIT).
+NumPy, SciPy, SoundFile/libsndfile, librosa, numba/llvmlite and their dependencies:
+see the licences and notices retained with each installed package.
+DLLs and Python sources are accessible in the extracted application directory.
+
+FFmpeg and ffprobe are unmodified Gyan release essentials binaries.
+Downloads, source/build information: https://www.gyan.dev/ffmpeg/builds/
+Upstream source: https://git.ffmpeg.org/ffmpeg.git
+The build's own licence and README are retained in engine/import-tools/ffmpeg-*.
+The exact downloaded archive URL and SHA-256 are recorded in BUILD_INFO.json.
+These binaries are separate programs invoked by BandStudio, and have their own
+licence terms. The BandStudio MIT licence does not replace those terms.
+
+yt-dlp: https://github.com/yt-dlp/yt-dlp (Unlicense; see bundled dependency licences).
+Deno 2.9.8: https://github.com/denoland/deno/tree/v2.9.8 (MIT and bundled notices).
+Full upstream licence: engine/import-tools/deno-LICENSE.md.
+uv: https://github.com/astral-sh/uv (MIT OR Apache-2.0).
+MIT licence: engine/tools/uv-LICENSE-MIT.
+
+Optional AI models are NOT included. Their installers present the applicable notices
+and, where required, obtain consent before download. See THIRD_PARTY_NOTICES.md.
+Microsoft Edge WebView2 is a system runtime supplied by Microsoft.

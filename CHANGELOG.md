@@ -1,3 +1,11 @@
+## BandStudio 1.1.0
+
+- Stabilisation du bouton Play et de l’horloge audio au démarrage.
+- Écoute solo/sans instrument pour tous les musiciens, conservée dans les exports.
+- Logs locaux avec rotation, diagnostic exportable et formulaire GitHub.
+- Mises à jour vérifiées depuis main après fermeture, sauvegarde et restauration sur erreur.
+- Vérifications Windows/macOS, site GitHub Pages, guide et modèles de contribution.
+
 # Changelog
 
 ## Unreleased — Windows optional installers
