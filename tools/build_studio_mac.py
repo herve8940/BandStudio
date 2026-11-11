@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import platform
 import shutil
 import subprocess
 
@@ -84,7 +85,7 @@ def build(source, prepare=False):
               NSHumanReadableCopyright='BandStudio · atelier de musique autonome')
     (contents / 'Info.plist').write_bytes(plistlib.dumps(info))
     cache=BUILD / 'swift-module-cache';cache.mkdir(exist_ok=True)
-    subprocess.run(['xcrun','swiftc','-O','-module-cache-path',str(cache),
+    subprocess.run(['xcrun','swiftc','-O','-target',platform.machine()+'-apple-macosx12.0','-module-cache-path',str(cache),
                     *[str(ROOT / 'desktop/studio' / f) for f in ['StudioDiagnostics.swift','StudioUpdates.swift','StudioSettings.swift','StudioCore.swift','StudioApp.swift','StudioWorkflows.swift','StudioAdvanced.swift','StudioPhone.swift','StudioRecording.swift','main.swift']],
                     '-o',str(mac / 'BandStudio'),'-framework','AppKit','-framework','WebKit','-framework','AVFoundation'],check=True)
     subprocess.run(['codesign','--force','--sign','-',str(app)],check=True)
