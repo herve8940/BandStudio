@@ -40,7 +40,7 @@ jobs:
         shell: pwsh
         run: |
           $env:BANDSTUDIO_TEST_ENGINE = "$pwd/dist/bandstudio/stage/BandStudio-DEV/engine"
-          python -m pytest -q tests/test_studio_windows.py tests/test_studio_services.py tests/test_studio_advanced.py tests/test_studio_recording.py tests/test_studio_preparation.py
+          python -m pytest -q tests/test_studio_windows.py tests/test_studio_windows_startup.py tests/test_studio_services.py tests/test_studio_advanced.py tests/test_studio_recording.py tests/test_studio_preparation.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test relocated package, Windows speech and native interface
         run: python tools/check_studio_windows.py dist/bandstudio/BandStudio-1.1.0-Windows-x64.zip --report dist/checks

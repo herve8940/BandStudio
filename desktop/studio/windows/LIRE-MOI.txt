@@ -1,7 +1,8 @@
 BandStudio 1.1.0 — préparer les morceaux pour REAPER
 
 DÉMARRER
-Ouvre BandStudio dans Applications. Importe un fichier audio ou une vidéo, ou ouvre
+Extrais tout le ZIP dans un dossier accessible en écriture, puis ouvre BandStudio.exe.
+WebView2 et .NET Framework 4.8 sont nécessaires. Importe un fichier audio ou une vidéo, ou ouvre
 un morceau existant. Les fichiers du morceau sont copiés dans un dossier .bandstudio.
 Les projets existants sont conservés, y compris leurs anciennes pistes enregistrées.
 
@@ -80,3 +81,12 @@ signalement GitHub. Vérifie le diagnostic avant de le partager : aucun audio ni
 projet n’y est inclus. Les mises à jour publiées depuis main sont téléchargées
 automatiquement puis appliquées à la fermeture, après vérification de leur empreinte.
 Les modèles, projets et préférences sont conservés. Désactivation possible dans Réglages.
+
+SI WINDOWS BLOQUE LE DÉMARRAGE
+Le lanceur prépare les DLL du moteur marquées comme téléchargées, après vérification
+de leur empreinte. Les fichiers modifiés ou inconnus ne sont pas débloqués.
+Si une ancienne version affiche « Python.Runtime.Loader.Initialize » : télécharge
+le nouveau ZIP et extrais-le dans un nouveau dossier. Tu peux aussi ouvrir les
+Propriétés du ZIP officiel, cocher Débloquer, appliquer puis extraire à nouveau.
+Les projets existants sont à conserver. Le journal du lanceur est dans
+%LOCALAPPDATA%\BandStudio\Logs\startup.log. Vérifie son contenu avant de le partager.
