@@ -20,7 +20,7 @@ function renderPreparation(){
  $('deliveryMetrics').replaceChildren(...metrics.map(([label,value])=>{const e=node('div');e.append(node('small','',label),node('strong','',String(value)));return e;}));
  $('deliveryTracks').replaceChildren(...tracks.map(t=>{const row=node('div','delivery-track');row.append(node('span','track-dot'),node('span','',t.name),node('small','',t.muted?'Muette':t.solo?'Solo':roles[t.role]||'Piste'));row.firstChild.style.background=colors[t.role]||colors.other;return row;}));
  const modes={original:'Original',mix:'Mix des pistes'};const [kind,target]=listenMode(transport.mode);if(target)modes[transport.mode]=(kind==='minus'?'Sans ':'Solo · ')+instruments[target];
- $('deliveryOptions').textContent='Écoute : '+(modes[transport.mode]||'Mix des pistes')+' · Guides '+(s.exportGuides?'inclus':'exclus')+' · Départ REAPER à 0:00 (sans décompte ajouté)';
+ $('deliveryOptions').textContent='Écoute : '+(modes[transport.mode]||'Mix des pistes')+' · Guides '+(s.exportGuides?'inclus':'exclus')+' · Décompte initial '+(s.exportCount?s.countBars+' mesure(s)':'exclu');
  $('validateProject').disabled=!loaded||state.busy||ready;
  $('sendReaper').disabled=$('saveReaper').disabled=!loaded||state.busy||!ready;
  $('validationHint').textContent=ready?'La préparation est enregistrée et validée.':!loaded?'Importe ou ouvre un morceau pour commencer.':'Toute modification des pistes, du mix ou des repères demande une nouvelle validation.';

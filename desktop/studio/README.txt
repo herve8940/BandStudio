@@ -68,9 +68,9 @@ Le projet contient des pistes audio indépendantes, les états muet/solo du mix,
 volumes, panoramiques, régions, repères, le tempo et les guides choisis. Vitesse et
 transposition sont appliquées aux médias exportés ; les repères et annotations suivent
 la même échelle de temps. Les sources du morceau ne sont pas modifiées.
-L’export REAPER part à 0:00, sans ajouter le décompte avant la musique. Les offsets
-choisis pour les pistes restent respectés. Le décompte d’écoute et des exports audio
-reste indépendant et réglable dans Click & cues.
+Le décompte initial laisse aux musiciens le temps de se préparer avant le départ.
+Il décale ensemble les pistes, le tempo et les régions. Son nombre de mesures et
+son inclusion dans les exports se règlent dans Click & cues.
 Un fichier d’annotations conserve paroles, accords et batterie ; validation.json décrit
 la préparation exportée. Ces fichiers accompagnent le .rpp et son dossier Audio.
 Sans REAPER installé, l’export reste disponible avec Afficher le dernier export.

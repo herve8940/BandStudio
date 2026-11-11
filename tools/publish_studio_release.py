@@ -33,7 +33,7 @@ Mes morceaux : liste avec pochettes intégrées aux fichiers ou miniatures des l
 
 Tout préparer : enchaînement des analyses installées puis des guides, depuis Séparer & analyser ou Pistes & structure. Les pistes déjà séparées et les repères protégés sont conservés. Une interruption conserve les étapes terminées. La validation finale reste à faire après écoute.
 
-REAPER : suppression du décompte ajouté avant le morceau. Les pistes et les repères gardent leur alignement à partir de 0:00. Le décompte d’écoute et des exports audio reste réglable.
+REAPER : le décompte avant la musique est rétabli pour laisser aux musiciens le temps de se préparer. Les pistes, le tempo, les régions et les repères sont décalés ensemble. Le nombre de mesures et l’inclusion du décompte dans les exports restent réglables dans Click & cues. Refais l’export REAPER pour retrouver ce départ préparé.
 
 Annonces Windows : voix locales OneCore en français et anglais, normalisation du niveau et cache distinct par langue. Si une langue manque, l’application indique comment l’ajouter dans Réglages → Voix Windows. Aucun texte n’est envoyé à un service vocal en ligne.
 

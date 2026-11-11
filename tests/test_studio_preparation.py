@@ -93,12 +93,12 @@ def test_export_renders_pitch_rate_and_all_timeline_positions_together(tmp_path,
     assert float(field(tree, 'TEMPO')[0]) == pytest.approx(90)
     source = next(t for t in tree['children'] if t['kind'] == 'TRACK' and field(t, 'NAME')[0].startswith('Original'))
     item = source['children'][0]
-    assert float(field(item, 'POSITION')[0]) == pytest.approx(0)
+    assert float(field(item, 'POSITION')[0]) == pytest.approx(4/.75)
     assert float(field(item, 'LENGTH')[0]) == pytest.approx(16, abs=.02)
     wave = rpp.parent / field(item['children'][0], 'FILE')[0]
     assert frequency(wave) == pytest.approx(880, abs=3)
     region = next(row for row in tree['lines'] if row[0] == 'MARKER' and 'Refrain' in row)
-    assert float(region[2]) == pytest.approx(8/.75)
+    assert float(region[2]) == pytest.approx((8+4)/.75)
     metadata = json.loads((rpp.parent / 'bandstudio-project.json').read_text())
     assert metadata['lyrics'][0]['start'] == pytest.approx(4)
     assert metadata['lyrics'][0]['words'][0]['end'] == pytest.approx(4/.75)
