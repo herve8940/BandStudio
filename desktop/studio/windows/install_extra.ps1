@@ -17,7 +17,7 @@ if ($Component -eq 'creative') {
     exit 0
 }
 $StudioPython = Join-Path $StudioRoot '.venv-demucs\Scripts\python.exe'
-if (-not (Test-Path $StudioPython)) { throw 'Installe d’abord le composant Séparer les stems, puis relance cette installation.' }
+if (-not (Test-Path $StudioPython)) { throw 'Installe le composant Separer les stems, puis relance cette installation.' }
 $StudioUv = Join-Path $StudioRoot 'tools\uv.exe'
 if ($Component -eq 'rhythm') {
     # Explicit NumPy pin also repairs existing environments created with NumPy 2.
