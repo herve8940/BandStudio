@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://herve8940.github.io/BandStudio/sitemap.xml

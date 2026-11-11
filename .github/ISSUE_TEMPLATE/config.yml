@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Guide BandStudio
+    url: https://github.com/herve8940/BandStudio/blob/main/docs/BANDSTUDIO.md
+    about: Installation, préparation, exports, logs et mises à jour
+  - name: BandPilot
+    url: https://github.com/herve8940/BandPilot/issues
+    about: Les problèmes de console et retours se signalent dans BandPilot.

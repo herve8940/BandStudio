@@ -318,10 +318,38 @@ function M.active_job()
   end
 end
 
+-- Studio commands can be consumed on a later defer tick. Check the project at
+-- consumption as well as when Desktop writes the command, without touching
+-- commands subsequently sent by the existing phone/REAPER web interface.
+function M.guard_desktop_commands()
+  local project,path=reaper.EnumProjects(-1,"")
+  local id=tostring(project).."|"..(path or "")
+  for _,key in ipairs({"remote","export_req"}) do
+    local guard_key="desktop_guard_"..key
+    local raw=reaper.GetExtState("ReaCue",guard_key)
+    if raw~="" then
+      reaper.SetExtState("ReaCue",guard_key,"",false)
+      local g=M.json_decode(raw)
+      if g and (g.project_id~=id or (tonumber(g.expires) or 0)<os.time())
+        and reaper.GetExtState("ReaCue",key)==g.value then
+        reaper.SetExtState("ReaCue",key,"",false)
+      end
+    end
+  end
+end
+
 -- Installation --------------------------------------------------------------------
 local function trim(s) return (s or ""):gsub("^%s+", ""):gsub("%s+$", "") end
 
 function M.install_dir(script_dir)
+  -- Desktop test bundles reuse the installed model environments, while running
+  -- this checkout's code. Never change the user's persistent installation path.
+  if script_dir then
+    local clean = script_dir:gsub("[/\\]+$", "")
+    local parent = clean:match("^(.*)[/\\][^/\\]+$")
+    if parent and exists(parent .. SEP .. ".desktop-runtime")
+      and exists(parent .. SEP .. "reacue_mcp" .. SEP .. "cli.py") then return parent end
+  end
   local d = reaper.GetExtState("ReaCue", "install_dir")
   if d ~= "" then return d end
   local t = trim(read(INSTALL_TXT))

@@ -1,0 +1,122 @@
+name: BandStudio release
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: bandstudio-release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.12'
+      - run: python -m pip install uv pytest numpy==1.26.4 scipy==1.13.1 soundfile==0.13.1 reportlab==4.4.10 qrcode[pil]==8.2
+      - run: python tools/package_studio_windows.py
+      - name: Verify mixer, preparation, updater and diagnostics
+        shell: pwsh
+        run: |
+          $env:BANDSTUDIO_TEST_ENGINE = "$pwd/dist/bandstudio/stage/BandStudio-DEV/engine"
+          python -m pytest -q tests/test_studio_windows.py tests/test_studio_services.py tests/test_studio_preparation.py tests/test_studio_support.py
+      - run: python tools/check_studio_windows.py dist/bandstudio/BandStudio-1.1.0-Windows-x64.zip --report dist/checks
+      - run: python tools/package_studio_update.py --platform windows-x64
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: bandstudio-windows
+          path: |
+            dist/bandstudio/*.zip*
+            dist/updates/*
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: windows-diagnostics
+          path: dist/checks
+          if-no-files-found: ignore
+  mac:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15-intel
+            platform: macos-x64
+          - os: macos-15
+            platform: macos-arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.12'
+      - run: python tools/build_studio_mac.py
+      - name: Test native document and offline audio
+        run: desktop-build/standalone/BandStudio.app/Contents/MacOS/BandStudio --self-test "$RUNNER_TEMP/BandStudio-test"
+      - run: python tools/package_studio_update.py --platform ${{ matrix.platform }} --app desktop-build/standalone/BandStudio.app
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: bandstudio-${{ matrix.platform }}
+          path: dist/updates/*
+  interface:
+    strategy:
+      matrix:
+        browser: [chromium, webkit]
+    env:
+      BANDSTUDIO_BROWSER: ${{ matrix.browser }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest playwright numpy scipy soundfile
+      - run: python -m playwright install --with-deps chromium webkit
+      - run: python -m pytest -q tests/test_standalone_studio.py tests/test_studio_support.py
+  publish:
+    needs: [windows, mac, interface]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          pattern: bandstudio-*
+          path: release-assets
+      - run: python tools/publish_studio_release.py
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+  report-failure:
+    needs: [windows, mac, interface, publish]
+    if: failure() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open one issue for this failed build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="[CI] BandStudio build $RUN_ID failed"
+          count=$(gh issue list --state all --search "$title in:title" --json number --jq length)
+          if [ "$count" = 0 ]; then
+            printf 'Une vérification de publication a échoué. Aucune nouvelle mise à jour automatique ne sera proposée.\n\nDétails : %s\n' "$RUN_URL" > "$RUNNER_TEMP/bug.md"
+            gh issue create --title "$title" --body-file "$RUNNER_TEMP/bug.md"
+          fi

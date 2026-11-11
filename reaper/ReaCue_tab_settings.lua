@@ -551,7 +551,7 @@ return function(ctx)
   end
 
   -- « Licences » : THIRD_PARTY_NOTICES.md du dossier d'installation, sinon la page GitHub
-  M.LICENCES_URL = "https://github.com/herve8940/reacue/blob/main/THIRD_PARTY_NOTICES.md"
+  M.LICENCES_URL = "https://github.com/herve8940/BandStudio/blob/main/THIRD_PARTY_NOTICES.md"
   function M.licences_target()
     local dir = R.install_dir and R.install_dir(ctx.dir) or nil
     local f = dir and (dir .. SEP .. "THIRD_PARTY_NOTICES.md")

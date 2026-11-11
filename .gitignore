@@ -1,5 +1,8 @@
 # Environnements Python / Python environments
 .venv/
+.venv-test/
+.desktop-runtime
+/desktop-build/
 venv/
 __pycache__/
 *.py[cod]

@@ -1,13 +1,13 @@
 cff-version: 1.2.0
-message: "Si tu cites ReaCue, utilise ces métadonnées. / If you cite ReaCue, please use this metadata."
-title: "ReaCue"
-abstract: "Live-ready songs in REAPER: tempo map, regions, click, spoken cues and a web prompter for musicians."
+message: "Si tu cites BandStudio, utilise ces métadonnées. / If you cite BandStudio, please use this metadata."
+title: "BandStudio"
+abstract: "Local song preparation for musicians: stems, tempo, chords, lyrics, practice tools and REAPER export."
 authors:
   - family-names: "Naessens"
     given-names: "Hervé"
-version: "1.2.1"
+version: "1.1.0"
 license: MIT
-repository-code: "https://github.com/herve8940/reacue"
+repository-code: "https://github.com/herve8940/BandStudio"
 references:
   - type: article
     title: "SongFormer: Scaling Music Structure Analysis with Heterogeneous Supervision"

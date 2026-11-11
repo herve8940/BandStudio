@@ -211,6 +211,10 @@ def test_lcds_section_note_and_transposition(lang):
     note = M.NOTES["Pré-refrain 1"][lang]
     page, errors, close = _open(M, "guitars", lang, M.bar_time(27, 2.6))
     try:
+        # Song JSON can finish loading before the first transport poll, especially
+        # while the complete audio/browser suite is running on the same machine.
+        from playwright.sync_api import expect
+        expect(page.locator("#lcdBar")).to_have_text("27.3")
         assert page.text_content("#lcdBar") == "27.3" and page.text_content("#lcdBpm") == "112"
         assert page.text_content("#lcdKey") == "Am" and page.text_content("#secPos") == "3/4"
         assert page.is_visible("#secNote") and page.text_content("#secNoteV") == note

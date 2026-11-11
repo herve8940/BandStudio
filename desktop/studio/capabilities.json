@@ -1,0 +1,25 @@
+{
+  "version": "1.1.0",
+  "purpose": "Local song preparation and validated REAPER handoff",
+  "features": [
+    "Local stem separation",
+    "Tempo and beat grid",
+    "Editable protected sections and cues",
+    "Independent click, spoken calls and counts",
+    "Synchronized lyrics and chords",
+    "Pitch and speed preview",
+    "Persistent musician approval",
+    "Portable REAPER project with rendered speed and pitch",
+    "Open validated project in REAPER",
+    "Audio, MIDI, lyrics, PDF and portable project exports"
+  ],
+  "removed": [
+    "BandPilot bridge",
+    "Remote REAPER transport",
+    "Integrated recording UI",
+    "Generative accompaniment UI",
+    "Mastering UI",
+    "LAN prompter UI"
+  ],
+  "compatibility": "Existing version-1 projects and recorded audio tracks remain readable"
+}

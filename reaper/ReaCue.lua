@@ -595,6 +595,7 @@ local function background(now)
     end
   end
   ctx.flow.tick()
+  R.guard_desktop_commands()
   poll_remote(now)
   local c = ctx.c
   if c and L.playing() then
@@ -622,6 +623,28 @@ local function background(now)
     reaper.SetExtState("ReaCue", "win_goto", "", false)
     if g == "auto" then ctx.refresh(true) else ctx.goto_tab(g) end
   end
+  -- Typed requests from the independent local Desktop bridge. Expiring and
+  -- project-bound: an old click must never act on a newly opened song.
+  local desktop_action = reaper.GetExtState("ReaCue", "desktop_action")
+  if desktop_action ~= "" then
+    reaper.SetExtState("ReaCue", "desktop_action", "", false)
+    local request = R.json_decode(desktop_action)
+    local project, path = reaper.EnumProjects(-1, "")
+    local key = tostring(project) .. "|" .. (path or "")
+    if request and request.project_id == key and (tonumber(request.expires) or 0) >= os.time() then
+      local actions = {
+        new_file=function()ctx.newsong.start("file")end,
+        new_stems=function()ctx.newsong.start("stems")end,
+        new_link=function()ctx.newsong.start("link")end,
+        prepare=tabs.song.prepare,publish=tabs.song.publish,separate=tabs.song.separate,
+        do_all=tabs.song.do_all,reanalyse=tabs.song.reanalyse,
+        jobs=function()ctx.overlay="jobs"end,qr=ctx.open_qr,check=ctx.open_check,
+      }
+      local fn = actions[request.action]
+      if fn then local ok, err = pcall(fn); if not ok then ctx.show_result("ReaCue Desktop",tostring(err),false) end end
+    end
+  end
+  reaper.SetExtState("ReaCue", "desktop_ready", "1", false)
   reaper.SetExtState("ReaCue", "win_alive", string.format("%.3f", now), false)
 end
 
@@ -704,6 +727,8 @@ reaper.atexit(function()
   pcall(L.practice_flush)
   reaper.SetExtState("ReaCue", "win_alive", "", false)
   reaper.SetExtState("ReaCue", "win_script", "", false)
+  reaper.SetExtState("ReaCue", "desktop_ready", "", false)
+  reaper.SetExtState("ReaCue", "desktop_action", "", false)
   L.remote_off()
   reaper.SetExtState("ReaCue", "concert_dock", tostring(gfx.dock(-1)), true)
 end)
