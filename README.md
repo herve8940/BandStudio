@@ -3,7 +3,7 @@
   <h1>BandStudio</h1>
   <p><strong>Ton morceau. À ta façon.</strong><br>Un atelier local pour tous les musiciens, de l’écoute à la répétition.</p>
 
-[Site](https://herve8940.github.io/BandStudio/) · [Télécharger](https://github.com/herve8940/BandStudio/releases/tag/bandstudio-main) · [Guide](docs/BANDSTUDIO.md) · [English](README.en.md) · [Signaler un bug](https://github.com/herve8940/BandStudio/issues/new/choose)
+[💬 Discord · aide & communauté](https://discord.gg/5UnQPdMUpR) · [Site](https://herve8940.github.io/BandStudio/) · [Télécharger](https://github.com/herve8940/BandStudio/releases/tag/bandstudio-main) · [Guide](docs/BANDSTUDIO.md) · [English](README.en.md) · [Signaler un bug](https://github.com/herve8940/BandStudio/issues/new/choose)
 
 ![Vérifications](https://github.com/herve8940/BandStudio/actions/workflows/bandstudio-release.yml/badge.svg)
 ![Site](https://github.com/herve8940/BandStudio/actions/workflows/pages.yml/badge.svg)
@@ -66,3 +66,9 @@ Les tests audio supplémentaires demandent FFmpeg et le moteur de test local : `
 ## Licence et crédits
 
 Code sous [licence MIT](LICENSE), par Hervé Naessens et les contributeurs. Les composants et modèles conservent leurs licences ; certains modèles facultatifs de structure et batterie ont des restrictions non commerciales. Voir [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Aucun modèle ni morceau personnel n’est publié dans le dépôt.
+
+## Communauté & assistance
+
+Rejoins le [Discord BandStudio](https://discord.gg/5UnQPdMUpR), un serveur indépendant de BandPilot : entraide, démarrage, annonces, bugs et idées en français et en anglais.
+
+Dans **Aide & Discord**, décris le problème, ajoute si utile le diagnostic compact, puis **Copier le rapport et ouvrir Discord**. Colle le rapport dans `#rapports-de-bugs` et envoie-le. Aucun audio, projet ni journal brut n’est joint. Le diagnostic détaillé peut être exporté, relu, puis joint manuellement. [Aide et signalement](SUPPORT.md).

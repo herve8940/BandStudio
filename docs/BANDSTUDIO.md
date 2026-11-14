@@ -64,6 +64,14 @@ Le programme de construction attend les environnements `.venv`, `.venv-demucs`, 
 
 Les mises à jour `macos-x64` et `macos-arm64` ne contiennent que l’application et le code du moteur. Elles réutilisent les composants déjà installés. Aucun certificat Developer ID ni notarisation n’est fourni actuellement.
 
+## Communauté Discord
+
+[Rejoindre le serveur BandStudio](https://discord.gg/5UnQPdMUpR) · [Guide de support](../SUPPORT.md). Ce serveur est indépendant de BandPilot.
+
+**Aide & Discord** ouvre les salons d’entraide, de démarrage, de suggestions et des nouveautés. Pour un bug : saisir le résumé, les étapes et le résultat attendu, cocher si utile le diagnostic compact, relire l’aperçu puis utiliser **Copier le rapport et ouvrir Discord**. Coller et envoyer le message dans `#rapports-de-bugs`. Première visite : rejoindre le serveur avant de rouvrir le salon.
+
+Le diagnostic compact ne retient que les métadonnées techniques des six derniers événements (650 caractères maximum), sans messages d’erreur libres, chemins, noms de morceaux ou données du projet. Le message est limité à 2 000 caractères. Rien n’est publié automatiquement. Le diagnostic détaillé reste exportable pour être joint manuellement après vérification.
+
 ## Logs et signalement
 
 - macOS : `~/Library/Logs/BandStudio/application.log`.
