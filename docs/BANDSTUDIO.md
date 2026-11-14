@@ -6,6 +6,16 @@
 4. **Click & cues** : vérifier le premier temps, la mesure et le tempo. Régler click, annonces et décompte. **Paroles & accords** permet de corriger le texte, les horaires, la tonalité et le capo.
 5. **Valider & envoyer** : écouter les passages importants, confirmer les trois points de validation, puis exporter/ouvrir le projet dans REAPER. Changer le mix, la vitesse, la hauteur ou les repères annule la validation précédente.
 
+## File de préparation
+
+Dans **File de préparation**, choisis le modèle de séparation, la qualité et la langue des paroles, puis ajoute plusieurs fichiers de ton ordinateur ou colle des liens YouTube/audio, **un lien par ligne**. Chaque fichier ou lien crée un morceau distinct. Les choix de préparation sont conservés avec chaque ajout. Les liens de playlist ne déclenchent pas l’import de toute la playlist.
+
+Clique sur **Démarrer la file** lorsque ta liste est prête. L’application traite un morceau à la fois : import, séparation, tempo, tonalité, structure/paroles/accords selon les moteurs installés, puis click et annonces. Le moteur de séparation doit être installé. Un échec est affiché sur la tâche concernée et les morceaux suivants continuent. **Réessayer** conserve les étapes déjà terminées.
+
+Le morceau ouvert dans l’atelier reste indépendant de la file. Une lecture ou un autre traitement dans BandStudio met la file en attente ; elle reprend ensuite. **Pause** arrête l’étape en cours, qui sera relancée avec **Reprendre la file**. Les étapes terminées sont enregistrées sur disque. Après fermeture ou interruption de l’application, la file attend un nouveau clic : elle ne redémarre jamais seule. Laisse BandStudio ouvert et l’ordinateur éveillé pendant le traitement ; ce n’est pas un service fonctionnant application fermée.
+
+Les morceaux entièrement préparés apparaissent dans **Mes morceaux**, prêts à écouter et à corriger avant validation. La file ne valide ni n’exporte automatiquement dans REAPER. **Retirer** annule une tâche inachevée ; retirer une tâche terminée de la liste conserve son morceau dans la bibliothèque. Les fichiers d’origine restent inchangés et doivent rester accessibles jusqu’à leur import. Une connexion est nécessaire pour importer les liens.
+
 ## Traitement du morceau
 
 | Usage | BandStudio | Limites |

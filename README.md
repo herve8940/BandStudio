@@ -21,6 +21,7 @@ BandStudio est un logiciel gratuit de séparation d’instruments (stems) et de 
 - **Comprendre le morceau** : tempo, temps et débuts de mesure, tonalité, sections modifiables, accords et paroles synchronisées. Les corrections manuelles sont conservées.
 - **Organiser les morceaux** : bibliothèque en liste avec pochettes recherchées automatiquement par titre/artiste (y compris les anciens imports), intégrées ou choisies, suppression réversible et restauration.
 - **Tout préparer** : enchaîne les analyses installées et les guides, en conservant les corrections manuelles et les étapes terminées en cas d’arrêt.
+- **Préparer une série de morceaux** : ajoute plusieurs fichiers ou liens dans la file, puis clique sur **Démarrer la file**. Pause, reprise et erreurs par morceau ; aucun démarrage automatique à l’ouverture.
 - **Préparer la répétition** : click, appels de sections, décomptes, repères et notes. Validation explicite du mix, de la grille et des guides avant l’envoi dans REAPER.
 - **Exporter** : mix, stems WAV/FLAC/MP3/AAC, paroles LRC/SRT, fiche PDF, MIDI batterie et projet REAPER portable avec médias et décompte initial réglable pour préparer le départ.
 

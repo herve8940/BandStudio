@@ -31,6 +31,7 @@ class Api:
         self._engine=Path(engine).resolve();self._library=Path(library or Path.home()/'Music/BandStudioDev');self._library.mkdir(parents=True,exist_ok=True)
         self._project=model.fresh();self._root=None;self._audio=Audio(self._engine);self._window=None;self._busy=False;self._job_name='';self._job=None;self._job_log=None;self._notice='';self._revision=0;self._history=[];self._future=[];self._last_export='';self._stop=threading.Event();self._lock=threading.RLock();self._record=None;self._components={};self._phone=None;self._bridge=None;self._transport_generation=0;self._checking_update=False
         self._cancelled=threading.Event();self._artwork_busy=False
+        self._batch=None;self._batch_pulse=0.;self._batch_state=dict(type='batchQueue',items=[],enabled=False)
         try:self._setlists=json.loads((self._library/'setlists.json').read_text(encoding='utf-8'))
         except (OSError,ValueError):self._setlists=[]
     def _send(self,value):
@@ -64,6 +65,13 @@ class Api:
                     try:self._stop_record();self._state()
                     except Exception as e:self._notice=str(e)
             self._transport()
+            batch_client=self._batch
+            if batch_client and time.monotonic()-self._batch_pulse>.5:
+                self._batch_pulse=time.monotonic()
+                try:batch_client.send(dict(action='heartbeat',ready=not self._busy and not self._audio.running and not self._record and not self._components))
+                except (OSError,ValueError):
+                    self._send(dict(type='batchQueue',items=self._batch_state.get('items',[]),enabled=False,status='File arrêtée',message='Clique sur Actualiser la file pour la reconnecter.'))
+                    if self._batch is batch_client:self._batch=None
             if self._phone:self._phone.update(self)
             if self._audio.error:self._notice=self._audio.error;self._audio.error='';self._state()
             if self._audio.pending_rate and not self._busy:
@@ -94,6 +102,8 @@ class Api:
         threading.Thread(target=check,daemon=True).start()
     def _loaded(self):
         self._state()
+        try:self._batch_command(dict(action='refresh'))
+        except Exception as error:self._send(dict(type='batchQueue',items=[],enabled=False,message=str(error)))
         self._send(dict(type="update",automatic=updater.enabled(),message=""))
         if updater.enabled():self._check_updates()
         projects=self._list()
@@ -292,9 +302,25 @@ class Api:
                 ok=False;diagnostics.event("command.error",kind=type(error).__name__,error=error);self._notice=str(error);traceback.print_exc()
             self._state()
         return {'ok':ok}
+    def _batch_command(self,args):
+        from batch_queue import Client
+        with self._lock:
+            if not self._batch:
+                def receive(value):
+                    self._batch_state=value;self._send(value)
+                    if value.get('libraryChanged'):self._state()
+                self._batch=Client(self._engine,self._library,receive)
+        action=args.get('action')
+        if action=='files':
+            paths=self._dialog('OPEN',allow_multiple=True,file_types=('Audio et vidéos (*.*)',))
+            if paths:self._batch.send(dict(action='add',kind='file',sources=list(paths),options=args.get('options',{})))
+        elif action=='refresh':self._send(self._batch_state)
+        else:self._batch.send(args)
+        self._batch.send(dict(action='heartbeat',ready=not self._busy and not self._audio.running and not self._record and not self._components))
     def _command(self,m):
         if not isinstance(m,dict):raise ValueError('Commande invalide.')
         cmd=m.get('command');args=m.get('args') or {};a=self._audio;p=self._project
+        if cmd=='batchQueue':self._batch_command(args);return
         if cmd=='checkUpdates':self._check_updates();return
         if cmd=='automaticUpdates':
             updater.set_enabled(args.get('enabled',True));self._send(dict(type='update',automatic=updater.enabled(),message='Préférence enregistrée.'))
@@ -587,5 +613,6 @@ class Api:
             if os.name=='nt':subprocess.run(['taskkill.exe','/PID',str(self._job.pid),'/T','/F'],capture_output=True,creationflags=creation_flags())
             else:self._job.terminate()
         if self._phone:self._phone.close()
+        if self._batch:self._batch.close();self._batch=None
         updater.schedule_apply(self._engine)
         self._stop.set();self._audio.close();return True
