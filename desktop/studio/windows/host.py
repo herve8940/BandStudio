@@ -314,6 +314,22 @@ class Api:
                 self._send(dict(type='artworkResult',path=args.get('path'),**result))
             threading.Thread(target=lookup,daemon=True).start();return
         if cmd=='ready':return
+        if cmd=='supportInfo':self._send(diagnostics.support_info());return
+        if cmd=='openCommunity':
+            import webbrowser
+            if not webbrowser.open(diagnostics.community_url(args.get('destination','invite'))):
+                self._notice='Impossible d’ouvrir Discord. Réessaie depuis le lien du site BandStudio.'
+            return
+        if cmd=='copyDiscordReport':
+            import webbrowser
+            try:
+                diagnostics.copy_report_windows(args.get('text'))
+            except (ValueError,OSError,subprocess.SubprocessError):
+                self._send(dict(type='supportCopied',request=args.get('request'),ok=False,message='Copie indisponible. Copie le texte sélectionné, puis ouvre le salon des bugs.'));return
+            try:opened=webbrowser.open(diagnostics.community_url('bugs'))
+            except OSError:opened=False
+            message='Rapport copié. Colle-le dans #rapports-de-bugs et clique sur Envoyer dans Discord.' if opened else 'Rapport copié. Ouvre le salon des bugs avec le bouton ci-dessous, puis colle-le.'
+            self._send(dict(type='supportCopied',request=args.get('request'),ok=True,message=message));return
         if cmd=='diagnostic':diagnostics.event('web.error',message=str(args.get('message',''))[:2000],line=args.get('line',0));return
         if cmd=='showLogs':self._reveal(diagnostics.directory()/'application.log');return
         if cmd=='reportBug':

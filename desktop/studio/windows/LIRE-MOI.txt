@@ -90,3 +90,9 @@ le nouveau ZIP et extrais-le dans un nouveau dossier. Tu peux aussi ouvrir les
 Propriétés du ZIP officiel, cocher Débloquer, appliquer puis extraire à nouveau.
 Les projets existants sont à conserver. Le journal du lanceur est dans
 %LOCALAPPDATA%\BandStudio\Logs\startup.log. Vérifie son contenu avant de le partager.
+
+COMMUNAUTÉ & AIDE
+Discord BandStudio : https://discord.gg/5UnQPdMUpR
+Aide & Discord : entraide, bugs, idées et nouveautés.
+Prépare et relis le rapport, puis copie-le dans le salon des bugs.
+Le diagnostic compact est facultatif ; aucun audio ni projet n’est joint.

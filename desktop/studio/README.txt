@@ -101,3 +101,9 @@ signalement GitHub. Vérifie le diagnostic avant de le partager : aucun audio ni
 projet n’y est inclus. Les mises à jour publiées depuis main sont téléchargées
 automatiquement puis appliquées à la fermeture, après vérification de leur empreinte.
 Les modèles, projets et préférences sont conservés. Désactivation possible dans Réglages.
+
+COMMUNAUTÉ & AIDE
+Discord BandStudio : https://discord.gg/5UnQPdMUpR
+Aide & Discord : entraide, bugs, idées et nouveautés.
+Prépare et relis le rapport, puis copie-le dans le salon des bugs.
+Le diagnostic compact est facultatif ; aucun audio ni projet n’est joint.

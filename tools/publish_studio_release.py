@@ -37,6 +37,9 @@ REAPER : le décompte avant la musique est rétabli pour laisser aux musiciens l
 
 Annonces Windows : voix locales OneCore en français et anglais, normalisation du niveau et cache distinct par langue. Si une langue manque, l’application indique comment l’ajouter dans Réglages → Voix Windows. Aucun texte n’est envoyé à un service vocal en ligne.
 
+Communauté et support Discord : https://discord.gg/5UnQPdMUpR
+Aide & Discord : prépare et relis un rapport, puis copie-le dans le salon des bugs. Diagnostic compact facultatif, sans audio ni projet.
+
 Révision : {sha}
 ''',encoding='utf-8')
     exists=subprocess.run(['gh','release','view',tag],capture_output=True).returncode==0
