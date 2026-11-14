@@ -125,6 +125,8 @@ def test_checkpoint_recovers_after_crash_and_never_restarts_automatically(queue_
     # Simulate commit succeeded but the queue file was not updated.
     item = work.items[0]
     batch_project.apply(item, 'import', work.root(item), work.directory / item['id'] / 'work', work.library)
+    # A crashed process releases its handles; Windows cannot remove an open log.
+    work.log.close()
     recovered = batch.PreparationQueue(work.engine, work.library)
     heartbeat(recovered);recovered.tick()
     assert not recovered.enabled and recovered.items[0]['completed'] == ['import']
@@ -207,22 +209,34 @@ def test_pipe_service_persists_entries_and_reopens_paused(queue_setup, monkeypat
     for name in ('project.py', '__init__.py'):
         shutil.copy2(ROOT / 'desktop/studio/windows' / name, work.engine / 'windows' / name)
     monkeypatch.setattr(batch, 'python_for', lambda engine: Path(sys.executable))
+    launch = subprocess.Popen
+    diagnostic = work.directory / 'service-test.log'
+    def capture_service(*args, **kwargs):
+        with diagnostic.open('ab') as log:
+            return launch(*args, **{**kwargs, 'stderr': log})
+    monkeypatch.setattr(batch.subprocess, 'Popen', capture_service)
     messages = queue.Queue()
     client = batch.Client(work.engine, work.library, messages.put)
+    def receive(client):
+        try:
+            return messages.get(timeout=10)
+        except queue.Empty:
+            pytest.fail(f'Queue service returned no state (exit={client.proc.poll()}): '
+                        + diagnostic.read_text(encoding='utf-8', errors='replace'))
     try:
-        assert messages.get(timeout=10)['enabled'] is False
+        assert receive(client)['enabled'] is False
         client.send(dict(action='add', kind='url', sources=['https://youtu.be/example']))
-        state = messages.get(timeout=10)
+        state = receive(client)
         assert len(state['items']) == 2 and state['enabled'] is False
         client.send(dict(action='start'))
-        state = messages.get(timeout=10)
+        state = receive(client)
         assert state['enabled'] is True and not state['running']  # No host heartbeat.
     finally:
         client.close()
     assert client.proc.returncode == 0
     reopened = batch.Client(work.engine, work.library, messages.put)
     try:
-        state = messages.get(timeout=10)
+        state = receive(reopened)
         assert len(state['items']) == 2 and state['enabled'] is False
     finally:
         reopened.close()
