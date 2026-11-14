@@ -3,6 +3,7 @@
   "purpose": "Local song preparation and validated REAPER handoff",
   "features": [
     "Local stem separation",
+    "Manually started, resumable queue for local files and audio/video links",
     "Tempo and beat grid",
     "Editable protected sections and cues",
     "Independent click, spoken calls and counts",

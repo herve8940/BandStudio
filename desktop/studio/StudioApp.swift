@@ -44,6 +44,10 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     var phoneRevision = -1
     var phonePulse=0.0
     var phoneAnnounced=false
+    var queueProcess:Process?
+    var queueInput:FileHandle?
+    var queueState:[String:Any]=["type":"batchQueue","items":[],"enabled":false]
+    var queuePulse=0.0
 
     func applicationDidFinishLaunching(_ notification:Notification) {
         StudioDiagnostics.shared.event("startup",["version":"1.1.0","os":ProcessInfo.processInfo.operatingSystemVersionString])
@@ -78,7 +82,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         web.loadFileURL(webRoot.appendingPathComponent("index.html"),allowingReadAccessTo:webRoot)
         NSApp.activate(ignoringOtherApps:true)
         timer=Timer.scheduledTimer(withTimeInterval:0.1,repeats:true){[weak self] _ in
-            guard let s=self else{return};s.audio.tick();s.sendTransport();s.updatePhone()
+            guard let s=self else{return};s.audio.tick();s.sendTransport();s.updatePhone();s.queueHeartbeat()
             if s.recorder.running && ((s.project.capture.mode=="punch" && s.audio.current()>=s.project.capture.punchEnd) || s.recorder.elapsed>=43100){s.perform{try s.stopRecord()}}
             if s.recorder.running, let error=s.recorder.error {s.notice=error.localizedDescription;try? s.stopRecord()}
         }
@@ -325,11 +329,12 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         guard message.frameInfo.isMainFrame,message.frameInfo.request.url?.standardizedFileURL.path == webRoot.appendingPathComponent("index.html").standardizedFileURL.path,
               let m=message.body as? [String:Any],let command=m["command"] as? String else{return}
         let args=m["args"] as? [String:Any] ?? [:]
+        if command == "batchQueue" {perform{try queueCommand(args)};return}
         if supportCommand(command,args){return}
         if command != "ready" {StudioDiagnostics.shared.event("command",["command":command,"playing":audio.running,"position":audio.current(),"busy":busy])}
         perform {
             if command == "artwork" {try artworkCommand(args);return}
-            if command == "ready" {sendState();sendUpdate();if automaticUpdates{checkUpdates()};return}
+            if command == "ready" {sendState();sendUpdate();try startQueue();send(queueState);if automaticUpdates{checkUpdates()};return}
             if command == "import" {importSong();return}
             if command == "open" {openProject();return}
             if ["bandpilot","bridge","studioControl","record","newSession","captureSettings"].contains(command) {
@@ -470,5 +475,5 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         do{try save()}catch{notice=error.localizedDescription;sendState();return .terminateCancel}
         return .terminateNow
     }
-    func applicationWillTerminate(_ notification:Notification){quitting=true;applyUpdateAfterExit();timer?.invalidate();audio.pause();job?.terminate();phoneProcess?.terminate()}
+    func applicationWillTerminate(_ notification:Notification){quitting=true;closeQueue();applyUpdateAfterExit();timer?.invalidate();audio.pause();job?.terminate();phoneProcess?.terminate()}
 }

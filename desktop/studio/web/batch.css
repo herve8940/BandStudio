@@ -1,0 +1,10 @@
+.cards.queue-inputs{grid-template-columns:minmax(260px,1fr) minmax(340px,1.4fr);margin-top:20px}
+.queue-inputs textarea{width:100%;resize:vertical;min-height:130px}
+.queue-toolbar,.queue-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.queue-toolbar{margin:22px 0 14px}.queue-help{color:var(--muted,#a6b5cd);max-width:950px;font-size:13px;line-height:1.6}
+.queue-items{display:grid;gap:12px;margin-top:22px}.queue-item{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:20px;border:1px solid #354052;border-radius:14px;background:#18202c}
+.queue-info{min-width:0}.queue-info h3{margin:8px 0;overflow-wrap:anywhere}.queue-source{display:block;overflow-wrap:anywhere;color:#9caec7}
+.queue-state{font-weight:650;color:#bac8dd}.queue-state.running{color:#f5c16c}.queue-state.done{color:#69dfb1}.queue-state.error,.queue-error{color:#ffab9b}
+.queue-error{white-space:pre-wrap;overflow-wrap:anywhere;max-width:820px}.queue-empty{padding:26px;border:1px dashed #46546b;border-radius:12px}
+#queueMessage{padding:12px 16px;background:#243149;border-radius:10px}
+@media(max-width:1100px){.cards.queue-inputs{grid-template-columns:1fr}.queue-item{align-items:flex-start;flex-direction:column}}

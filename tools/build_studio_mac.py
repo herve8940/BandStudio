@@ -66,8 +66,11 @@ def build(source, prepare=False):
         prepare_runtime(source, engine)
     if engine.exists():
         (engine/'BandStudio_Remote.lua').unlink(missing_ok=True)
-        for name in ('worker.py','services.py','listening.py','diagnostics.py','compute.py','catalog.py','artwork.py','updater.py','preparation.py','platform_tools.py','advanced.py','phone.py','creative.py'):
+        for name in ('worker.py','services.py','listening.py','diagnostics.py','compute.py','catalog.py','artwork.py','updater.py','preparation.py','batch_queue.py','batch_project.py','platform_tools.py','advanced.py','phone.py','creative.py'):
             shutil.copy2(ROOT/'desktop/studio'/name,engine/name)
+        (engine/'windows').mkdir(exist_ok=True)
+        for name in ('__init__.py','project.py'):
+            shutil.copy2(ROOT/'desktop/studio/windows'/name,engine/'windows'/name)
         revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
         (engine/'build.json').write_text(json.dumps({'version':'1.1.0','commit':revision,'runtime':1}))
     app=BUILD / 'BandStudio.app'
@@ -89,7 +92,7 @@ def build(source, prepare=False):
     (contents / 'Info.plist').write_bytes(plistlib.dumps(info))
     cache=BUILD / 'swift-module-cache';cache.mkdir(exist_ok=True)
     subprocess.run(['xcrun','swiftc','-O','-target',platform.machine()+'-apple-macosx12.0','-module-cache-path',str(cache),
-                    *[str(ROOT / 'desktop/studio' / f) for f in ['StudioDiagnostics.swift','StudioUpdates.swift','StudioSettings.swift','StudioCore.swift','StudioApp.swift','StudioWorkflows.swift','StudioAdvanced.swift','StudioPhone.swift','StudioRecording.swift','main.swift']],
+                    *[str(ROOT / 'desktop/studio' / f) for f in ['StudioDiagnostics.swift','StudioUpdates.swift','StudioSettings.swift','StudioCore.swift','StudioApp.swift','StudioWorkflows.swift','StudioQueue.swift','StudioAdvanced.swift','StudioPhone.swift','StudioRecording.swift','main.swift']],
                     '-o',str(mac / 'BandStudio'),'-framework','AppKit','-framework','WebKit','-framework','AVFoundation'],check=True)
     subprocess.run(['codesign','--force','--sign','-',str(app)],check=True)
     subprocess.run(['codesign','--verify','--deep','--strict',str(app)],check=True)

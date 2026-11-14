@@ -35,6 +35,10 @@ def install(update=False):
     copy(engine_source,engine_stage)
     # Preserve optional environments and downloaded models, then refresh program code.
     for code in (BUILD/'Engine').glob('*.py'):shutil.copy2(code,engine_stage/code.name)
+    # Queue projects share the portable document model, including on existing Mac runtimes.
+    (engine_stage/'windows').mkdir(exist_ok=True)
+    for name in ('__init__.py','project.py'):
+        shutil.copy2(BUILD/'Engine/windows'/name,engine_stage/'windows'/name)
     if (BUILD/'Engine/build.json').is_file():shutil.copy2(BUILD/'Engine/build.json',engine_stage/'build.json')
     for name in ('.venv','.venv-demucs','.venv-structure','.venv-import','.venv-words','.venv-chords','.venv-drums','.venv-creative'):
         if not (engine_stage/name).is_dir():continue
