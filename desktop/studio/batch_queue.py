@@ -302,6 +302,9 @@ class Client:
 
 
 def main():
+    # Load NumPy's native libraries before a thread blocks on piped stdin.
+    # On Windows the reverse order can deadlock the DLL loader (numpy#24290).
+    import batch_project
     parser = argparse.ArgumentParser()
     parser.add_argument('--engine', required=True)
     parser.add_argument('--library', required=True)
