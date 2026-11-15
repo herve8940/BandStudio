@@ -1,6 +1,6 @@
 ## Unreleased — file de préparation
 
-- File persistante pour plusieurs fichiers locaux et liens YouTube/audio, avec démarrage explicite, pause, reprise, réorganisation et erreurs indépendantes par morceau.
+- File persistante pour plusieurs fichiers locaux et liens audio, avec démarrage explicite, pause, reprise, réorganisation et erreurs indépendantes par morceau.
 - Préparation isolée du morceau ouvert, attente pendant la lecture/les analyses, conservation des étapes terminées et publication des projets prêts à vérifier dans la bibliothèque.
 - Même service local sur macOS et Windows ; aucun redémarrage automatique après fermeture.
 

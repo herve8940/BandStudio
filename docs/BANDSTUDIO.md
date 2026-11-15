@@ -8,7 +8,7 @@
 
 ## File de préparation
 
-Dans **File de préparation**, choisis le modèle de séparation, la qualité et la langue des paroles, puis ajoute plusieurs fichiers de ton ordinateur ou colle des liens YouTube/audio, **un lien par ligne**. Chaque fichier ou lien crée un morceau distinct. Les choix de préparation sont conservés avec chaque ajout. Les liens de playlist ne déclenchent pas l’import de toute la playlist.
+Dans **File de préparation**, choisis le modèle de séparation, la qualité et la langue des paroles, puis ajoute plusieurs fichiers de ton ordinateur ou colle des liens audio, **un lien par ligne**. Chaque fichier ou lien crée un morceau distinct. Les choix de préparation sont conservés avec chaque ajout. Les liens de playlist ne déclenchent pas l’import de toute la playlist. Utilise uniquement des morceaux que tu as le droit d’utiliser.
 
 Clique sur **Démarrer la file** lorsque ta liste est prête. L’application traite un morceau à la fois : import, séparation, tempo, tonalité, structure/paroles/accords selon les moteurs installés, puis click et annonces. Le moteur de séparation doit être installé. Un échec est affiché sur la tâche concernée et les morceaux suivants continuent. **Réessayer** conserve les étapes déjà terminées.
 
