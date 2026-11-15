@@ -8,12 +8,12 @@ import uuid
 import numpy as np
 import soundfile as sf
 
-GUIDE_DEFAULTS=dict(clickEnabled=False,clickGain=.45,clickPan=0,subdivision=1,beatsPerBar=4,firstBeat=0,gridMode='detected',manualBPM=120,countBars=2,countClick=True,countVoice=True,countGain=.8,countPan=0,countEveryLoop=False,countOnSeek=True,callsEnabled=True,callsGain=.9,callsPan=0,leadBeats=8,voice='Système',language='fr',speechRate=180,speakCues=True,regionCountEnabled=True,regionCountBeats=4,exportGuides=True,exportCount=True,loopStep=0,loopEvery=4,loopMaxRate=1)
+GUIDE_DEFAULTS=dict(clickEnabled=False,clickGain=.45,clickPan=0,subdivision=1,beatsPerBar=4,firstBeat=0,gridMode='detected',manualBPM=120,countBars=2,countClick=True,countVoice=True,countGain=.8,countPan=0,countEveryLoop=False,countOnSeek=True,callsEnabled=True,callsGain=.9,cuesGain=.9,callsPan=0,leadBeats=8,voice='Système',language='fr',speechRate=180,speakCues=True,regionCountEnabled=True,regionCountBeats=4,exportGuides=True,exportCount=True,loopStep=0,loopEvery=4,loopMaxRate=1)
 
 def ident():return str(uuid.uuid4())
 
 def fresh(name='Nouveau morceau'):
-    return dict(version=1,id=ident(),name=name,tracks=[],sections=[],cues=[],bpm=0,beats=[],notes='',settings=GUIDE_DEFAULTS.copy(),guideFiles={},guideKey='',lyrics=[],chords=[],drumHits=[],key='',sourceURL='',capo=0,gridLocked=False,downbeats=[],analysisNote='')
+    return dict(version=1,id=ident(),name=name,tracks=[],sections=[],cues=[],bpm=0,beats=[],notes='',settings=GUIDE_DEFAULTS.copy(),guideFiles={},guideKey='',lyrics=[],chords=[],drumHits=[],key='',sourceURL='',capo=0,analysesCompleted=[],gridLocked=False,downbeats=[],analysisNote='')
 
 def duration(p):return max(p.get('sessionDuration',0),max((t['offset']+t['duration'] for t in p['tracks'] if not t['role'].startswith('guide_')),default=0))
 
@@ -54,8 +54,8 @@ def validate(p,root=None):
     for x in p['lyrics']+p['chords']:number(x['start'],0,length);number(x['end'],x['start']+.000001,length+.1)
     for x in p['drumHits']:number(x['time'],0,length);number(x['pitch'],0,127);number(x['velocity'],1,127)
     for v in p['beats']:number(v,0,length+.1)
-    s=p['settings']
-    for key,low,high in [('clickGain',0,1.5),('callsGain',0,1.5),('countGain',0,1.5),('clickPan',-1,1),('callsPan',-1,1),('countPan',-1,1),('firstBeat',-30,43200),('manualBPM',20,400),('loopStep',0,.25),('loopMaxRate',.5,1.5)]:number(s[key],low,high)
+    s={**GUIDE_DEFAULTS,**p['settings']}
+    for key,low,high in [('clickGain',0,1.5),('callsGain',0,1.5),('cuesGain',0,1.5),('countGain',0,1.5),('clickPan',-1,1),('callsPan',-1,1),('countPan',-1,1),('firstBeat',-30,43200),('manualBPM',20,400),('loopStep',0,.25),('loopMaxRate',.5,1.5)]:number(s[key],low,high)
     for key,low,high in [('subdivision',1,4),('beatsPerBar',1,12),('countBars',0,8),('regionCountBeats',1,12),('leadBeats',0,32),('speechRate',100,360),('loopEvery',1,32)]:
         if int(s[key])!=number(s[key],low,high):raise ValueError('Nombre entier attendu : '+key)
     if s['gridMode'] not in ('detected','fixed') or s['language'] not in ('fr','en'):raise ValueError('Réglages de guidage invalides.')
@@ -92,8 +92,14 @@ def track(path,root,name,role,offset=0):
 
 def guide_key(p):
     value={k:p[k] for k in ['settings','bpm','beats','sections','cues']};value['duration']=duration(p)
+    value=copy.deepcopy(value)
+    for key in ('clickGain','callsGain','cuesGain','countGain'):value['settings'][key]=1
+    for key in ('clickPan','callsPan','countPan'):value['settings'][key]=0
+    for key in ('clickEnabled','callsEnabled','speakCues'):value['settings'][key]=True
+    for item in value['sections']+value['cues']:
+        for key in ('reviewed','locked','origin'):item.pop(key,None)
     # Platform names prevent accidentally reusing Mac voice assets after editing on Windows.
-    return 'windows-guides-3:'+hashlib.sha256(json.dumps(value,sort_keys=True,allow_nan=False).encode()).hexdigest()
+    return 'windows-guides-4:'+hashlib.sha256(json.dumps(value,sort_keys=True,allow_nan=False).encode()).hexdigest()
 
 def period(p,at):
     import bisect
@@ -115,3 +121,58 @@ def apply_sections(p,suggestions):
             ranges=[(a,b) for a,b in next_ranges if b-a>.01]
         result += [{**section,'id':ident(),'start':a,'end':b} for a,b in ranges if b-a>.01]
     p['sections']=sorted(result,key=lambda x:x['start'])
+
+
+def analysis_done(p,kind):
+    """Existing musical decisions take priority over a preparation request."""
+    if kind in ('grid','smartgrid'):
+        return bool(p.get('gridLocked') or (p.get('preparation') or {}).get('fingerprint') or (p.get('settings') or {}).get('gridMode')=='fixed' or p.get('beats') or any(k in p.get('analysesCompleted',[]) for k in ('grid','smartgrid')))
+    if kind in ('structure','lyrics','chords','drums','key'):
+        field={'structure':'sections','drums':'drumHits'}.get(kind,kind)
+        return bool(p.get(field) or kind in p.get('analysesCompleted',[]) or (p.get('preparation') or {}).get('fingerprint'))
+    roles=[t['role'] for t in p.get('tracks',[])]
+    if kind=='separate':return any(r in ('drums','bass','vocals','other','guitar','piano') for r in roles)
+    if kind=='drumsep':return any(r.startswith('drum_') for r in roles)
+    return False
+
+
+def analysis_completed(p,kind):
+    p['analysesCompleted']=list(dict.fromkeys([*p.get('analysesCompleted',[]),kind]))
+
+
+def apply_grid(p,result,offset=0):
+    if analysis_done(p,'smartgrid'):return
+    from services import calibrate_grid
+    result=calibrate_grid(result)
+    length=duration(p)
+    p['beats']=[t+offset for t in result['beats'] if 0<=t+offset<length]
+    p['downbeats']=[t+offset for t in result.get('downbeats',[]) if 0<=t+offset<length]
+    p['bpm']=result.get('bpm',0)
+    p['settings'].update(gridMode='detected', firstBeat=result['firstBeat']+offset,
+                         beatsPerBar=result['beatsPerBar'])
+    p['analysisNote']=result['gridStatus']
+
+
+def edit_marker(p,args,review=False):
+    kind=args.get('kind')
+    if kind not in ('section','cue'):raise ValueError('Repère inconnu.')
+    rows=p['sections' if kind=='section' else 'cues']
+    item=next((v for v in rows if v['id']==args.get('id')),None)
+    if item is None:raise ValueError('Ce repère n’existe plus.')
+    if review:
+        item['reviewed']=True
+        if kind=='section':item['locked']=True
+        return
+    at=number(args['time'],0,duration(p))
+    if kind=='cue':item['time']=at;rows.sort(key=lambda x:x['time'])
+    else:
+        rows.sort(key=lambda x:x['start']);index=rows.index(item)
+        previous=rows[index-1] if index else None
+        if at>=item['end']-.01 or (previous and at<=previous['start']+.01):
+            raise ValueError('Le début doit rester entre les sections voisines.')
+        if previous:
+            if abs(previous['end']-item['start'])<.001:
+                previous['end']=at;previous['locked']=True;previous['origin']='manual';previous['reviewed']=False
+            elif at<previous['end']:raise ValueError('Cette position chevauche la section précédente.')
+        item['start']=at;item['locked']=True;item['origin']='manual'
+    item['reviewed']=False

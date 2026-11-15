@@ -105,9 +105,18 @@ def separate(audio, output, model, engine, quality='standard'):
     write(output, dict(tracks=files, model=model,quality=quality))
 
 
-def analyze(audio, output, mode, engine):
+def analyze(audio, output, mode, engine, project_file=None):
+    from analysis_cache import AnalysisCache
+    project=json.loads(Path(project_file).read_text()) if project_file else None
     if mode == 'grid':
-        write(output, grid(audio))
+        cache=AnalysisCache.create(project,'grid',audio,engine)
+        result=cache.load() if cache else None
+        hit=result is not None
+        if not hit:
+            result=grid(audio)
+            if cache:cache.store(result)
+        from services import calibrate_grid
+        write(output, calibrate_grid({**result,'cacheHit':hit}))
         return
     sys.path.insert(0, str(engine))
     os.environ['REACUE_STRUCTURE_DIR'] = str(engine / 'structure')
@@ -116,14 +125,26 @@ def analyze(audio, output, mode, engine):
     os.environ['REACUE_CPU_THREADS'] = '4'
     progress(output, 'structure-loading')
     import reacue_structure as structure
-    app = structure.load_app()
-    structure.init_models(app)
-    progress(output, 'structure-analysis', device=str(app.device))
-    raw = structure.segments_from_app(app, audio, 420 if structure.ram_gb() >= 15 else 120)
+    window=420 if structure.ram_gb() >= 15 else 120
+    cache=AnalysisCache.create(project,'structure',audio,engine,dict(window=window))
+    cached=cache.load() if cache else None
+    if cached is not None:
+        raw=cached['segments']
+        progress(output,'analysis-reuse')
+    else:
+        app=structure.load_app()
+        structure.init_models(app)
+        progress(output,'structure-analysis',device=str(app.device))
+        raw=structure.segments_from_app(app,audio,window)
+        if cache:cache.store(dict(segments=raw))
     progress(output, 'structure-saving')
     import soundfile as sf
     info = sf.info(audio)
-    write(output, dict(sections=sections(raw, info.duration), engine='SongFormer'))
+    proposed=sections(raw, info.duration)
+    if project and project.get('beats'):
+        from musical_timing import align_intro_sections,cached_audio_entry
+        proposed=align_intro_sections({**project,'sections':proposed},cached_audio_entry(audio,project,engine))['sections']
+    write(output, dict(sections=proposed, engine='SongFormer',cacheHit=cached is not None))
 
 
 def main():
@@ -143,9 +164,9 @@ def main():
     a.input = str(Path(a.input).resolve())
     a.output = str(Path(a.output).resolve())
     os.environ['TORCH_HOME'] = str(engine / 'torch-cache')
-    os.environ['NUMBA_CACHE_DIR'] = str(Path(a.output).parent / 'numba')
+    from analysis_cache import runtime_caches
+    runtime_caches(engine,Path(a.output).parent)
     os.environ['OMP_NUM_THREADS'] = '4'
-    os.environ['MPLCONFIGDIR'] = str(Path(a.output).parent / 'matplotlib')
     os.environ['REAPER_RESOURCE_PATH'] = str(Path(a.output).parent / 'worker-state')
     os.environ['REACUE_CPU_THREADS']='4'
     os.environ['HF_HUB_OFFLINE']='1'
@@ -164,6 +185,9 @@ def main():
     if a.command in ('smartgrid','key','lyricsimport','lyricsexport','stemsexport','master','report','portable','sheet'):
         from advanced import run
         run(a.command,a.project,a.output,engine,json.loads(Path(a.options_file).read_text() if a.options_file else a.options),a.input)
+        if a.command=='smartgrid':
+            from services import calibrate_grid
+            write(a.output,calibrate_grid(json.loads(Path(a.output).read_text())))
         return
     if a.command=='guides':guides(a.project,a.output);return
     if a.command=='decode':
@@ -195,7 +219,7 @@ def main():
     if a.command == 'separate':
         separate(a.input, a.output, a.model, engine,a.quality)
     else:
-        analyze(a.input, a.output, a.command, engine)
+        analyze(a.input, a.output, a.command, engine,a.project)
 
 
 if __name__ == '__main__':

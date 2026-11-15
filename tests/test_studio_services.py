@@ -44,7 +44,7 @@ def generate(p,root,monkeypatch):
     services.guides(snapshot,folder/'result.json')
     result=json.loads((folder/'result.json').read_text())
     p['guideFiles']={key:str(Path(path).relative_to(root)) for key,path in result['files'].items()}
-    for key,role in [('click','guide_click'),('calls','guide_voice'),('counts','guide_count')]:
+    for key,role in [('click','guide_click'),('calls','guide_voice'),('cues','guide_cue'),('counts','guide_count')]:
         p['tracks'].append(dict(id=key,name=key,file=p['guideFiles'][key],role=role,duration=12,offset=0,gain=1,pan=0,muted=False,solo=False,peaks=[]))
     return result
 
@@ -58,6 +58,9 @@ def test_guides_have_audible_calls_counts_and_exact_subdivision(tmp_path,monkeyp
     assert np.max(np.abs(click[int(.29*sr):int(.45*sr)]))==0
     assert [(e['time'],e['target']) for e in result['events']]==[(4,8),(7,11)]
     assert calls[int(4*sr),0]==pytest.approx(.25)
+    cues,_=sf.read(result['files']['cues'])
+    assert cues[int(7*sr),0]==pytest.approx(.25)
+    assert calls[int(7*sr),0]==0 and cues[int(4*sr),0]==0
     for at in [6,6.5,7,7.5]:assert np.max(np.abs(counts[int(at*sr):int((at+.1)*sr)]))>.2
     assert np.max(np.abs(counts[:int(6*sr)]))==0
     assert np.max(np.abs(counts[int(8*sr):]))==0

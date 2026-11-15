@@ -83,7 +83,7 @@ extension StudioApp {
             let file=UUID().uuidString+".wav";try FileManager.default.copyItem(at:source,to:folder.appendingPathComponent(file));paths[name]=prefix+"/"+file
         }
         project.tracks.removeAll{$0.role.hasPrefix("guide_")}
-        for (name,title,role) in [("click","Métronome","guide_click"),("calls","Appels de régions","guide_voice"),("counts","Décompte des régions","guide_count")] {
+        for (name,title,role) in [("click","Métronome","guide_click"),("calls","Appels de régions","guide_voice"),("cues","Cues","guide_cue"),("counts","Décompte des régions","guide_count")] {
             let relative=paths[name]!,url=root.appendingPathComponent(relative)
             let (duration,peaks)=try inspectAudio(url)
             project.tracks.append(Track(name:title,file:relative,role:role,duration:duration,peaks:peaks))
@@ -194,6 +194,7 @@ extension StudioApp {
                 project.chords.sort{$0.start<$1.start}
             }
         }
+        project.analysisCompleted(kind)
         try changed();notice="Analyse ajoutée. Tu peux corriger chaque entrée dans le prompteur."
     }
     func annotation(_ args:[String:Any]) throws {
@@ -214,7 +215,18 @@ extension StudioApp {
                     words!.append(TimedWord(start:start,end:end,text:word));previous=end
                 }
             }
-            entries.removeAll{$0.id==id};entries.append(TimedText(id:id,start:a,end:b,text:String(text.prefix(1000)),manual:true,words:words));entries.sort{$0.start<$1.start}
+            entries.removeAll{$0.id==id}
+            if kind == "chords",args["replaceRange"] as? Bool == true {
+                // Preserve the old harmony on either side of the corrected passage.
+                entries=entries.flatMap { item -> [TimedText] in
+                    guard item.start<b && item.end>a else{return [item]}
+                    var tails:[TimedText]=[]
+                    if item.start<a {var left=item;left.end=a;tails.append(left)}
+                    if item.end>b {var right=item;right.start=b;if !tails.isEmpty{right.id=UUID().uuidString};tails.append(right)}
+                    return tails
+                }
+            }
+            entries.append(TimedText(id:id,start:a,end:b,text:String(text.prefix(1000)),manual:true,words:words));entries.sort{$0.start<$1.start}
         }
         remember();if kind == "lyrics"{project.lyrics=entries}else{project.chords=entries};try changed()
     }
@@ -223,11 +235,11 @@ extension StudioApp {
         if command == "splitSection" {
             let point=try number(args,"time",range:0...project.duration),section=project.sections[index]
             guard point>section.start+0.01,point<section.end-0.01 else{throw StudioError("Place la tête de lecture à l’intérieur de la section à scinder.")}
-            remember();var next=section;next.id=UUID().uuidString;next.start=point;next.name += " · suite";next.locked=true;next.origin="manual"
-            project.sections[index].end=point;project.sections[index].locked=true;project.sections[index].origin="manual";project.sections.insert(next,at:index+1)
+            remember();var next=section;next.id=UUID().uuidString;next.start=point;next.name += " · suite";next.locked=true;next.origin="manual";next.reviewed=false
+            project.sections[index].end=point;project.sections[index].locked=true;project.sections[index].origin="manual";project.sections[index].reviewed=false;project.sections.insert(next,at:index+1)
         } else {
             guard index+1<project.sections.count else{throw StudioError("Il n’y a pas de section suivante.")}
-            remember();project.sections[index].end=project.sections[index+1].end;project.sections[index].locked=true;project.sections[index].origin="manual";project.sections.remove(at:index+1)
+            remember();project.sections[index].end=project.sections[index+1].end;project.sections[index].locked=true;project.sections[index].origin="manual";project.sections[index].reviewed=false;project.sections.remove(at:index+1)
         }
         try changed()
     }
@@ -303,7 +315,20 @@ extension StudioApp {
         if project.key.isEmpty{steps.append("key")}
         if available(".venv-words"){steps.append("lyrics")}
         if available(".venv-chords"){steps.append("chords")}
-        return steps+["guides"]
+        return steps.filter{!project.analysisDone($0)}+(project.guideKey == project.desiredGuideKey() ? [] : ["guides"])
+    }
+    func calibrateImportedSong() throws {
+        guard !project.analysisDone("grid") else{return}
+        let identity=project.id,generation=transportGeneration
+        let finish:()throws->Void = {
+            guard self.project.id==identity,self.transportGeneration==generation else{return}
+            try self.withGuides{
+                self.notice="Import terminé. "+self.project.analysisNote
+                self.sendState()
+            }
+        }
+        if analysisPlan().contains("smartgrid") {try advancedTask(["kind":"smartgrid"],completion:finish)}
+        else {try runAnalysis("grid",model:"htdemucs",completion:finish)}
     }
     func prepareAll(_ args:[String:Any]) throws {
         try requireIdle()
@@ -351,5 +376,44 @@ extension StudioApp {
                 var message=response;message["type"]="artworkResult";message["path"]=path;self.send(message)
             }
         }
+    }
+}
+
+
+extension StudioApp {
+    func guideMix(_ args:[String:Any]) throws {
+        guard let key=args["key"] as? String,["clickGain","callsGain","cuesGain","countGain"].contains(key) else{throw StudioError("Volume inconnu.")}
+        let gain=Float(try number(args,"value",range:0...1.5));remember()
+        switch key {
+        case "clickGain":project.settings.clickGain=gain;if gain>0{project.settings.clickEnabled=true}
+        case "callsGain":project.settings.callsGain=gain;if gain>0{project.settings.callsEnabled=true}
+        case "cuesGain":project.settings.cuesGain=gain;if gain>0{project.settings.speakCues=true}
+        default:project.settings.countGain=gain
+        }
+        audio.project=project;audio.applyMix();try changed()
+    }
+    func editMarker(_ args:[String:Any],review:Bool) throws {
+        guard let kind=args["kind"] as? String,let id=args["id"] as? String else{throw StudioError("Sélectionne un repère.")}
+        audio.pause()
+        if kind=="cue",let i=project.cues.firstIndex(where:{$0.id==id}) {
+            let at=review ? project.cues[i].time : try number(args,"time",range:0...project.duration)
+            remember();project.cues[i].time=at;project.cues[i].reviewed=review
+            project.cues.sort{$0.time<$1.time}
+        } else if kind=="section",let i=project.sections.firstIndex(where:{$0.id==id}) {
+            let at=review ? project.sections[i].start : try number(args,"time",range:0...project.duration)
+            if !review {
+                guard at<project.sections[i].end-0.01,(i==0 || at>project.sections[i-1].start+0.01) else{throw StudioError("Le début doit rester entre les sections voisines.")}
+                if i>0,abs(project.sections[i-1].end-project.sections[i].start)>=0.001,at<project.sections[i-1].end {throw StudioError("Cette position chevauche la section précédente.")}
+            }
+            remember()
+            if !review {
+                if i>0,abs(project.sections[i-1].end-project.sections[i].start)<0.001 {
+                    project.sections[i-1].end=at;project.sections[i-1].locked=true;project.sections[i-1].origin="manual";project.sections[i-1].reviewed=false
+                }
+                project.sections[i].start=at;project.sections[i].origin="manual"
+            }
+            project.sections[i].locked=true;project.sections[i].reviewed=review
+        } else {throw StudioError("Ce repère n’existe plus.")}
+        try changed()
     }
 }

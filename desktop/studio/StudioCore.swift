@@ -27,6 +27,7 @@ struct Section: Codable {
     var name: String
     var locked = false
     var origin = "manual"
+    var reviewed:Bool? = nil
     var callText:String? = nil
     var announce:Bool? = nil
 }
@@ -34,6 +35,7 @@ struct Cue: Codable {
     var id = UUID().uuidString
     var time: Double
     var name: String
+    var reviewed:Bool? = nil
     var callText:String? = nil
     var announce:Bool? = nil
 }
@@ -65,11 +67,28 @@ struct StudioProject: Codable {
     var drumHits:[DrumHit]=[]
     var key=""
     var capo=0
+    var analysesCompleted:[String]=[]
     var gridLocked=false
     var downbeats:[Double]=[]
     var analysisNote=""
     var sourceURL=""
     var duration: Double { max(sessionDuration,tracks.filter{!$0.role.hasPrefix("guide_")}.map { $0.duration + $0.offset }.max() ?? 0) }
+
+    func analysisDone(_ kind:String)->Bool {
+        if ["grid","smartgrid"].contains(kind) {return gridLocked || preparation?.fingerprint != nil || settings.gridMode=="fixed" || !beats.isEmpty || analysesCompleted.contains(where:{["grid","smartgrid"].contains($0)})}
+        if ["structure","lyrics","chords","drums","key"].contains(kind),preparation?.fingerprint != nil || analysesCompleted.contains(kind) {return true}
+        switch kind {
+        case "structure":return !sections.isEmpty
+        case "lyrics":return !lyrics.isEmpty
+        case "chords":return !chords.isEmpty
+        case "drums":return !drumHits.isEmpty
+        case "key":return !key.isEmpty
+        case "separate":return tracks.contains{["drums","bass","vocals","other","guitar","piano"].contains($0.role)}
+        case "drumsep":return tracks.contains{$0.role.hasPrefix("drum_")}
+        default:return false
+        }
+    }
+    mutating func analysisCompleted(_ kind:String) {if !analysesCompleted.contains(kind){analysesCompleted.append(kind)}}
 
     func validate() throws {
         try settings.validate();try capture.validate()
@@ -198,6 +217,8 @@ final class StudioAudio {
     private var preRoll=0.0
     private var loopGap=0.0
     private var countPeriod=0.5
+    private var initialCountEvents:[CountEvent]=[]
+    private var repeatCountEvents:[CountEvent]=[]
     private var completedLoops=0
     private var speechFiles:[String:AVAudioFile]=[:]
     private let clockFormat=AVAudioFormat(standardFormatWithSampleRate:44100,channels:2)!
@@ -242,6 +263,7 @@ final class StudioAudio {
         for (i,t) in project.tracks.enumerated() where i < players.count {
             if t.role == "guide_click" {players[i].volume=s.clickEnabled ? s.clickGain : 0;players[i].pan=s.clickPan;continue}
             if t.role == "guide_voice" {players[i].volume=s.callsEnabled ? s.callsGain : 0;players[i].pan=s.callsPan;continue}
+            if t.role == "guide_cue" {players[i].volume=s.speakCues ? (s.cuesGain ?? s.callsGain) : 0;players[i].pan=s.callsPan;continue}
             if t.role == "guide_count" {players[i].volume=s.regionCountEnabled ? s.countGain : 0;players[i].pan=s.countPan;continue}
             var audible = !t.muted && (!hasSolo || t.solo)
             if mode == "original" {audible=t.role == "source" && !t.muted}
@@ -268,49 +290,48 @@ final class StudioAudio {
     }
     func countRemaining()->Int {
         guard running else{return 0}
-        var remaining=preRoll-elapsed()
-        if loop && elapsed()>=firstLength && loopGap>0 {
-            let phase=(elapsed()-firstLength).truncatingRemainder(dividingBy:loopEnd-loopStart+loopGap)
-            remaining=loopGap-phase
+        var time=elapsed(),events=initialCountEvents
+        if loop && time>=firstLength {
+            time=(time-firstLength).truncatingRemainder(dividingBy:loopEnd-loopStart+loopGap)
+            events=repeatCountEvents
         }
-        let period=project.period(at:loop && elapsed()>=firstLength ? loopStart : startPosition)
-        return max(0,Int(ceil(remaining/period)))
+        return events.filter{$0.end>time+1e-7}.count
     }
-    func plannedCount(at position:Double)->Double {Double(project.settings.countBars*project.settings.beatsPerBar)*project.period(at:position)}
-    private func scheduleCount(at time:Double,duration:Double,position:Double) {
-        guard duration>0 else{return}
-        let s=project.settings,period=project.period(at:position)
-        countPeriod=period
-        var callEnd=0.0
-        if s.callsEnabled,(s.countBars>1 || !s.countVoice),let section=project.sections.first(where:{$0.start<=position+0.1 && $0.end>position}),section.announce != false,
+    func plannedCount(at position:Double)->Double {project.countPlan(at:position).lead}
+    private func scheduleCount(at time:Double,position:Double,enabled:Bool) {
+        guard enabled else{return}
+        let plan=project.countPlan(at:position),s=project.settings
+        guard !plan.events.isEmpty else{return}
+        let voiceStart=plan.events.first(where:{$0.spoken})?.time ?? plan.end
+        if s.callsEnabled,(s.countBars>1 || !s.countVoice),let section=project.sections.first(where:{$0.start<=plan.target+0.1 && $0.end>plan.target && $0.announce != false}),
            let f=speechFiles["call:"+section.id] {
-            let available=duration-(s.countVoice ? Double(s.beatsPerBar)*period : 0)
-            let length=min(f.length,Int64(available*44100))
-            startCall.scheduleSegment(f,startingFrame:0,frameCount:UInt32(length),at:AVAudioTime(sampleTime:Int64(time*44100),atRate:44100))
-            callEnd=Double(length)/44100+0.05
+            let available=s.countVoice ? voiceStart : plan.end
+            let length=min(f.length,Int64(max(0,available-0.05)*44100))
+            if length>0 {startCall.scheduleSegment(f,startingFrame:0,frameCount:UInt32(length),at:AVAudioTime(sampleTime:Int64(time*44100),atRate:44100))}
         }
-        for beat in 0..<(s.countBars*s.beatsPerBar) {
-            let at=time+Double(beat)*period
+        for event in plan.events {
+            let at=time+event.time,period=event.end-event.time
             let buffer=AVAudioPCMBuffer(pcmFormat:clockFormat,frameCapacity:1543)!
             buffer.frameLength=1543
             for i in 0..<1543 {
                 let t=Double(i)/44100
-                let sample=Float(sin(2*Double.pi*(beat%s.beatsPerBar==0 ? 1760 : 1100)*t)*exp(-t*130)*0.65)
+                let sample=Float(sin(2*Double.pi*(event.number==1 ? 1760 : 1100)*t)*exp(-t*130)*0.65)
                 for ch in 0..<2{buffer.floatChannelData![ch][i]=sample}
             }
             countClick.scheduleBuffer(buffer,at:AVAudioTime(sampleTime:Int64(at*44100),atRate:44100))
-            if beat>=(s.countBars-1)*s.beatsPerBar,Double(beat)*period>=callEnd,
-               let f=speechFiles["number:"+String(beat%s.beatsPerBar+1)] {
+            if event.spoken,let f=speechFiles["number:"+String(event.number)] {
                 let length=min(f.length,Int64(period*44100*0.92))
-                countVoice.scheduleSegment(f,startingFrame:0,frameCount:UInt32(length),at:AVAudioTime(sampleTime:Int64(at*44100),atRate:44100))
+                if length>0 {countVoice.scheduleSegment(f,startingFrame:0,frameCount:UInt32(length),at:AVAudioTime(sampleTime:Int64(at*44100),atRate:44100))}
             }
         }
     }
-    private func schedule(_ a:Double,_ b:Double,at:Double) {
+    private func schedule(_ a:Double,_ b:Double,at:Double,counting:Bool=false) {
         guard b > a else{return}
         for (i,t) in project.tracks.enumerated() {
             let f=files[i],sr=f.processingFormat.sampleRate
-            let begin=max(a,t.offset),end=min(b,t.offset+t.duration)
+            var begin=max(a,t.offset)
+            let end=min(b,t.offset+t.duration)
+            if counting,project.settings.countBars>0,t.role=="guide_count" || (t.role=="guide_click" && project.settings.countClick) {begin=max(begin,project.countPlan(at:a).target)}
             guard end > begin else{continue}
             let frame=max(0,Int64((begin-t.offset)*sr))
             let length=min(f.length-frame,Int64((end-begin)*sr))
@@ -328,12 +349,14 @@ final class StudioAudio {
         startPosition=position
         let end=loop ? loopEnd : project.duration
         preRoll=withCount ? plannedCount(at:position) : 0
+        initialCountEvents=withCount ? project.countPlan(at:position).events : []
+        repeatCountEvents=project.settings.countEveryLoop ? project.countPlan(at:loopStart).events : []
         loopGap=project.settings.countEveryLoop ? plannedCount(at:loopStart) : 0
         firstLength=preRoll+end-position;scheduled=firstLength;completedLoops=0
         stretch.rate=rate;stretch.pitch=pitch*100;guideStretch.rate=rate;guideStretch.pitch=0
-        scheduleCount(at:0,duration:preRoll,position:position)
-        schedule(position,end,at:preRoll)
-        if loop { for _ in 0..<3 {scheduleCount(at:scheduled,duration:loopGap,position:loopStart);schedule(loopStart,loopEnd,at:scheduled+loopGap);scheduled += loopEnd-loopStart+loopGap} }
+        scheduleCount(at:0,position:position,enabled:withCount)
+        schedule(position,end,at:preRoll,counting:withCount)
+        if loop { for _ in 0..<3 {scheduleCount(at:scheduled,position:loopStart,enabled:project.settings.countEveryLoop);schedule(loopStart,loopEnd,at:scheduled+loopGap,counting:project.settings.countEveryLoop);scheduled += loopEnd-loopStart+loopGap} }
         let silence=AVAudioPCMBuffer(pcmFormat:clockFormat,frameCapacity:1024)!
         silence.frameLength=1024
         for c in 0..<2 {silence.floatChannelData![c].initialize(repeating:0,count:1024)}
@@ -361,7 +384,7 @@ final class StudioAudio {
         if loop {
             let size=loopEnd-loopStart
             if size > 0.05 {
-                while scheduled-elapsed() < (size+loopGap)*2 {scheduleCount(at:scheduled,duration:loopGap,position:loopStart);schedule(loopStart,loopEnd,at:scheduled+loopGap);scheduled += size+loopGap}
+                while scheduled-elapsed() < (size+loopGap)*2 {scheduleCount(at:scheduled,position:loopStart,enabled:project.settings.countEveryLoop);schedule(loopStart,loopEnd,at:scheduled+loopGap,counting:project.settings.countEveryLoop);scheduled += size+loopGap}
                 let lap=elapsed()<firstLength ? 0 : 1+Int((elapsed()-firstLength)/(size+loopGap))
                 if lap>completedLoops {
                     completedLoops=lap;let s=project.settings
@@ -378,7 +401,7 @@ final class StudioAudio {
         defer {engine.stop();for n in players+[countClick,countVoice,startCall]{n.stop()};engine.disableManualRenderingMode();applyMix()}
         stretch.rate=rate;stretch.pitch=pitch*100;guideStretch.rate=rate;guideStretch.pitch=0
         let lead=includeCount ? plannedCount(at:start) : 0
-        scheduleCount(at:0,duration:lead,position:start);schedule(start,end,at:lead)
+        scheduleCount(at:0,position:start,enabled:includeCount);schedule(start,end,at:lead,counting:includeCount)
         if !project.settings.exportGuides {startCall.volume=0;for (i,t) in project.tracks.enumerated() where t.role.hasPrefix("guide_"){players[i].volume=0}}
         try engine.start();for n in players+[countClick,countVoice,startCall]{n.play()}
         let output=try AVAudioFile(forWriting:url,settings:format.settings)

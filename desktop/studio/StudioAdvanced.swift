@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import AppKit
 
 extension StudioApp {
     func musicSettings(_ args:[String:Any]) throws {
@@ -16,6 +17,7 @@ extension StudioApp {
     func advancedTask(_ args:[String:Any],completion:(() throws -> Void)?=nil) throws {
         try requireIdle()
         guard let root=root,let kind=args["kind"] as? String,["smartgrid","key","lyricsimport","lyricsexport","stemsexport","master","report","portable","sheet"].contains(kind) else{throw StudioError("Ouvre d’abord un morceau.")}
+        if project.analysisDone(kind) {notice="Analyse déjà disponible et résultat protégé. Les corrections et validations sont conservées.";sendState();try completion?();return}
         let options=args["options"] as? [String:Any] ?? [:]
         let optionData=try JSONSerialization.data(withJSONObject:options)
         guard optionData.count<=2_100_000,let json=String(data:optionData,encoding:.utf8) else{throw StudioError("Paramètres trop volumineux.")}
@@ -30,17 +32,11 @@ extension StudioApp {
             let object=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
             if kind == "smartgrid" {
                 self.remember()
-                self.project.beats=(object["beats"] as? [Double] ?? []).map{$0+sourceOffset}.filter{$0>=0 && $0<self.project.duration}
-                self.project.downbeats=(object["downbeats"] as? [Double] ?? []).map{$0+sourceOffset}.filter{$0>=0 && $0<self.project.duration}
-                self.project.bpm=object["bpm"] as? Double ?? 0
-                self.project.settings.gridMode="detected"
-                if let first=object["firstBeat"] as? Double,let meter=object["beatsPerBar"] as? Int,(2...12).contains(meter) {
-                    self.project.settings.firstBeat=max(0,first+sourceOffset);self.project.settings.beatsPerBar=meter
-                }
-                self.project.analysisNote=object["gridStatus"] as? String ?? "Analyse rythmique terminée."
+                self.project.applyDetectedGrid(object,offset:sourceOffset)
+                self.project.analysisCompleted(kind)
                 self.audio.pause();try self.reloadAudio();try self.changed();self.notice=self.project.analysisNote
             } else if kind == "key" {
-                self.remember();self.project.key=object["key"] as? String ?? "";try self.changed()
+                self.remember();self.project.key=object["key"] as? String ?? "";self.project.analysisCompleted(kind);try self.changed()
                 let alternatives=(object["alternatives"] as? [[String:Any]] ?? []).compactMap{$0["key"] as? String}.joined(separator:", ")
                 self.notice="Tonalité proposée : \(self.project.key). Autres hypothèses : \(alternatives). Tu peux la corriger dans le prompteur."
             } else if kind == "lyricsimport" {
@@ -53,6 +49,7 @@ extension StudioApp {
             } else {
                 self.lastExport=object["path"] as? String ?? ""
                 self.notice=kind == "master" ? "Mix normalisé en WAV 24 bits, avec mesures avant/après. Le projet original est conservé." : "Export terminé. Utilise Afficher l’export pour le retrouver."
+                if kind == "sheet",self.window != nil {try self.saveAndOpenSheet()}
             }
             try completion?();self.sendState()
         }
@@ -72,6 +69,29 @@ extension StudioApp {
                 } catch {DispatchQueue.main.async{self.busy=false;self.jobName="";self.notice=error.localizedDescription;self.sendState()}}
             }
         } else {try startJob(kind,input:input,arguments:["--options",json],completion:finish)}
+    }
+
+    func saveAndOpenSheet() throws {
+        guard let root=root,let window=window else{return}
+        let source=URL(fileURLWithPath:lastExport).resolvingSymlinksInPath()
+        let exports=root.appendingPathComponent("Exports").resolvingSymlinksInPath()
+        guard source.path.hasPrefix(exports.path+"/"),source.pathExtension.lowercased()=="pdf",
+              FileManager.default.fileExists(atPath:source.path) else{throw StudioError("La fiche PDF est introuvable.")}
+        let panel=NSSavePanel();panel.title="Enregistrer la fiche PDF";panel.prompt="Enregistrer et ouvrir"
+        panel.nameFieldStringValue=source.lastPathComponent;panel.allowedFileTypes=["pdf"];panel.canCreateDirectories=true
+        panel.message="Choisis où enregistrer ta fiche. Le PDF s’ouvrira ensuite automatiquement."
+        notice="PDF créé. Choisis où enregistrer ta fiche."
+        panel.beginSheetModal(for:window){answer in
+            guard answer == .OK,let target=panel.url else{
+                self.notice="Enregistrement ailleurs annulé. Le PDF reste dans le dossier du morceau.";self.sendState();return
+            }
+            do {
+                if target.resolvingSymlinksInPath() != source {try Data(contentsOf:source).write(to:target,options:.atomic)}
+                self.lastExport=target.path
+                self.notice=NSWorkspace.shared.open(target) ? "PDF enregistré et ouvert." : "PDF enregistré. L’ouverture automatique a échoué ; utilise Afficher l’export pour le retrouver."
+            } catch {self.notice="Impossible d’enregistrer cette copie : "+error.localizedDescription+" Le PDF original reste dans le dossier du morceau."}
+            self.sendState()
+        }
     }
 }
 

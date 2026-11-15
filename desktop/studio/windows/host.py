@@ -49,7 +49,7 @@ class Api:
         if available['structure']:steps.append('structure')
         if not self._project.get('key'):steps.append('key')
         steps += [k for k in ('lyrics','chords') if available[k]]
-        return steps+['guides']
+        return [kind for kind in steps if not model.analysis_done(self._project,kind)]+([] if self._ready_guides() else ['guides'])
     def _ready_guides(self):
         return bool(self._root and self._project['guideKey']==model.guide_key(self._project) and all(model.relative_file(self._root,p).is_file() for p in self._project['guideFiles'].values()))
     def _state(self):
@@ -175,14 +175,14 @@ class Api:
         self._revision+=1
     def _reload(self):
         pos,mode=self._audio.position,self._audio.mode;self._audio.load(self._project,self._root);self._audio.position=min(pos,model.duration(self._project));self._audio.mode=mode
-    def _load(self,root):
+    def _load(self,root,prepare_guides=True):
         p=model.load(root);prep=p.get('preparation') or {}
         model.save(p,root) # Persist repaired legacy waveforms.
         self._audio.loop=False;self._audio.rate=prep.get('rate',1);self._audio.pitch=prep.get('pitch',0)
         self._audio.load(p,root)
         if prep:self._audio.mode=prep.get('mode','mix')
         self._project=p;self._root=root;self._history=[];self._future=[];self._last_export='';self._revision+=1;self._state()
-        if model.duration(p)>0:self._guides()
+        if prepare_guides and model.duration(p)>0:self._guides()
     def _guides(self,force=False):
         if not force and self._ready_guides():return
         result,obj=self._work('guides');folder=self._root/'Guides'/model.ident();folder.mkdir(parents=True)
@@ -192,7 +192,7 @@ class Api:
             if not file.is_relative_to(result.parent.resolve()):raise ValueError('Guide audio hors du dossier de traitement.')
             target=folder/(model.ident()+'.wav');shutil.copy2(file,target);mapping[key]=target.relative_to(self._root).as_posix()
         self._project['tracks']=[t for t in self._project['tracks'] if not t['role'].startswith('guide_')]
-        for key,name,role in [('click','Métronome','guide_click'),('calls','Appels de régions','guide_voice'),('counts','Décompte des régions','guide_count')]:self._project['tracks'].append(model.track(self._root/mapping[key],self._root,name,role))
+        for key,name,role in [('click','Métronome','guide_click'),('calls','Appels de régions','guide_voice'),('cues','Cues','guide_cue'),('counts','Décompte des régions','guide_count')]:self._project['tracks'].append(model.track(self._root/mapping[key],self._root,name,role))
         self._project['guideFiles']=mapping;self._project['guideKey']=model.guide_key(self._project);self._reload();self._save(invalidate=False);self._notice='Appels, décomptes et métronome prêts.'
     def _decode(self,source,target):
         args=[str(executable(self._engine,'ffmpeg')),'-nostdin','-hide_banner','-loglevel','error','-y','-protocol_whitelist','file,pipe,crypto,data','-i',str(source),'-map','0:a:0','-vn','-ac','2','-ar','44100','-c:a','pcm_f32le',str(target)]
@@ -203,6 +203,8 @@ class Api:
             p=model.fresh(title or Path(files[0]).stem)
             try:p['settings'].update(json.loads((self._library/'defaults.json').read_text()))
             except (OSError,ValueError):pass
+            from services import import_settings
+            p['settings']=import_settings(p['settings'])
             p['sourceURL']=url;root=self._library/(safe_name(p['name'])+'.bandstudio')
             if root.exists():root=self._library/(safe_name(p['name'])+' '+p['id'][:6]+'.bandstudio')
         else:p=copy.deepcopy(self._project);root=self._root
@@ -219,19 +221,27 @@ class Api:
         if new:
             from artwork import seed
             seed(root,files[0],self._engine,metadata)
-        self._load(root);self._notice='Morceau importé. Tu peux lancer la lecture ou préparer les analyses.'
+        self._load(root,prepare_guides=not new)
+        if new:
+            from windows.advanced_host import advanced_task
+            if 'smartgrid' in self._plan():advanced_task(self,'smartgrid',{})
+            else:self._analysis('grid',{})
+            self._guides();self._notice='Import terminé. '+self._project['analysisNote']
+        else:self._notice='Pistes importées.'
     def _import_rpp(self,path):
         result,obj=self._work('rpp',path);source=Path(obj['project']).resolve()
         if not source.is_relative_to(result.parent.resolve()):raise ValueError('Dossier d’import invalide.')
         p=model.load(source);target=self._library/(safe_name(p['name'])+' '+p['id'][:6]+'.bandstudio');shutil.move(str(source),target);self._load(target);self._notice='Projet REAPER importé. '+' '.join(obj.get('warnings',[]))
     def _analysis(self,kind,args):
+        if model.analysis_done(self._project,kind):
+            self._notice='Analyse déjà disponible et résultat protégé. Les corrections et validations sont conservées.';return
         if kind=='grid' and self._project.get('gridLocked'):raise ValueError('Le calage est protégé. Déverrouille-le dans Guidage avant une nouvelle analyse.')
         desired={'lyrics':'vocals','drums':'drums','drumsep':'drums'}.get(kind,'source');source=next((t for t in self._project['tracks'] if t['role']==desired),None)
         if not source and kind not in ('drums','drumsep'):source=next((t for t in self._project['tracks'] if t['role']=='source'),None)
         if not source:raise ValueError('Il manque la piste '+desired+'. Importe un morceau ou sépare ses instruments.')
         offset=source['offset']
         result,obj=self._work(kind,model.relative_file(self._root,source['file']),['--model',args.get('model','htdemucs'),'--quality',args.get('quality','standard'),'--language',args.get('language','auto')]);self._remember()
-        if kind=='grid':self._project['bpm']=obj.get('bpm',0);self._project['beats']=obj.get('beats',[])
+        if kind=='grid':model.apply_grid(self._project,obj,offset)
         elif kind=='structure':model.apply_sections(self._project,obj['sections'])
         elif kind in ('separate','drumsep'):
             tracks=[];names={'drums':'Batterie','bass':'Basse','vocals':'Chant','guitar':'Guitare','piano':'Piano','other':'Autres instruments','drum_kick':'Grosse caisse','drum_snare':'Caisse claire','drum_toms':'Toms','drum_cymbals':'Cymbales et charleston'}
@@ -252,6 +262,7 @@ class Api:
                 if kind=='lyrics':entry['words']=[dict(start=w['t'],end=w['end'],text=w['w']) for w in row.get('words',[]) if start<=w['t']<w['end']<=end+.1]
                 entries.append(entry)
             self._project[kind]=sorted(manual+entries,key=lambda x:x['start'])
+        model.analysis_completed(self._project,kind)
         self._save();self._notice='Analyse ajoutée. Vérifie et corrige les propositions dans l’atelier ou le prompteur.'
     def _set_rate(self,rate,pitch,resume=False):
         self._audio.pause();self._audio.rate=model.number(rate,.5,1.5);self._audio.pitch=model.number(pitch,-12,12);self._audio.prepare()
@@ -340,6 +351,14 @@ class Api:
                 self._send(dict(type='artworkResult',path=args.get('path'),**result))
             threading.Thread(target=lookup,daemon=True).start();return
         if cmd=='ready':return
+        if cmd=='referenceSearch':
+            import webbrowser
+            from urllib.parse import urlencode
+            kind=args.get('kind');query=str(args.get('query','')).strip()[:300]
+            if not self._root or kind not in ('chords','lyrics') or not query:raise ValueError('Précise le titre du morceau.')
+            url='https://www.google.com/search?'+urlencode({'q':query+(' chords accords' if kind=='chords' else ' lyrics paroles')})
+            if not webbrowser.open(url):raise ValueError('Impossible d’ouvrir le navigateur.')
+            return
         if cmd=='supportInfo':self._send(diagnostics.support_info());return
         if cmd=='openCommunity':
             import webbrowser
@@ -461,6 +480,22 @@ class Api:
         if cmd=='save':self._save(invalidate=False);self._notice='Projet enregistré.';return
         if cmd=='saveDefaults':atomic(self._library/'defaults.json',p['settings']);self._notice='Réglages enregistrés pour les prochains imports.';return
         if cmd=='guides':a.pause();self._op('Préparation des guides',lambda:self._guides(force=True));return
+        if cmd=='guideMix':
+            key=args.get('key')
+            if key not in ('clickGain','callsGain','cuesGain','countGain'):raise ValueError('Volume inconnu.')
+            gain=model.number(args['value'],0,1.5);self._remember();p['settings'][key]=gain
+            if gain>0 and key!='countGain':p['settings'][{'clickGain':'clickEnabled','callsGain':'callsEnabled','cuesGain':'speakCues'}[key]]=True
+            with a.lock:a.project=copy.deepcopy(p)
+            self._save();return
+        if cmd in ('moveMarker','reviewMarker'):
+            a.pause();self._remember();model.edit_marker(p,args,review=cmd=='reviewMarker');self._save();return
+        if cmd=='audition':
+            start=model.number(args['start'],0,model.duration(p));end=model.number(args['end'],start+.05,model.duration(p))
+            a.pause();a.loop=True;a.loopStart=start;a.loopEnd=end;a.position=start
+            action=lambda:a.play(with_count=False)
+            if self._ready_guides():action()
+            else:self._op('Préparation de l’écoute',self._prepared_transport(action))
+            return
         if cmd=='settings':
             value={**model.GUIDE_DEFAULTS,**args['value']};candidate={**p,'settings':value};model.validate(candidate,self._root)
             a.pause();self._remember()
@@ -496,7 +531,8 @@ class Api:
             from windows.advanced_host import advanced_task
             kind=args.get('kind');options=args.get('options') or {}
             if kind not in ('smartgrid','key','lyricsimport','lyricsexport','stemsexport','master','report','portable','sheet'):raise ValueError('Outil inconnu.')
-            if kind=='smartgrid' and p.get('gridLocked'):raise ValueError('Le calage est protégé. Déverrouille-le dans Guidage avant une nouvelle analyse.')
+            if model.analysis_done(p,kind):
+                self._notice='Analyse déjà disponible et résultat protégé. Les corrections et validations sont conservées.';return
             a.pause();self._op('Outil local : '+kind,lambda:advanced_task(self,kind,options));return
         if cmd=='analyze':
             kind=args.get('kind')
@@ -578,7 +614,7 @@ class Api:
         elif cmd in ('splitSection','mergeSection'):
             index=next((i for i,x in enumerate(p['sections']) if x['id']==args.get('id')),None)
             if index is None:raise ValueError('Sélectionne une section.')
-            section=p['sections'][index];section.update(locked=True,origin='manual')
+            section=p['sections'][index];section.update(locked=True,origin='manual',reviewed=False)
             if cmd=='splitSection':
                 at=model.number(args['time'],section['start']+.01,section['end']-.01);new={**section,'id':model.ident(),'start':at,'name':section['name']+' · suite'};section['end']=at;p['sections'].insert(index+1,new)
             else:
@@ -599,6 +635,16 @@ class Api:
                         a=model.number(w['start'],start,end);b=model.number(w['end'],start,end);word=str(w['text']).strip()
                         if a<previous or b<=a or not word or len(word)>120:raise ValueError('Horaires des mots invalides ou chevauchants.')
                         words.append(dict(start=a,end=b,text=word));previous=b
+                if kind=='chords' and args.get('replaceRange') is True:
+                    tails=[]
+                    for item in entries:
+                        if item['start']>=end or item['end']<=start:
+                            tails.append(item)
+                            continue
+                        if item['start']<start:tails.append(dict(item,end=start))
+                        if item['end']>end:
+                            tails.append(dict(item,start=end,id=model.ident() if item['start']<start else item['id']))
+                    entries=tails
                 entries.append(dict(id=ident,start=start,end=end,text=text[:1000],manual=True,words=words))
             p[kind]=sorted(entries,key=lambda x:x['start'])
         elif cmd=='drumHit':

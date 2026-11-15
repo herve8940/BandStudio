@@ -24,6 +24,39 @@ func selfTest(_ directory:String) throws {
     project.cues=[Cue(time:0.61,name:"Reprise")]
     try project.save(root);let loaded=try StudioProject.load(root)
     guard loaded.cues[0].time == 0.61,loaded.tracks.count == 3 else{throw StudioError("Rechargement incorrect")}
+    let editor=StudioApp();editor.root=root;editor.runtime=root;editor.library=root;editor.project=loaded
+    let guideKey=editor.project.desiredGuideKey(),sectionID=editor.project.sections[1].id
+    try editor.guideMix(["key":"cuesGain","value":0.25])
+    try editor.editMarker(["kind":"section","id":sectionID],review:true)
+    guard editor.project.desiredGuideKey()==guideKey,editor.project.sections[1].reviewed==true else{throw StudioError("Validation ou volume provoquant un recalcul")}
+    try editor.editMarker(["kind":"section","id":sectionID,"time":0.4],review:false)
+    guard editor.project.sections[0].end==0.4,editor.project.sections[1].start==0.4,editor.project.sections[1].reviewed==false else{throw StudioError("Déplacement de limite incorrect")}
+    let edited=try StudioProject.load(root)
+    guard edited.sections[1].start==0.4,edited.settings.cuesGain==0.25,edited.analysisDone("structure") else{throw StudioError("Correction ou cache de projet perdu")}
+    try editor.runAnalysis("structure",model:"htdemucs")
+    guard !editor.busy else{throw StudioError("Structure existante réanalysée")}
+    try loaded.save(root)
+    print("PASS native manual boundary, validation, volumes, persistence and analysis reuse")
+    var inherited=GuideSettings();inherited.firstBeat=2.635;inherited.gridMode="fixed";inherited.clickGain=1.28
+    var imported=loaded;imported.settings=inherited.forNewSong()
+    guard imported.settings.firstBeat==0,imported.settings.gridMode=="detected",imported.settings.clickGain==1.28 else{throw StudioError("Calage hérité d’un autre morceau")}
+    let grid:[String:Any] = ["beats":[0.25,0.75,1.25,1.75],"downbeats":[0.75],"bpm":120.0,"firstBeat":0.75,"beatsPerBar":4,"gridStatus":"« 1 » calé automatiquement sur les mesures détectées"]
+    imported.applyDetectedGrid(grid)
+    guard imported.settings.firstBeat==0.75,imported.beats.count==4 else{throw StudioError("Calage automatique non appliqué")}
+    imported.applyDetectedGrid(["beats":[0.1,0.6],"firstBeat":0.1])
+    guard imported.settings.firstBeat==0.75 else{throw StudioError("Calage existant remplacé")}
+    var validated=loaded;validated.preparation=Preparation(fingerprint:"approved")
+    validated.applyDetectedGrid(grid)
+    guard validated.beats.isEmpty else{throw StudioError("Calage validé remplacé")}
+    print("PASS native import defaults, automatic downbeat and protected grids")
+    var intro=loaded;intro.settings.gridMode="detected";intro.settings.firstBeat=2.68;intro.settings.countBars=2
+    intro.beats=(0..<24).map{2.68+Double($0)*0.64};intro.bpm=93.75
+    let count=intro.countPlan(at:0)
+    guard abs(count.lead-2.44)<1e-8,abs(count.end-5.12)<1e-8,count.events.map({$0.number})==[1,2,3,4,1,2,3,4],abs(count.end-count.lead-count.target)<1e-8 else{throw StudioError("Décompte détaché de l’entrée musicale")}
+    intro.beats=(0..<24).map{0.56+Double($0)*0.62};intro.settings.firstBeat=1.18
+    let pickup=intro.countPlan(at:0)
+    guard abs(pickup.target-1.18)<1e-8,pickup.events.last?.number==4 else{throw StudioError("Levée musicale perdue")}
+    print("PASS native count-in joins downbeat after leading silence and preserves pickups")
     var bad=loaded;bad.tracks[0].file="../outside.wav"
     do{try bad.validate();throw StudioError("Traversée de chemin acceptée")}
     catch let error as StudioError {if error.message == "Traversée de chemin acceptée"{throw error}}
@@ -144,6 +177,18 @@ if CommandLine.arguments.count >= 3 && CommandLine.arguments[1] == "--render-tes
         print("PASS offline guide rendering, initial count and independent voice pitch")
         exit(0)
     }catch{fputs("FAIL: \(error.localizedDescription)\n",stderr);exit(1)}
+}
+if CommandLine.arguments.count >= 4 && CommandLine.arguments[1] == "--refresh-guides" {
+    do {
+        let root=URL(fileURLWithPath:CommandLine.arguments[2]),app=StudioApp()
+        app.root=root;app.library=root.deletingLastPathComponent();app.runtime=URL(fileURLWithPath:CommandLine.arguments[3])
+        app.project=try StudioProject.load(root);try app.audio.load(app.project,root:root)
+        try app.withGuides{}
+        let deadline=Date().addingTimeInterval(900)
+        while app.busy && Date()<deadline {_ = RunLoop.main.run(mode:.default,before:Date().addingTimeInterval(0.05))}
+        guard !app.busy,app.project.guideKey==app.project.desiredGuideKey() else{app.job?.terminate();throw StudioError("Guides non actualisés : "+app.notice)}
+        print("PASS guides ready without model inference: "+app.project.name);exit(0)
+    } catch {fputs("FAIL: \(error.localizedDescription)\n",stderr);exit(1)}
 }
 func handoffSelfTest(_ directory:String,_ engine:String) throws {
     try selfTest(directory)

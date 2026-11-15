@@ -78,7 +78,7 @@ def review(p):
     if any(not 0 <= c['time'] <= duration for c in p.get('cues', [])):
         raise ValueError('Un repère dépasse la durée du morceau.')
     if settings['exportGuides']:
-        for name in ('click', 'calls', 'counts'):
+        for name in ('click', 'calls', 'cues', 'counts'):
             relative = p.get('guideFiles', {}).get(name)
             if not relative:
                 raise ValueError('Actualise les guides avant de valider le morceau.')

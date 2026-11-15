@@ -3,7 +3,7 @@
   <h1>BandStudio</h1>
   <p><strong>Ton morceau. À ta façon.</strong><br>Un atelier local pour tous les musiciens, de l’écoute à la répétition.</p>
 
-[💬 Discord · aide & communauté](https://discord.gg/5UnQPdMUpR) · [Site](https://herve8940.github.io/BandStudio/) · [Télécharger](https://github.com/herve8940/BandStudio/releases/tag/bandstudio-main) · [Guide](docs/BANDSTUDIO.md) · [English](README.en.md) · [Signaler un bug](https://github.com/herve8940/BandStudio/issues/new/choose)
+[💬 Discord · aide & communauté](https://discord.gg/5UnQPdMUpR) · [Site](https://herve8940.github.io/BandStudio/) · [Télécharger](https://github.com/herve8940/BandStudio/releases/tag/bandstudio-main) · [Guide](docs/BANDSTUDIO.md) · [Tutoriel](docs/BANDSTUDIO_TUTORIEL_fr.md) · [English](README.en.md) · [Signaler un bug](https://github.com/herve8940/BandStudio/issues/new/choose)
 
 ![Vérifications](https://github.com/herve8940/BandStudio/actions/workflows/bandstudio-release.yml/badge.svg)
 ![Site](https://github.com/herve8940/BandStudio/actions/workflows/pages.yml/badge.svg)
@@ -21,11 +21,20 @@ BandStudio est un logiciel gratuit de séparation d’instruments (stems) et de 
 - **Comprendre le morceau** : tempo, temps et débuts de mesure, tonalité, sections modifiables, accords et paroles synchronisées. Les corrections manuelles sont conservées.
 - **Organiser les morceaux** : bibliothèque en liste avec pochettes recherchées automatiquement par titre/artiste (y compris les anciens imports), intégrées ou choisies, suppression réversible et restauration.
 - **Tout préparer** : enchaîne les analyses installées et les guides, en conservant les corrections manuelles et les étapes terminées en cas d’arrêt.
-- **Préparer une série de morceaux** : ajoute plusieurs fichiers ou liens dans la file, puis clique sur **Démarrer la file**. Pause, reprise et erreurs par morceau ; aucun démarrage automatique à l’ouverture.
+- **Préparer une série de morceaux** : ajoute plusieurs fichiers locaux dans la file, puis clique sur **Démarrer la file**. Pause, reprise et erreurs par morceau ; aucun démarrage automatique à l’ouverture.
 - **Préparer la répétition** : click, appels de sections, décomptes, repères et notes. Validation explicite du mix, de la grille et des guides avant l’envoi dans REAPER.
 - **Exporter** : mix, stems WAV/FLAC/MP3/AAC, paroles LRC/SRT, fiche PDF, MIDI batterie et projet REAPER portable avec médias et décompte initial réglable pour préparer le départ.
 
 La qualité dépend du morceau et des modèles installés. Une estimation d’IA se vérifie à l’écoute. BandStudio ne prétend pas reproduire tous les modèles de séparation spécialisés ou services de Moises. [Fonctions et limites](docs/BANDSTUDIO.md#traitement-du-morceau).
+
+## Nouveautés · 15 novembre 2026
+
+- **Corriger à l’écoute** : zoom, déplacement des sections et cues par mesure ou par temps, écoute autour d’un repère et validation un par un.
+- **Régler chaque guide** : niveaux indépendants pour métronome, appels, cues et décompte.
+- **Fiche morceau** : accords et paroles éditables par mesure, déplacements avec leurs mots synchronisés, annuler/rétablir et export PDF avec choix de destination.
+- **Conserver son travail** : réutilisation des analyses, corrections protégées et décompte suivant la grille enregistrée, y compris les levées.
+
+[Découvrir les étapes dans le tutoriel](docs/BANDSTUDIO_TUTORIEL_fr.md).
 
 ## Installer
 

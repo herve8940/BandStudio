@@ -1,8 +1,8 @@
 'use strict';
 const $=id=>document.getElementById(id);
 let state={project:{id:'',tracks:[],sections:[],cues:[],notes:''},duration:0,loaded:false},transport={position:0,mode:'original'},selected=null,edit=null;
-const colors={vocal_lead:'#edbb8a',vocal_backing:'#cca076',drum_kick:'#b28af5',drum_snare:'#d6a2fa',drum_toms:'#a78bdc',drum_cymbals:'#d8baed',source:'#91a4c5',drums:'#b28af5',bass:'#42cbbf',vocals:'#e3ab75',guitar:'#759bfa',piano:'#df84c8',other:'#92b985',take:'#ee8a9d',guide_click:'#69dfb1',guide_voice:'#f5c16c',guide_count:'#f29b81'};
-const roles={vocal_lead:'CHANT PRINCIPAL',vocal_backing:'CHŒURS',drum_kick:'GROSSE CAISSE',drum_snare:'CAISSE CLAIRE',drum_toms:'TOMS',drum_cymbals:'CYMBALES / CHARLESTON',source:'ORIGINAL',drums:'BATTERIE',bass:'BASSE',vocals:'CHANT',guitar:'GUITARE',piano:'PIANO',other:'AUTRES',take:'PRISE',guide_click:'MÉTRONOME',guide_voice:'APPELS',guide_count:'DÉCOMPTE'};
+const colors={vocal_lead:'#edbb8a',vocal_backing:'#cca076',drum_kick:'#b28af5',drum_snare:'#d6a2fa',drum_toms:'#a78bdc',drum_cymbals:'#d8baed',source:'#91a4c5',drums:'#b28af5',bass:'#42cbbf',vocals:'#e3ab75',guitar:'#759bfa',piano:'#df84c8',other:'#92b985',take:'#ee8a9d',guide_click:'#69dfb1',guide_voice:'#f5c16c',guide_cue:'#f5c16c',guide_count:'#f29b81'};
+const roles={vocal_lead:'CHANT PRINCIPAL',vocal_backing:'CHŒURS',drum_kick:'GROSSE CAISSE',drum_snare:'CAISSE CLAIRE',drum_toms:'TOMS',drum_cymbals:'CYMBALES / CHARLESTON',source:'ORIGINAL',drums:'BATTERIE',bass:'BASSE',vocals:'CHANT',guitar:'GUITARE',piano:'PIANO',other:'AUTRES',take:'PRISE',guide_click:'MÉTRONOME',guide_voice:'APPELS',guide_cue:'CUES',guide_count:'DÉCOMPTE'};
 function send(command,args={}){window.webkit?.messageHandlers?.studio?.postMessage({command,args,projectID:state.project.id});}
 const instruments={drums:'Batterie',bass:'Basse',vocals:'Chant',guitar:'Guitare',piano:'Piano / claviers',other:'Autres instruments',vocal_lead:'Chant principal',vocal_backing:'Chœurs',drum_kick:'Grosse caisse',drum_snare:'Caisse claire',drum_toms:'Toms',drum_cymbals:'Cymbales',take:'Prise'};
 function instrumentMatches(role,target){return role===target||(target==='drums'&&role.startsWith('drum_'))||(target==='vocals'&&role.startsWith('vocal_'));}
@@ -66,7 +66,8 @@ function renderTransport(){renderStage();renderListening();const t=transport;$('
 function jobProgress(data){
  // Logs stay available for diagnostics; only known stages and numeric progress enter the UI.
  const stages={
-  'structure-loading':'Chargement des modèles d’analyse…',
+  'analysis-reuse':'Analyse déjà disponible · résultat réutilisé',
+ 'structure-loading':'Chargement des modèles d’analyse…',
   'structure-analysis':'Analyse musicale en cours…',
   'structure-saving':'Organisation des sections…',
   separate:'Séparation des instruments en cours…',separation:'Séparation des instruments en cours…',drumsep:'Séparation de la batterie en cours…',
@@ -95,15 +96,15 @@ document.addEventListener('keydown',e=>{if(['INPUT','TEXTAREA','SELECT'].include
 new ResizeObserver(()=>requestAnimationFrame(drawWaves)).observe($('tracks'));
 
 let guideDirty=false,annotationEdit=null,trackEdit=null;
-const guideDefaults={clickEnabled:false,clickGain:.45,clickPan:0,subdivision:1,beatsPerBar:4,firstBeat:0,gridMode:'detected',manualBPM:120,countBars:2,countClick:true,countVoice:true,countGain:.8,countPan:0,countEveryLoop:false,countOnSeek:true,callsEnabled:true,callsGain:.9,callsPan:0,leadBeats:8,voice:'Thomas',language:'fr',speechRate:210,speakCues:true,regionCountEnabled:true,regionCountBeats:4,exportGuides:true,exportCount:true,loopStep:0,loopEvery:4,loopMaxRate:1};
+const guideDefaults={clickEnabled:false,clickGain:.45,clickPan:0,subdivision:1,beatsPerBar:4,firstBeat:0,gridMode:'detected',manualBPM:120,countBars:2,countClick:true,countVoice:true,countGain:.8,countPan:0,countEveryLoop:false,countOnSeek:true,callsEnabled:true,callsGain:.9,cuesGain:.9,callsPan:0,leadBeats:8,voice:'Thomas',language:'fr',speechRate:210,speakCues:true,regionCountEnabled:true,regionCountBeats:4,exportGuides:true,exportCount:true,loopStep:0,loopEvery:4,loopMaxRate:1};
 // [setting key, label, control, lower/options, upper, step]
 const guideGroups=[['Métronome & grille',[
- ['clickEnabled','Métronome pendant le morceau','check'],['clickGain','Volume du click','number',0,1.5,.05],['clickPan','Pan du click · gauche −1 / droite +1','number',-1,1,.05],
- ['gridMode','Grille rythmique','select',[['detected','Temps détectés dans le morceau'],['fixed','Tempo fixe manuel']]],['manualBPM','Tempo manuel / de secours (BPM)','number',20,400,.1],['beatsPerBar','Temps par mesure','number',1,12,1],['firstBeat','Premier temps de mesure (s)','number',-30,43200,.001],['subdivision','Clicks par temps','select',[[1,'1 · noires'],[2,'2 · croches'],[3,'3 · triolets'],[4,'4 · doubles croches']]]
+ ['clickEnabled','Métronome pendant le morceau','check'],['clickGain','Volume du click','number',0,1.5,.01],['clickPan','Pan du click · gauche −1 / droite +1','number',-1,1,.05],
+ ['gridMode','Grille rythmique','select',[['detected','Temps détectés dans le morceau'],['fixed','Tempo fixe manuel']]],['manualBPM','Tempo manuel / de secours (BPM)','number',20,400,.1],['beatsPerBar','Temps par mesure','number',1,12,1],['firstBeat','Premier temps de mesure (s)','number',-30,43200,'any'],['subdivision','Clicks par temps','select',[[1,'1 · noires'],[2,'2 · croches'],[3,'3 · triolets'],[4,'4 · doubles croches']]]
 ]],['Départ & reprises',[
- ['countBars','Mesures avant le départ (0 = aucun)','number',0,8,1],['countClick','Click pendant le décompte','check'],['countVoice','Compter à voix haute sur la dernière mesure','check'],['countGain','Volume des décomptes','number',0,1.5,.05],['countPan','Pan des décomptes · gauche −1 / droite +1','number',-1,1,.05],['countOnSeek','Décompte après un saut dans la lecture','check'],['countEveryLoop','Décompte entre chaque répétition','check'],['regionCountEnabled','Décompte avant les régions','check'],['regionCountBeats','Nombre de temps avant chaque région','number',1,12,1]
+ ['countBars','Mesures avant le départ (0 = aucun)','number',0,8,1],['countClick','Click pendant le décompte','check'],['countVoice','Compter à voix haute sur la dernière mesure','check'],['countGain','Volume des décomptes','number',0,1.5,.01],['countPan','Pan des décomptes · gauche −1 / droite +1','number',-1,1,.05],['countOnSeek','Décompte après un saut dans la lecture','check'],['countEveryLoop','Décompte entre chaque répétition','check'],['regionCountEnabled','Décompte avant les régions','check'],['regionCountBeats','Nombre de temps avant chaque région','number',1,12,1]
 ]],['Annonces vocales',[
- ['callsEnabled','Annoncer les régions','check'],['speakCues','Annoncer aussi mes repères','check'],['callsGain','Volume des annonces','number',0,1.5,.05],['callsPan','Pan des annonces · gauche −1 / droite +1','number',-1,1,.05],['leadBeats','Anticipation minimale des annonces (temps)','number',0,32,1],['voice','Nom de la voix macOS installée','text'],['language','Langue des annonces et du décompte','select',[['fr','Français'],['en','English']]],['speechRate','Débit de la voix (mots/minute)','number',100,360,10]
+ ['callsEnabled','Annoncer les régions','check'],['speakCues','Annoncer aussi mes repères','check'],['callsGain','Volume des annonces','number',0,1.5,.01],['cuesGain','Volume des cues','number',0,1.5,.01],['callsPan','Pan des annonces · gauche −1 / droite +1','number',-1,1,.05],['leadBeats','Anticipation minimale des annonces (temps)','number',0,32,1],['voice','Nom de la voix macOS installée','text'],['language','Langue des annonces et du décompte','select',[['fr','Français'],['en','English']]],['speechRate','Débit de la voix (mots/minute)','number',100,360,10]
 ]],['Progression & exports',[
  ['loopStep','Accélération par palier (0,05 = +5 %)','number',0,.25,.01],['loopEvery','Répétitions par palier','number',1,32,1],['loopMaxRate','Vitesse cible (1 = 100 %)','number',.5,1.5,.01],['exportGuides','Inclure les pistes de guidage dans les exports','check'],['exportCount','Inclure le décompte initial dans les exports','check']
 ]]];

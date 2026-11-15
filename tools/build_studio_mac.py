@@ -66,8 +66,9 @@ def build(source, prepare=False):
         prepare_runtime(source, engine)
     if engine.exists():
         (engine/'BandStudio_Remote.lua').unlink(missing_ok=True)
-        for name in ('worker.py','services.py','listening.py','diagnostics.py','compute.py','catalog.py','artwork.py','updater.py','preparation.py','batch_queue.py','batch_project.py','platform_tools.py','advanced.py','phone.py','creative.py'):
+        for name in ('worker.py','services.py','analysis_cache.py','musical_timing.py','listening.py','diagnostics.py','compute.py','catalog.py','artwork.py','updater.py','preparation.py','batch_queue.py','batch_project.py','platform_tools.py','advanced.py','phone.py','creative.py'):
             shutil.copy2(ROOT/'desktop/studio'/name,engine/name)
+        shutil.copy2(ROOT/'reacue_structure.py',engine/'reacue_structure.py')
         (engine/'windows').mkdir(exist_ok=True)
         for name in ('__init__.py','project.py'):
             shutil.copy2(ROOT/'desktop/studio/windows'/name,engine/'windows'/name)

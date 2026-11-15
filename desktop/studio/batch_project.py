@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 
 from platform_tools import python_for
-from services import atomic
+from services import atomic, import_settings, calibrate_grid
 from windows import project as model
 
 ENVIRONMENTS = {'separate': '.venv-demucs', 'smartgrid': '.venv-demucs',
@@ -33,6 +33,7 @@ def snapshot(root, library, title):
         p['settings'].update(json.loads((Path(library) / 'defaults.json').read_text(encoding='utf-8')))
     except (OSError, ValueError):
         pass
+    p['settings'] = import_settings(p['settings'])
     # Native Mac voices have names; "Système" is the portable Windows default.
     import sys
     if sys.platform == 'darwin' and p['settings']['voice'] == 'Système':
@@ -107,12 +108,8 @@ def apply(item, stage, root, folder, library):
         p['tracks'] = [t for t in p['tracks'] if t['role'] == 'source'] + tracks
         p['preparation'] = dict(rate=1, pitch=0, mode='mix')
     elif stage in ('grid', 'smartgrid'):
-        p['beats'], p['bpm'] = result['beats'], result['bpm']
-        p['downbeats'] = result.get('downbeats', [])
-        p['settings']['gridMode'] = 'detected'
-        if stage == 'smartgrid' and result.get('firstBeat') is not None:
-            p['settings'].update(firstBeat=result['firstBeat'], beatsPerBar=result['beatsPerBar'])
-        p['analysisNote'] = result.get('gridStatus', '')
+        if not model.analysis_done(p, stage):
+            model.apply_grid(p, calibrate_grid(result))
     elif stage == 'structure':
         model.apply_sections(p, result['sections'])
     elif stage == 'key':
@@ -138,10 +135,13 @@ def apply(item, stage, root, folder, library):
             for index, (key, path) in enumerate(result['files'].items())}
         for key, name, role in [('click', 'Métronome', 'guide_click'),
                                 ('calls', 'Appels de régions', 'guide_voice'),
+                                ('cues', 'Cues', 'guide_cue'),
                                 ('counts', 'Décomptes', 'guide_count')]:
+            if key not in p['guideFiles']:continue
             target = root / p['guideFiles'][key]
             p['tracks'].append(model.track(target, root, name, role))
-        p['guideKey'] = model.guide_key(p)
+        p['guideKey'] = model.guide_key(p) if 'cues' in p['guideFiles'] else ''
+    if stage in ('grid','smartgrid','structure','lyrics','chords','drums','key','separate','drumsep'):model.analysis_completed(p,stage)
     p['_queueID'] = item['id']
     p['_queueCompleted'] = list(dict.fromkeys([*p.get('_queueCompleted', []), stage]))
     model.save(p, root)

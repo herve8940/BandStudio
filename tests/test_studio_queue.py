@@ -213,7 +213,7 @@ def test_real_decode_step_and_staging_remain_outside_visible_library(queue_setup
 
 def test_pipe_service_persists_entries_and_reopens_paused(queue_setup, monkeypatch):
     work, source = queue_setup
-    for name in ('batch_queue.py', 'batch_project.py', 'services.py', 'listening.py', 'platform_tools.py'):
+    for name in ('batch_queue.py', 'batch_project.py', 'services.py', 'listening.py', 'platform_tools.py', 'musical_timing.py'):
         shutil.copy2(ROOT / 'desktop/studio' / name, work.engine / name)
     (work.engine / 'windows').mkdir()
     for name in ('project.py', '__init__.py'):
@@ -288,7 +288,7 @@ def test_queue_ui_adds_files_and_requires_start(tmp_path, browser_name):
     threading.Thread(target=host.serve_forever, daemon=True).start()
     try:
         with sync_playwright() as p:
-            browser = getattr(p, browser_name).launch()
+            browser = getattr(p, browser_name).launch(**({'channel':os.environ['BANDSTUDIO_BROWSER_CHANNEL']} if os.environ.get('BANDSTUDIO_BROWSER_CHANNEL') else {}))
             page = browser.new_page(viewport={'width': 1360, 'height': 900})
             errors = [];page.on('pageerror', lambda e: errors.append(str(e)))
             page.add_init_script('window.sent=[];window.webkit={messageHandlers:{studio:{postMessage:m=>sent.push(m)}}};')

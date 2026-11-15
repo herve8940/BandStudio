@@ -1,5 +1,7 @@
 # ReaCue tutorial — step by step
 
+> **Standalone BandStudio app:** see the [BandStudio tutorial](BANDSTUDIO_TUTORIAL_en.md) for manual editing, song sheets and PDFs. The tutorial below covers the legacy ReaCue scripts inside REAPER.
+
 *[Version française : TUTORIEL_fr.md](TUTORIEL_fr.md)*
 
 This tutorial takes you from installation to rehearsing with the band. It assumes you can start REAPER and

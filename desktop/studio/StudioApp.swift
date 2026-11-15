@@ -164,7 +164,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     func requireIdle() throws {
         if busy || recorder.running || recordPending {throw StudioError("Termine le traitement ou la prise avant de changer de projet.")}
     }
-    func load(_ url:URL) throws {
+    func load(_ url:URL,prepareGuides:Bool=true) throws {
         try requireIdle()
         let p=try StudioProject.load(url)
         try audio.load(p,root:url);audio.loop=false
@@ -173,10 +173,10 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         if let prep=p.preparation {audio.rate=Float(prep.rate);audio.pitch=Float(prep.pitch);audio.mode=prep.mode;audio.stretch.pitch=Float(prep.pitch)*100;audio.applyMix()}
         UserDefaults.standard.set(url.path,forKey:"project");sendState()
         let identity=project.id
-        DispatchQueue.main.async {[weak self] in
+        if prepareGuides {DispatchQueue.main.async {[weak self] in
             guard let self=self,self.project.id==identity,!self.busy,self.project.duration>0 else{return}
             self.perform{try self.withGuides{self.sendState()}}
-        }
+        }}
     }
     func safeName(_ raw:String)->String {
         let clean=raw.components(separatedBy:CharacterSet(charactersIn:"/:\0")).joined(separator:"-")
@@ -208,6 +208,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 let dest:URL
                 if new {
                     if let data=try? Data(contentsOf:self.library.appendingPathComponent("defaults.json")),let settings=try? JSONDecoder().decode(GuideSettings.self,from:data){try settings.validate();p.settings=settings}
+                    p.settings=p.settings.forNewSong()
                     p.name=self.safeName(importedTitle ?? urls[0].deletingPathExtension().lastPathComponent)
                     p.sourceURL=importedURL
                     var candidate=self.library.appendingPathComponent(p.name+".bandstudio")
@@ -230,7 +231,11 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 if new {_ = try? self.catalogCall(["seed",dest.path,urls[0].path,self.runtime.path,metadata])}
                 DispatchQueue.main.async {
                     self.busy=false
-                    self.perform{try self.load(dest);self.notice="Import terminé. Tu peux écouter le morceau ou lancer sa préparation.";self.sendState()}
+                    self.perform{
+                        try self.load(dest,prepareGuides:!new)
+                        if new {try self.calibrateImportedSong()}
+                        else {self.notice="Pistes importées.";self.sendState()}
+                    }
                 }
             } catch {DispatchQueue.main.async{self.busy=false;self.notice=error.localizedDescription;self.sendState()}}
         }
@@ -253,6 +258,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     }
     func runAnalysis(_ kind:String,model:String,language:String="auto",quality:String="standard",completion:(() throws -> Void)?=nil) throws {
         guard ["grid","structure","separate","drumsep","lyrics","chords","drums"].contains(kind),["htdemucs","htdemucs_6s","htdemucs_ft"].contains(model) else {throw StudioError("Traitement inconnu.")}
+        if project.analysisDone(kind) {notice="Analyse déjà disponible et résultat protégé. Les corrections et validations sont conservées.";sendState();try completion?();return}
         if kind == "grid" && project.gridLocked {throw StudioError("Le calage est protégé. Déverrouille-le dans Guidage avant une nouvelle analyse.")}
         let desired=kind == "lyrics" ? "vocals" : (["drums","drumsep"].contains(kind) ? "drums" : "source")
         guard let root=root,let source=project.tracks.first(where:{$0.role==desired}) ?? (["drums","drumsep"].contains(kind) ? nil : project.tracks.first(where:{$0.role == "source"})) else {throw StudioError(["drums","drumsep"].contains(kind) ? "Sépare d’abord une piste batterie." : "Importe d’abord un morceau.")}
@@ -268,7 +274,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         let object=try JSONSerialization.jsonObject(with:data) as? [String:Any] ?? [:]
         remember()
         if kind == "grid" {
-            project.bpm=object["bpm"] as? Double ?? 0;project.beats=object["beats"] as? [Double] ?? []
+            project.applyDetectedGrid(object,offset:project.tracks.first(where:{$0.role=="source"})?.offset ?? 0)
         } else if kind == "structure" {
             let raw=try JSONSerialization.data(withJSONObject:object["sections"] ?? [])
             project.applySections(try JSONDecoder().decode([Section].self,from:raw))
@@ -289,6 +295,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             else {project.tracks=project.tracks.filter{$0.role == "source" || $0.role == "take" || $0.role.hasPrefix("guide_")}+newTracks}
             try audio.load(project,root:root);audio.mode="mix";audio.applyMix()
         }
+        project.analysisCompleted(kind)
         try changed()
     }
     func exportAudio() throws {
@@ -347,6 +354,14 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 try load(URL(fileURLWithPath:path));return
             }
             guard m["projectID"] as? String == project.id else {throw StudioError("Le projet a changé. Recommence ton action.")}
+            if command == "referenceSearch" {
+                guard root != nil,let kind=args["kind"] as? String,["chords","lyrics"].contains(kind),
+                      let query=args["query"] as? String,!query.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else{throw StudioError("Précise le titre du morceau.")}
+                var url=URLComponents(string:"https://www.google.com/search")!
+                url.queryItems=[URLQueryItem(name:"q",value:String(query.prefix(300))+(kind == "chords" ? " chords accords" : " lyrics paroles"))]
+                guard let target=url.url,NSWorkspace.shared.open(target) else{throw StudioError("Impossible d’ouvrir le navigateur.")}
+                return
+            }
             if command == "cancel" {transportGeneration += 1;job?.terminate();job=nil;return}
             if command == "reveal" {if let root=root{NSWorkspace.shared.activateFileViewerSelecting([root])};return}
             if busy && job == nil {throw StudioError("Patiente pendant l’import ou l’export audio.")}
@@ -418,6 +433,13 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             case "analyze":try runAnalysis(args["kind"] as? String ?? "grid",model:args["model"] as? String ?? "htdemucs",language:args["language"] as? String ?? "auto",quality:args["quality"] as? String ?? "standard")
             case "export":try withGuides{try self.exportAudio()}
             case "exportCues":try exportCues()
+            case "guideMix":try guideMix(args)
+            case "moveMarker","reviewMarker":try editMarker(args,review:command=="reviewMarker")
+            case "audition":
+                let start=try number(args,"start",range:0...project.duration),end=try number(args,"end",range:0...project.duration)
+                guard end>start+0.05 else{throw StudioError("Choisis un passage à écouter.")}
+                audio.pause();audio.loop=true;audio.loopStart=start;audio.loopEnd=end;audio.position=start
+                try withGuides(afterPreparation{try self.audio.play(withCount:false)})
             case "settings":try settingsCommand(args)
             case "saveDefaults":
                 try JSONEncoder().encode(project.settings).write(to:library.appendingPathComponent("defaults.json"),options:.atomic)

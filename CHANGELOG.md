@@ -1,3 +1,14 @@
+## BandStudio · 2026-11-15 — édition musicale et fiche morceau
+
+- Éditeur manuel : zoom, calage en mesures/temps, déplacement continu des frontières, écoute autour et validation repère par repère, avec annuler/rétablir.
+- Niveaux indépendants pour métronome, appels, cues et décompte ; changer leur volume ou valider un repère ne régénère pas les guides.
+- Fiche morceau interactive : identité et pochette, sections, accords et paroles par mesure ; déplacement des lignes avec leurs mots et remplacement des accords limité à l’intervalle choisi.
+- Grille PDF par mesures, textes longs et mesures partielles, choix du fichier de destination et ouverture dans le lecteur système.
+- Calage à l’import, réinitialisation des paramètres hérités d’un autre morceau, statut d’incertitude et conservation des corrections protégées.
+- Décompte suivant les temps enregistrés, silence initial et levées préservés, intro automatique alignée sur l’entrée audible et export REAPER cohérent.
+- Cache d’analyses validé par le contenu audio, les modèles et les paramètres ; réutilisation des résultats terminés.
+- Site, guides, tutoriels FR/EN et notes de version actualisés ; import limité aux fichiers locaux.
+
 ## Unreleased — file de préparation
 
 - File persistante pour plusieurs fichiers locaux, avec démarrage explicite, pause, reprise, réorganisation et erreurs indépendantes par morceau.

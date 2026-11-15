@@ -1,5 +1,7 @@
 # Tutoriel ReaCue — pas à pas
 
+> **Application autonome BandStudio :** les nouvelles fonctions de correction, de fiche morceau et de PDF sont expliquées dans le [tutoriel BandStudio](BANDSTUDIO_TUTORIEL_fr.md). Le tutoriel ci-dessous concerne les scripts ReaCue dans REAPER.
+
 *[English version: TUTORIAL_en.md](TUTORIAL_en.md)*
 
 Ce tutoriel t'emmène de l'installation jusqu'à la répétition avec le groupe. Il suppose que tu sais lancer

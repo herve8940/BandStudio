@@ -1,10 +1,16 @@
 # BandStudio · guide de préparation
 
-1. **Importer** un morceau audio ou un lien autorisé. Le fichier original est conservé.
+1. **Importer** un fichier audio de ton ordinateur. Le fichier original est conservé.
 2. **Séparer & analyser** : choisir 4 ou 6 pistes, puis détecter tempo, structure, paroles et accords avec les composants installés.
 3. **Pistes & structure** : choisir **Mon instrument**, écouter en solo ou sans cette partie ; modifier volumes, panoramiques, sections et repères. Play et Espace déclenchent la même commande. Les sous-pistes chant/batterie remplacent leur piste parente dans le mix pour éviter un doublage.
 4. **Click & cues** : vérifier le premier temps, la mesure et le tempo. Régler click, annonces et décompte. **Paroles & accords** permet de corriger le texte, les horaires, la tonalité et le capo.
 5. **Valider & envoyer** : écouter les passages importants, confirmer les trois points de validation, puis exporter/ouvrir le projet dans REAPER. Changer le mix, la vitesse, la hauteur ou les repères annule la validation précédente.
+
+## Nouveautés du 15 novembre 2026
+
+Édition des sections et cues avec zoom, calage en mesures/temps et validation repère par repère ; niveaux séparés des quatre guides ; fiche morceau éditable et export PDF par mesures ; calage et décompte améliorés ; réutilisation des analyses et conservation des corrections.
+
+Suivre le [tutoriel BandStudio en français](BANDSTUDIO_TUTORIEL_fr.md) ou le [tutoriel en anglais](BANDSTUDIO_TUTORIAL_en.md) pour les boutons et les étapes de vérification.
 
 ## File de préparation
 

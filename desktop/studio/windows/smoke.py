@@ -18,7 +18,7 @@ def smoke(engine,root):
     p['sections']=[dict(id='intro',name='Intro',start=0,end=4,locked=True,origin='manual'),dict(id='chorus',name='Chorus',start=4,end=6,locked=True,origin='manual')]
     snapshot=root/'snapshot.json';atomic(snapshot,{**p,'_root':str(root)});folder=root/'Guides';folder.mkdir(exist_ok=True)
     guides(snapshot,folder/'result.json');result=json.loads((folder/'result.json').read_text());p['guideFiles']={k:Path(v).relative_to(root).as_posix() for k,v in result['files'].items()}
-    for key,role in [('click','guide_click'),('calls','guide_voice'),('counts','guide_count')]:p['tracks'].append(model.track(root/p['guideFiles'][key],root,key,role))
+    for key,role in [('click','guide_click'),('calls','guide_voice'),('cues','guide_cue'),('counts','guide_count')]:p['tracks'].append(model.track(root/p['guideFiles'][key],root,key,role))
     p['guideKey']=model.guide_key(p);model.save(p,root);loaded=model.load(root);a=Audio(engine);a.load(loaded,root);a.mode='minus'
     a.render(root/'mix.wav',0,6,True);x,sr=sf.read(root/'mix.wav');assert sr==44100 and len(x)==8*44100 and np.max(abs(x[:2*sr]))>.05
     a.pitch=12;a.prepare();a.render(root/'transposed.wav',0,6,True);y,_=sf.read(root/'transposed.wav');assert np.max(abs(x[:2*sr]-y[:2*sr]))<1e-5

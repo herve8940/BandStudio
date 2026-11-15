@@ -13,7 +13,47 @@ import signal
 import subprocess
 import time
 import uuid
+from collections import Counter
 from platform_tools import executable, creation_flags
+from musical_timing import count_plan
+
+
+def import_settings(settings):
+    """Keep listening preferences, but never inherit another song's rhythm."""
+    return {**settings, 'firstBeat': 0, 'gridMode': 'detected',
+            'manualBPM': 120, 'beatsPerBar': 4}
+
+
+def calibrate_grid(result):
+    """Check saved beat/downbeat evidence without running or changing a model."""
+    beats = result.get('beats', [])
+    first, meter, agreement = (beats[0] if beats else 0), 4, 0.
+    valid = len(beats) > 1 and all(math.isfinite(t) and t >= 0 and
+             (not i or t > beats[i-1]) for i, t in enumerate(beats))
+    indices = []
+    downbeats = result.get('downbeats', [])
+    if valid:
+        for t in downbeats:
+            if not math.isfinite(t) or not beats[0] <= t <= beats[-1]:continue
+            right = bisect.bisect_left(beats, t)
+            i = min((i for i in (right-1, right) if 0 <= i < len(beats)), key=lambda i:abs(beats[i]-t))
+            span = beats[min(i+1, len(beats)-1)]-beats[max(0, i-1)]
+            if 0 < i < len(beats)-1:span /= 2
+            if abs(beats[i]-t) <= .2*span:indices.append(i)
+        indices = sorted(set(indices))
+    if len(indices) >= 4:
+        intervals = [b-a for a,b in zip(indices, indices[1:])]
+        meters = Counter(n for n in intervals if 2 <= n <= 12)
+        if meters:
+            meter, count = meters.most_common(1)[0]
+            phase, votes = Counter(i % meter for i in indices).most_common(1)[0]
+            agreement = min(count/len(intervals), votes/len(indices), len(indices)/max(1,len(downbeats)))
+            if agreement >= .85:first = beats[phase]
+    automatic = agreement >= .85
+    status = '« 1 » calé automatiquement sur les mesures détectées' if automatic else '« 1 » à vérifier à l’écoute · mesures non confirmées'
+    if beats and beats[0] > 2:status += f' · grille à partir de {beats[0]:.2f} s'
+    return {**result, 'firstBeat': first, 'beatsPerBar': meter if automatic else 4,
+            'agreement': agreement, 'gridReviewRequired': not automatic, 'gridStatus': status}
 
 
 def atomic(path,value):
@@ -148,6 +188,7 @@ def guides(project_file,output):
     shape=(max(1,math.ceil(duration*sr)),2)
     click=np.memmap(root/'click.raw',dtype='float32',mode='w+',shape=shape);click[:]=0
     calls=np.memmap(root/'calls.raw',dtype='float32',mode='w+',shape=shape);calls[:]=0
+    cues=np.memmap(root/'cues.raw',dtype='float32',mode='w+',shape=shape);cues[:]=0
     counts=np.memmap(root/'counts.raw',dtype='float32',mode='w+',shape=shape);counts[:]=0
     def place(dest,data,at):
         start=round(at*sr)
@@ -165,8 +206,8 @@ def guides(project_file,output):
     file_map={};events=[];count_events=[]
     count_plans={item['id']:region_count_beats(item['start'],s['regionCountBeats'],beats)
                  for item in p.get('sections',[])}
-    for item in p.get('sections',[])+ (p.get('cues',[]) if s['speakCues'] else []):
-        if item.get('announce') is False or not s['callsEnabled']:continue
+    for item in p.get('sections',[])+p.get('cues',[]):
+        if item.get('announce') is False:continue
         text=announcement_text(item,s['language']);target=item.get('start',item.get('time',0))
         path=voice_wav(text,cache,s)
         if path:
@@ -178,7 +219,7 @@ def guides(project_file,output):
             if 'start' in item and s['regionCountEnabled'] and s['countVoice']:
                 plan=count_plans[item['id']]
                 if plan:at=min(at,plan[0]['time']-len(x)/sr-.05)
-            if at>=0:place(calls,x,at);events.append(dict(time=at,target=target,text=text,file=str(path)))
+            if at>=0:place(calls if 'start' in item else cues,x,at);events.append(dict(time=at,target=target,text=text,file=str(path)))
     words={'fr':['un','deux','trois','quatre','cinq','six','sept','huit','neuf','dix','onze','douze'],
            'en':['one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve']}
     if s['countVoice']:
@@ -194,14 +235,14 @@ def guides(project_file,output):
             if s['countClick']:
                 t=np.arange(int(sr*.035))/sr;wave=.65*np.sin(2*np.pi*(1760 if number==1 else 1100)*t)*np.exp(-t*130)
                 place(counts,np.repeat(wave[:,None],2,axis=1),at)
-    for name,data in [('click',click),('calls',calls),('counts',counts)]:
+    for name,data in [('click',click),('calls',calls),('cues',cues),('counts',counts)]:
         path=root/(name+'.wav')
         with sf.SoundFile(path,'w',samplerate=sr,channels=2,subtype='FLOAT') as writer:
             for a in range(0,len(data),65536):writer.write(np.clip(data[a:a+65536],-1,1))
         file_map[name]=str(path)
     # The loop variable also holds the final mmap; release it before unlinking on Windows.
-    del data,click,calls,counts
-    for name in ['click','calls','counts']:(root/(name+'.raw')).unlink()
+    del data,click,calls,cues,counts
+    for name in ['click','calls','cues','counts']:(root/(name+'.raw')).unlink()
     atomic(output,dict(files=file_map,events=events,countEvents=count_events,beats=beats,duration=duration))
 
 
@@ -217,7 +258,7 @@ def export_reaper(project_file,output):
     media=target/'Audio';media.mkdir(exist_ok=True)
     beats,duration=beat_grid(p)
     bpm=s['manualBPM'] if s['gridMode']=='fixed' else p.get('bpm') or s['manualBPM'];period=(beats[1]-beats[0]) if len(beats)>1 else 60/bpm
-    preroll=s['countBars']*s['beatsPerBar']*period if s['exportCount'] else 0
+    plan=count_plan(p);preroll=plan['lead'] if s['exportCount'] else 0
     lines=['<REAPER_PROJECT 0.1 7.0 1','  SAMPLERATE 44100','  TEMPO '+str(bpm)+' '+str(s['beatsPerBar'])+' 4', '  MASTER_VOLUME 0.85']
     if beats and s['gridMode']=='detected':
         lines+=['  <TEMPOENVEX','    ACT 1 -1','    VIS 1 0 0','    ARM 1','    DEFSHAPE 1 -1 -1']
@@ -249,21 +290,25 @@ def export_reaper(project_file,output):
         gain=t['gain'];pan=t['pan']
         if t['role']=='guide_click':muted=not s['clickEnabled'];gain=s['clickGain'];pan=s['clickPan']
         if t['role']=='guide_voice':muted=not s['callsEnabled'];gain=s['callsGain'];pan=s['callsPan']
+        if t['role']=='guide_cue':muted=not s['speakCues'];gain=s.get('cuesGain',s['callsGain']);pan=s['callsPan']
         if t['role']=='guide_count':muted=not s['regionCountEnabled'];gain=s['countGain'];pan=s['countPan']
         offset=t['offset']+preroll;skip=max(0,-offset)
+        if s['exportCount'] and plan['events'] and (t['role']=='guide_count' or (t['role']=='guide_click' and s['countClick'])):
+            skip=max(skip,plan['target']-t['offset']);offset=t['offset']+skip+preroll
         lines += ['  <TRACK','    NAME '+quote(t['name']),f'    VOLPAN {gain:.8f} {pan:.8f}',f'    MUTESOLO {int(muted)} 0 0',
                   '    <ITEM','      BEAT 0',f'      POSITION {max(0,offset):.9f}',f'      SOFFS {skip:.9f}',f'      LENGTH {max(0,t["duration"]-skip):.9f}',
                   '      VOLPAN 1 0 1 -1','      NAME '+quote(t['name']),'      <SOURCE WAVE','        FILE '+quote('Audio/'+name),'      >','    >','  >']
-    if preroll>0:
-        count=render_count(p,root,period,preroll,media/'count-in.wav')
-        lines+=['  <TRACK','    NAME "Décompte"',f'    VOLPAN {s["countGain"]} {s["countPan"]}','    <ITEM','      POSITION 0',f'      LENGTH {preroll:.9f}','      <SOURCE WAVE','        FILE "Audio/count-in.wav"','      >','    >','  >']
+    if s['exportCount'] and plan['events']:
+        render_count(p,root,plan,media/'count-in.wav')
+        lines+=['  <TRACK','    NAME "Décompte"',f'    VOLPAN {s["countGain"]} {s["countPan"]}','    <ITEM','      POSITION 0',f'      LENGTH {plan["end"]:.9f}','      <SOURCE WAVE','        FILE "Audio/count-in.wav"','      >','    >','  >']
         if s['exportGuides'] and s['callsEnabled'] and (s['countBars']>1 or not s['countVoice']):
-            first=next((x for x in p['sections'] if x['start']<=.1 and x.get('announce') is not False),None)
+            first=next((x for x in p['sections'] if x['start']<=plan['target']+.1 and x['end']>plan['target'] and x.get('announce') is not False),None)
             relative=p.get('guideFiles',{}).get('call:'+first['id']) if first else None
             if relative:
                 import soundfile as sf
                 initial=media/'initial-call.wav';shutil.copy2(root/relative,initial)
-                length=min(sf.info(initial).duration,preroll-(s['beatsPerBar']*period if s['countVoice'] else 0))
+                available=next((e['time'] for e in plan['events'] if e['spoken']),plan['end']) if s['countVoice'] else plan['end']
+                length=min(sf.info(initial).duration,max(0,available-.05))
                 lines+=['  <TRACK','    NAME "Annonce de départ"',f'    VOLPAN {s["callsGain"]} {s["callsPan"]}','    <ITEM','      POSITION 0',f'      LENGTH {length:.9f}','      <SOURCE WAVE','        FILE "Audio/initial-call.wav"','      >','    >','  >']
     lines+=['>'];rpp=target/(safe_name(p['name'])+'.rpp');rpp.write_text('\n'.join(lines)+'\n')
     # Annotations have no native RPP representation. Bind their timing to this exact export.
@@ -273,17 +318,17 @@ def export_reaper(project_file,output):
     atomic(output,dict(path=str(rpp),folder=str(target),preroll=preroll))
 
 
-def render_count(p,root,period,duration,target):
+def render_count(p,root,plan,target):
     import numpy as np
     import soundfile as sf
-    s=p['settings'];sr=44100;y=np.zeros((math.ceil(duration*sr),2),dtype='float32')
-    for beat in range(s['countBars']*s['beatsPerBar']):
-        at=round(beat*period*sr)
+    s=p['settings'];sr=44100;y=np.zeros((math.ceil(plan['end']*sr),2),dtype='float32')
+    for event in plan['events']:
+        at=round(event['time']*sr);period=event['end']-event['time']
         if s['countClick']:
-            t=np.arange(int(sr*.035))/sr;wave=.65*np.sin(2*np.pi*(1760 if beat%s['beatsPerBar']==0 else 1100)*t)*np.exp(-t*130)
+            t=np.arange(int(sr*.035))/sr;wave=.65*np.sin(2*np.pi*(1760 if event['number']==1 else 1100)*t)*np.exp(-t*130)
             n=min(len(wave),len(y)-at);y[at:at+n]+=wave[:n,None]
-        if s['countVoice'] and beat>=(s['countBars']-1)*s['beatsPerBar']:
-            path=p.get('guideFiles',{}).get('number:'+str(beat%s['beatsPerBar']+1))
+        if s['countVoice'] and event['spoken']:
+            path=p.get('guideFiles',{}).get('number:'+str(event['number']))
             if path:
                 x,_=sf.read(root/path,dtype='float32',always_2d=True);n=min(len(x),int(period*sr*.92),len(y)-at);y[at:at+n]+=x[:n]
     sf.write(target,np.clip(y,-1,1),sr,subtype='FLOAT');return target

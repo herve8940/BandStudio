@@ -27,6 +27,15 @@ def main():
 
 Windows : extraire le ZIP complet dans un nouveau dossier puis ouvrir BandStudio.exe. Les installations existantes peuvent recevoir le code à la fermeture via les mises à jour automatiques. Les paquets update macOS sont destinés aux installations existantes.
 
+Nouveautés du 15 novembre 2026 : éditeur manuel avec zoom, déplacement des sections et cues par temps/mesure, écoute autour et validation un repère à la fois. Quatre niveaux indépendants : métronome, appels, cues et décompte.
+
+Fiche morceau : corrige accords et paroles mesure par mesure, déplace les lignes avec leurs mots synchronisés, annule/rétablis les modifications et exporte une grille PDF. Choisis où enregistrer la copie, puis ouvre-la dans ton lecteur PDF.
+
+Calage et préparation : la grille est vérifiée à l’import, le décompte suit les temps enregistrés et préserve les levées. Les analyses déjà disponibles sont réutilisées ; les corrections protégées sont conservées. Réexporte les anciens projets REAPER pour appliquer le nouveau décompte.
+
+Tutoriel FR : https://github.com/herve8940/BandStudio/blob/main/docs/BANDSTUDIO_TUTORIEL_fr.md
+Tutorial EN : https://github.com/herve8940/BandStudio/blob/main/docs/BANDSTUDIO_TUTORIAL_en.md
+
 File de préparation : ajoute plusieurs fichiers de ton ordinateur, puis clique sur Démarrer la file quand ta liste est prête. Un morceau est préparé à la fois, sans remplacer celui ouvert dans l’atelier. Pause et reprise conservent les étapes terminées ; une erreur sur un titre ne bloque pas les suivants. Les morceaux prêts apparaissent dans Mes morceaux et restent à vérifier avant validation. Laisse BandStudio ouvert pendant le traitement. Après fermeture, la file attend un nouveau clic ; elle ne redémarre jamais seule.
 
 Windows : correction des formes d’onde des morceaux longs (débordement d’entiers après 68 secondes). Les anciens affichages sont recalculés à l’ouverture sans modifier l’audio. La fenêtre démarre maximisée et le transport reste accessible sur les petits écrans.

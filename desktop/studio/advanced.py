@@ -60,7 +60,13 @@ def musical_grid(beats, downbeats, duration):
                 gridStatus=status)
 
 
-def smart_grid(audio, engine, notify=lambda info: None):
+def smart_grid(audio, engine, notify=lambda info: None, project=None):
+    from analysis_cache import AnalysisCache
+    cache=AnalysisCache.create(project,'rhythm',audio,engine)
+    cached=cache.load() if cache else None
+    if cached is not None:
+        notify(dict(cacheHit=True))
+        return {**cached,'cacheHit':True}
     import soundfile as sf
     import torch
     from beat_this.inference import Audio2Beats
@@ -80,7 +86,9 @@ def smart_grid(audio, engine, notify=lambda info: None):
         with torch.inference_mode():
             return predictor(signal.mean(axis=1), sr)
     (beats, downbeats), _ = run(torch,'smartgrid',inference,notify=notify)
-    return musical_grid(beats, downbeats, len(signal) / sr)
+    result=musical_grid(beats, downbeats, len(signal) / sr)
+    if cache:cache.store(result)
+    return {**result,'cacheHit':False}
 
 
 def detect_key(audio):
@@ -234,40 +242,356 @@ def master(audio, target, engine, options):
         processed.unlink(missing_ok=True)
 
 
+def practice_grid(p, options=None):
+    """Read-only score layout, using the same beat origin as the editable song sheet."""
+    import bisect
+    from phone import transpose
+    options = options or {}
+    settings = p.get('settings') or {}
+    meter = int(settings.get('beatsPerBar', 4))
+    bpm = settings.get('manualBPM', 120) if settings.get('gridMode') == 'fixed' else p.get('bpm') or settings.get('manualBPM', 120)
+    duration = max(p.get('sessionDuration', 0), max((t.get('offset', 0)+t['duration'] for t in p.get('tracks', []) if not t.get('role', '').startswith('guide_')), default=0))
+    if duration <= 0:
+        duration = max((x.get('end', 0) for kind in ('sections', 'lyrics', 'chords') for x in p.get(kind, [])), default=0)
+    if not 1 <= meter <= 12 or not 20 <= bpm <= 400 or duration <= 0:
+        raise ValueError('Le morceau doit avoir une durée, un tempo et une mesure valides.')
+    beats = sorted({float(t) for t in p.get('beats', []) if math.isfinite(t) and 0 <= t <= duration})
+    detected = settings.get('gridMode', 'detected') != 'fixed' and len(beats) > 1
+    first = float(settings.get('firstBeat', 0))
+    anchor = min(range(len(beats)), key=lambda i: abs(beats[i]-first)) if detected else 0
+    anchor %= meter  # Match the editor and the metronome when a later downbeat was calibrated.
+    origin = beats[anchor] if detected else first
+
+    def at(value):
+        if not detected:
+            return origin+value*60/bpm
+        index = value+anchor
+        lower = max(0, min(len(beats)-2, math.floor(index)))
+        return beats[lower]+(index-lower)*(beats[lower+1]-beats[lower])
+
+    def coordinate(t):
+        if not detected:
+            return (t-origin)*bpm/60
+        i = max(0, min(len(beats)-2, bisect.bisect_right(beats, t)-1))
+        return i-anchor+(t-beats[i])/(beats[i+1]-beats[i])
+
+    shift = int(finite(options.get('pitch', 0), -12, 12))
+    capo = int(p.get('capo', 0))
+
+    def chord_name(text):
+        # Display musical symbols rather than the analysis model's colon notation.
+        text = str(text).strip()
+        if text.upper() in ('N', 'NC', 'N.C.', 'NO_CHORD'):
+            return 'N.C.'
+        text = re.sub(r':min(?=$|[^a-z])', 'm', text)
+        text = re.sub(r':maj(?=$|/|\s)', '', text)
+        text = re.sub(r':maj(?=\d)', 'maj', text)
+        text = re.sub(r':(dim|aug|sus|add|\d)', r'\1', text)
+        return transpose(text, shift-capo)
+
+    bars = []
+    if origin > 1e-7:
+        bars.append(dict(number=0, start=0, end=min(origin, duration)))
+    n = max(0, math.floor(coordinate(0)/meter))
+    while at(n*meter) < duration-1e-7:
+        start, end = max(0, at(n*meter)), min(duration, at((n+1)*meter))
+        if end > start+1e-7:
+            bars.append(dict(number=n+1, start=start, end=end))
+        n += 1
+        if len(bars) > 30000:
+            raise ValueError('La grille contient trop de mesures.')
+
+    groups, end = [], 0
+    for s in sorted(p.get('sections', []), key=lambda x: x['start']):
+        a, b = max(end, s['start'], 0), min(duration, s['end'])
+        if a > end+1e-7:
+            groups.append(dict(name='Sans section', start=end, end=a))
+        if b > a+1e-7:
+            groups.append(dict(name=s['name'], start=a, end=b))
+            end = b
+    if end < duration-1e-7:
+        groups.append(dict(name='Sans section' if groups else 'Le morceau', start=end, end=duration))
+
+    chords = sorted(p.get('chords', []), key=lambda x: x['start'])
+    lyrics = []
+    for line in p.get('lyrics', []):
+        words = line.get('words') or []
+        if words:
+            lyrics.extend(dict(start=w['start'], text=w['text']) for w in words)
+        elif line.get('text'):
+            # Without word timings, keep the complete line at its known start.
+            lyrics.append(dict(start=line['start'], text=line['text']))
+    lyrics.sort(key=lambda x: x['start'])
+    for group in groups:
+        cells = []
+        for bar in bars:
+            a, b = max(bar['start'], group['start']), min(bar['end'], group['end'])
+            if b <= a+1e-7:
+                continue
+            names = []
+            for chord in chords:
+                if chord['start'] < b-1e-7 and chord['end'] > a+1e-7:
+                    name = chord_name(chord['text'])
+                    if name and (not names or names[-1] != name):
+                        names.append(name)
+            # A word belongs to its starting measure, so a held word is never printed twice.
+            text = ' '.join(x['text'] for x in lyrics if a <= x['start'] < b)
+            text = re.sub(r'\s+([,.;!?])', r'\1', text)
+            cues = [c.get('callText') or c.get('name', '') for c in p.get('cues', []) if a <= c['time'] < b]
+            cells.append(dict(number=bar['number'], start=a, end=b, chords=names, lyrics=text,
+                              cues=cues, partial=a > bar['start']+1e-7 or b < bar['end']-1e-7,
+                              continuation=a > bar['start']+1e-7))
+        group['cells'] = cells
+    return dict(groups=groups, bpm=bpm, meter=meter, key=transpose(p.get('key') or '?', shift),
+                capo=capo, shift=shift, has_lyrics=bool(lyrics), duration=duration)
+
+
 def practice_sheet(p, target, options):
+    """An album-led rehearsal chart, with numbered measures and editable song data."""
     import reportlab
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.styles import ParagraphStyle
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-    from phone import transpose
-    font=Path(reportlab.__file__).parent/'fonts/Vera.ttf'
-    pdfmetrics.registerFont(TTFont('Studio',str(font)))
-    styles=getSampleStyleSheet()
-    for style in styles.byName.values():style.fontName='Studio'
-    styles.add(ParagraphStyle('cell',fontName='Studio',fontSize=9,leading=13))
-    def para(text,style='cell'):return Paragraph(html.escape(str(text)).replace('\n','<br/>'),styles[style])
-    def stamp(t):return f'{int(t)//60}:{t%60:05.2f}'
-    body=[para('BANDSTUDIO · FICHE DE RÉPÉTITION','Heading3'),para(p['name'],'Title')]
-    shift=int(finite(options.get('pitch',0),-12,12));capo=p.get('capo',0)
-    body+=[para(f'Tempo source : {p.get("bpm",0):.1f} BPM · Tonalité entendue : {transpose(p.get("key", "—"),shift)} · Capo : {capo}'),
-           para('Les accords ci-dessous tiennent compte de la transposition et du capo. Les horaires restent ceux du morceau original.'),Spacer(1,15)]
-    def table(title,headers,rows,widths):
-        if not rows:return
-        body.append(para(title,'Heading2'))
-        grid=Table([[para(x) for x in headers]]+[[para(x) for x in row] for row in rows],colWidths=widths,repeatRows=1,hAlign='LEFT')
-        grid.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e8ecf4')),('VALIGN',(0,0),(-1,-1),'TOP'),('LEFTPADDING',(0,0),(-1,-1),8),('RIGHTPADDING',(0,0),(-1,-1),8),('TOPPADDING',(0,0),(-1,-1),7),('BOTTOMPADDING',(0,0),(-1,-1),7),('LINEBELOW',(0,0),(-1,-1),.4,colors.HexColor('#ccd4df'))]))
-        body.extend([grid,Spacer(1,12)])
-    table('Structure',['Début','Fin','Passage'],[(stamp(s['start']),stamp(s['end']),s['name']) for s in p.get('sections',[])],[65,65,377])
-    table('Repères de jeu',['Position','Consigne'],[(stamp(c['time']),c.get('callText') or c['name']) for c in p.get('cues',[])],[80,427])
-    table('Accords',['Début','Fin','Accord affiché'],[(stamp(c['start']),stamp(c['end']),transpose(c['text'],shift-capo)) for c in p.get('chords',[])],[65,65,377])
-    table('Paroles',['Début','Texte'],[(stamp(l['start']),l['text']) for l in p.get('lyrics',[])],[65,442])
-    if p.get('notes'):body.extend([para('Notes','Heading2'),para(p['notes'])])
-    def footer(canvas,doc):
-        canvas.saveState();canvas.setFont('Studio',8);canvas.drawString(44,26,'BandStudio · '+p['name'][:65]);canvas.drawRightString(A4[0]-44,26,str(doc.page));canvas.restoreState()
-    SimpleDocTemplate(str(target),pagesize=A4,leftMargin=44,rightMargin=44,topMargin=44,bottomMargin=45,title=p['name'],author='BandStudio').build(body,onFirstPage=footer,onLaterPages=footer)
+    from reportlab.lib.utils import ImageReader
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Flowable
+    data = practice_grid(p, options)
+    fonts = Path(reportlab.__file__).parent/'fonts'
+    pdfmetrics.registerFont(TTFont('Studio', str(fonts/'Vera.ttf')))
+    pdfmetrics.registerFont(TTFont('StudioBold', str(fonts/'VeraBd.ttf')))
+    width = A4[0]-76-12  # The document frame includes 6 pt padding on each side.
+    ink = colors.HexColor('#223D31')
+    line = colors.HexColor('#A6B4A1')
+    quiet = colors.HexColor('#7B8676')
+    peach = colors.HexColor('#FCF4EA')
+    red = '#A14D3E'
+    muted = colors.HexColor('#E6E9E1')
+    # Album metadata stays with the song. No network access is needed to export.
+    from artwork import guesses, read as read_artwork
+    title, artist = guesses(p.get('name', 'Morceau'))[0]
+    album, cover_image = '', None
+    root = Path(p['_root']) if p.get('_root') else None
+    if root:
+        art = read_artwork(root)
+        if art.get('title') and art['title'] != p.get('name'):
+            title = str(art['title'])
+        artist = str(art.get('artist') or artist)
+        album = str(art.get('album') or '')
+        cover_path = root/'Artwork.jpg'
+        try:
+            if cover_path.is_file() and not cover_path.is_symlink() and cover_path.stat().st_size <= 512_000:
+                cover_image = ImageReader(str(cover_path))
+                cover_image.getRGBData()  # Decode now, so a damaged cover falls back cleanly.
+        except (OSError, ValueError):
+            cover_image = None
+    styles = {
+        'title': ParagraphStyle('GridTitle', fontName='StudioBold', fontSize=30, leading=33, textColor=ink),
+        'meta': ParagraphStyle('GridMeta', fontName='Studio', fontSize=9, leading=13),
+        'key': ParagraphStyle('GridKey', fontName='Studio', fontSize=13, leading=17, alignment=1, spaceBefore=8, spaceAfter=14),
+        'section': ParagraphStyle('GridSection', fontName='StudioBold', fontSize=10, leading=14, textColor=ink, keepWithNext=True),
+        'chord': ParagraphStyle('GridChord', fontName='StudioBold', fontSize=10, leading=12, textColor=ink, alignment=1),
+        'body': ParagraphStyle('GridBody', fontName='Studio', fontSize=8.5, leading=11, alignment=1, splitLongWords=True),
+        'notes': ParagraphStyle('GridNotes', fontName='Studio', fontSize=9, leading=13),
+    }
+    def escaped(text):
+        return html.escape(str(text)).replace('\n', '<br/>')
+    def para(text, style):
+        return Paragraph(escaped(text), styles[style])
+
+    class SheetHeader(Flowable):
+        def __init__(self):
+            Flowable.__init__(self)
+            self.width = width
+            self.title = para(title, 'title')
+            self.artist = Paragraph(escaped(artist), ParagraphStyle('GridArtist', fontName='Studio', fontSize=11,
+                                                                                leading=15, textColor=quiet))
+            self.album = Paragraph(escaped(album or 'Fiche de répétition'), ParagraphStyle('GridAlbum', fontName='Studio',
+                                                         fontSize=8, leading=11, textColor=quiet))
+            self.text_width = width-148
+            self.title_height = self.title.wrap(self.text_width, 10000)[1]
+            self.artist_height = self.artist.wrap(self.text_width, 10000)[1]
+            self.album_height = self.album.wrap(self.text_width, 10000)[1]
+            self.hero_height = max(128, 28+self.artist_height+self.title_height+self.album_height+18)
+            self.height = self.hero_height+61
+
+        def wrap(self, avail_width, avail_height):
+            return width, self.height
+
+        def draw(self):
+            c = self.canv
+            c.setFillColor(quiet);c.setFont('StudioBold', 6.5)
+            c.drawString(0, self.height-8, 'B A N D S T U D I O   /   F I C H E   M O R C E A U')
+            y = self.height-28
+            self.artist.drawOn(c, 0, y-self.artist_height);y -= self.artist_height+6
+            self.title.drawOn(c, 0, y-self.title_height);y -= self.title_height+11
+            self.album.drawOn(c, 0, y-self.album_height)
+            size = 120;x = width-size;cover_y = self.height-124
+            if cover_image:
+                c.setFillColor(colors.HexColor('#E4E6DB'));c.rect(x+3,cover_y-3,size,size,fill=1,stroke=0)
+                c.drawImage(cover_image,x,cover_y,width=size,height=size,preserveAspectRatio=True,anchor='c',mask='auto')
+            else:
+                c.setFillColor(ink);c.rect(x,cover_y,size,size,fill=1,stroke=0)
+                c.setStrokeColor(colors.HexColor('#51664D'))
+                for r in range(16,57,5):c.circle(x+60,cover_y+60,r,stroke=1,fill=0)
+                c.setFillColor(colors.HexColor('#D9BE7C'));c.circle(x+60,cover_y+60,10,fill=1,stroke=0)
+            c.setStrokeColor(line);c.setLineWidth(.5);c.line(0,53,width,53)
+            duration = f'{int(data["duration"])//60}:{int(data["duration"])%60:02}'
+            key = data['key']+(f' / capo {data["capo"]}' if data['capo'] else '')
+            for i,(label,value) in enumerate([('TEMPO',f'{data["bpm"]:g} BPM'),('TONALITÉ',key),('MESURE',f'{data["meter"]}/4'),('DURÉE',duration)]):
+                x=i*width/4
+                c.setFillColor(quiet);c.setFont('Studio',6);c.drawString(x,40,label)
+                c.setFillColor(ink);c.setFont('StudioBold',12);c.drawString(x,23,value)
+            if data['shift']:
+                c.setFont('Studio',6);c.setFillColor(quiet);c.drawRightString(width,8,f'Transposition : {data["shift"]:+d} demi-tons')
+            c.setStrokeColor(line);c.line(0,11,width,11)
+
+    class BarRow(Flowable):
+        def __init__(self, cells, continued=False, bodies=None):
+            Flowable.__init__(self)
+            self.cells, self.continued = cells, continued
+            self.width = width
+            self.cell_width = width/4
+            self.chords, self.bodies = [], []
+            for i, cell in enumerate(cells):
+                names = cell['chords'] or ['']
+                # Dense detected harmony remains readable without discarding any change.
+                labels = names if len(names) <= 4 else [' / '.join(names)]
+                if any(pdfmetrics.stringWidth(name, 'StudioBold', 7.5) > self.cell_width/len(labels)-8 for name in labels):
+                    labels = [' / '.join(names)]
+                chord_style = styles['chord']
+                if len(labels)>1:
+                    font_size = min(10, min((self.cell_width/len(labels)-8)/max(1,pdfmetrics.stringWidth(name,'StudioBold',1)) for name in labels))
+                    chord_style = ParagraphStyle('GridChordFit', parent=chord_style, fontSize=font_size, leading=font_size+2, splitLongWords=False)
+                self.chords.append([Paragraph(escaped(name), chord_style) for name in labels])
+                if bodies is not None:
+                    self.bodies.append(bodies[i])
+                else:
+                    parts = []
+                    if cell['lyrics']:
+                        parts.append('<font color="'+red+'">'+escaped(cell['lyrics'])+'</font>')
+                    if cell['cues']:
+                        parts.append('<font size="7.5" color="#444444">'+escaped(' / '.join(cell['cues']))+'</font>')
+                    self.bodies.append(Paragraph('<br/>'.join(parts), styles['body']) if parts else None)
+            self.header_height = max((q.wrap(self.cell_width/len(chords)-8, 10000)[1] for chords in self.chords for q in chords), default=12)+12
+            self.body_heights = [q.wrap(self.cell_width-10, 10000)[1] if q else 0 for q in self.bodies]
+            self.height = max(24, self.header_height+max(self.body_heights, default=0)+5+(7 if continued else 0))
+
+        def wrap(self, avail_width, avail_height):
+            return self.width, self.height
+
+        def split(self, avail_width, avail_height):
+            room = avail_height-self.header_height-16
+            if room < styles['body'].leading*2:
+                return []
+            first, rest = [], []
+            for q in self.bodies:
+                if not q:
+                    first.append(None);rest.append(None);continue
+                pieces = q.split(self.cell_width-10, room)
+                if not pieces:
+                    return []
+                first.append(pieces[0]);rest.append(pieces[1] if len(pieces)>1 else None)
+            if not any(rest):
+                return []
+            return [BarRow(self.cells, self.continued, first), BarRow(self.cells, True, rest)]
+
+        def draw(self):
+            canvas = self.canv
+            for i, cell in enumerate(self.cells):
+                x = i*self.cell_width
+                fill = peach if cell['lyrics'] else muted if any('mute' in c.lower() for c in cell['chords']) else colors.white
+                canvas.setFillColor(fill);canvas.setStrokeColor(line);canvas.setLineWidth(.55)
+                canvas.rect(x, 0, self.cell_width, self.height, stroke=1, fill=1)
+                number = 'LEVÉE' if not cell['number'] else f'M. {cell["number"]}'
+                if cell['partial']:
+                    number += ' - suite' if cell['continuation'] else ' - début'
+                canvas.setFont('Studio',5.8);canvas.setFillColor(quiet)
+                canvas.drawString(x+5,self.height-8,number)
+                chords = self.chords[i];part = self.cell_width/len(chords)
+                for j, q in enumerate(chords):
+                    _, h = q.wrap(part-8, 10000)
+                    q.drawOn(canvas, x+j*part+4, self.height-10-h)
+                    if j:
+                        # With lyrics, the text spans the complete measure below the chords.
+                        floor = self.height-self.header_height if self.bodies[i] else 4
+                        canvas.saveState();canvas.setLineWidth(.3);canvas.setDash(1.5,2)
+                        canvas.line(x+j*part, floor, x+j*part, self.height-9);canvas.restoreState()
+                q = self.bodies[i]
+                if q:
+                    q.drawOn(canvas, x+5, self.height-self.header_height-self.body_heights[i])
+                if self.continued:
+                    canvas.setFont('Studio', 6);canvas.setFillColor(colors.HexColor('#777777'))
+                    canvas.drawRightString(x+self.cell_width-4, 2, 'suite')
+
+    class SectionBlock(Flowable):
+        def __init__(self, name, position, rows, continued=False, number=1):
+            Flowable.__init__(self)
+            self.name, self.position, self.rows, self.continued = name, position, rows, continued
+            self.number = number
+            label = escaped(name)+(' (suite)' if continued else '')
+            self.heading = Paragraph(label+' <font name="Studio" size="7" color="#7B8676">'+escaped(position)+'</font>', styles['section'])
+            self.heading_height = self.heading.wrap(width-29, 10000)[1]
+            self.width = width
+            self.height = self.heading_height+sum(row.height for row in rows)+20
+
+        def wrap(self, avail_width, avail_height):
+            return self.width, self.height
+
+        def split(self, avail_width, avail_height):
+            # A normal section stays together. Oversized sections repeat their label on each page.
+            if self.height <= A4[1]-42-44-12:
+                return []
+            room = avail_height-self.heading_height-20
+            first, rest = [], list(self.rows)
+            while rest and rest[0].height <= room:
+                row = rest.pop(0);first.append(row);room -= row.height
+            if not first and rest:
+                parts = rest[0].split(avail_width, room)
+                if parts:
+                    first.append(parts[0]);rest = parts[1:]+rest[1:]
+            if not first:
+                return []
+            return [SectionBlock(self.name, self.position, first, self.continued, self.number),
+                    SectionBlock(self.name, self.position, rest, True, self.number)]
+
+        def draw(self):
+            y = self.height-10-self.heading_height
+            self.canv.setFillColor(ink);self.canv.roundRect(0,y-1,21,17,3,fill=1,stroke=0)
+            self.canv.setFillColor(colors.white);self.canv.setFont('StudioBold',7)
+            self.canv.drawCentredString(10.5,y+4,str(self.number).zfill(2))
+            self.heading.drawOn(self.canv, 29, y)
+            y -= 9
+            for row in self.rows:
+                y -= row.height;row.drawOn(self.canv, 0, y)
+
+    body = [SheetHeader()]
+    for group_number, group in enumerate(data['groups'],1):
+        cells = group['cells']
+        if not cells:
+            continue
+        first, last = cells[0]['number'], cells[-1]['number']
+        position = 'levée' if first == last == 0 else ('levée puis ' if first == 0 else '')+f'mes. {max(1, first)}-{last}'
+        if cells[0]['partial'] or cells[-1]['partial']:
+            position += ' / mesure partagée'
+        rows = [BarRow(cells[i:i+4]) for i in range(0, len(cells), 4)]
+        body.append(SectionBlock(group['name'], position, rows, number=group_number))
+    if p.get('notes'):
+        body.extend([para('Notes de jeu', 'section'), para(p['notes'], 'notes')])
+    def footer(canvas, doc):
+        canvas.saveState();canvas.setFont('Studio',6);canvas.setFillColor(quiet)
+        canvas.setStrokeColor(line);canvas.setLineWidth(.4);canvas.line(44,34,A4[0]-44,34)
+        canvas.drawString(44,22,'BANDSTUDIO / GRILLE DE RÉPÉTITION')
+        canvas.drawRightString(A4[0]-44,22,str(doc.page).zfill(2))
+        if doc.page>1:
+            canvas.setFont('StudioBold',7);canvas.setFillColor(ink)
+            short=title if len(title)<=55 else title[:52]+'...'
+            canvas.drawString(44,A4[1]-27,short)
+            canvas.setFont('Studio',6);canvas.setFillColor(quiet)
+            canvas.drawRightString(A4[0]-44,A4[1]-27,f'{data["bpm"]:g} BPM / {data["key"]} / {data["meter"]}/4')
+        canvas.restoreState()
+    SimpleDocTemplate(str(target), pagesize=A4, leftMargin=38, rightMargin=38, topMargin=42, bottomMargin=44,
+                      title=p['name'], author='BandStudio').build(body, onFirstPage=footer, onLaterPages=footer)
 
 
 def audio_report(audio):
@@ -305,7 +629,7 @@ def run(kind, project_file, output, engine, options, audio=''):
     root = Path(p['_root']).resolve()
     length = max((t['duration']+t['offset'] for t in p['tracks'] if not t['role'].startswith('guide_')), default=0)
     if kind == 'smartgrid':
-        result = smart_grid(audio, engine, notify=lambda info:atomic(Path(output).parent/'progress.json',dict(stage='smartgrid',**info)))
+        result = smart_grid(audio, engine, project=p, notify=lambda info:atomic(Path(output).parent/'progress.json',dict(stage='smartgrid',**info)))
     elif kind == 'key':
         result = detect_key(audio)
     elif kind == 'lyricsimport':
