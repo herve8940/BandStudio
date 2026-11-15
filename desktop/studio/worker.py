@@ -128,12 +128,11 @@ def analyze(audio, output, mode, engine):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument('command', choices=['validate','generate','vocalsplit','grid', 'structure', 'separate','drumsep','guides','link','decode','reaper','rpp','lyrics','chords','drums','midi','smartgrid','key','lyricsimport','lyricsexport','stemsexport','master','report','portable','sheet'])
+    p.add_argument('command', choices=['validate','generate','vocalsplit','grid', 'structure', 'separate','drumsep','guides','decode','reaper','rpp','lyrics','chords','drums','midi','smartgrid','key','lyricsimport','lyricsexport','stemsexport','master','report','portable','sheet'])
     p.add_argument('--options',default='{}')
     p.add_argument('--options-file')
     p.add_argument('--input', default='')
     p.add_argument('--project')
-    p.add_argument('--url')
     p.add_argument('--language',default='auto')
     p.add_argument('--quality',choices=['fast','standard','careful'],default='standard')
     p.add_argument('--output', required=True)
@@ -154,7 +153,7 @@ def main():
     from compute import versions
     versions(a.command)
     progress(a.output, a.command)
-    from services import guides,import_link,decode,export_reaper,export_midi,import_reaper
+    from services import guides,decode,export_reaper,export_midi,import_reaper
     if a.command in ('generate','vocalsplit'):
         from creative import run
         run(a.command,a.input,a.output,engine,json.loads(Path(a.options_file).read_text() if a.options_file else a.options));return
@@ -167,7 +166,6 @@ def main():
         run(a.command,a.project,a.output,engine,json.loads(Path(a.options_file).read_text() if a.options_file else a.options),a.input)
         return
     if a.command=='guides':guides(a.project,a.output);return
-    if a.command=='link':import_link(a.url,a.output,engine);return
     if a.command=='decode':
         target=Path(a.output).parent/'import.wav';decode(a.input,target,engine);write(a.output,dict(audio=str(target)));return
     if a.command in ('validate','reaper'):

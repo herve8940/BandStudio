@@ -36,6 +36,12 @@ def queue_setup(tmp_path):
     return work, source
 
 
+def second_file(source):
+    other = source.with_name('Deuxième morceau.wav')
+    shutil.copy2(source, other)
+    return other
+
+
 def heartbeat(work):
     work.command(dict(action='heartbeat', ready=True))
 
@@ -53,9 +59,9 @@ def fake_workers(monkeypatch, work, source, failures=None):
         if (item['id'], kind) in failures:
             kwargs['stderr'].write(b'Analysis failed for this song\n');kwargs['stderr'].flush()
             return type('Process', (), dict(returncode=1, poll=lambda self: 1))()
-        if kind in ('decode', 'link'):
+        if kind == 'decode':
             dest = result.parent / 'import.wav';shutil.copy2(source, dest)
-            value = dict(audio=str(dest), title='Titre YouTube é' if kind == 'link' else item['title'])
+            value = dict(audio=str(dest), title=item['title'])
         elif kind == 'separate':
             tracks = []
             for role in ('vocals', 'bass', 'drums', 'other'):
@@ -83,15 +89,15 @@ def finish(work):
     raise AssertionError('Queue failed to drain')
 
 
-def test_file_and_url_sources_wait_for_explicit_start_and_publish_separate_projects(queue_setup, monkeypatch):
+def test_file_sources_wait_for_explicit_start_and_publish_separate_projects(queue_setup, monkeypatch):
     work, source = queue_setup
-    work.command(dict(action='add', kind='url', sources=['https://www.youtube.com/watch?v=example']))
+    work.command(dict(action='add', kind='file', sources=[str(second_file(source))]))
     calls, _ = fake_workers(monkeypatch, work, source)
     heartbeat(work);work.tick()
     assert not calls and not list(work.library.glob('*.bandstudio'))
     work.command(dict(action='start'));finish(work)
     assert [e['status'] for e in work.items] == ['done', 'done']
-    assert [kind for _, kind in calls] == ['decode', 'separate', 'grid', 'guides', 'link', 'separate', 'grid', 'guides']
+    assert [kind for _, kind in calls] == ['decode', 'separate', 'grid', 'guides'] * 2
     for item in work.items:
         p = model.load(item['project'])
         assert len(p['tracks']) == 8
@@ -100,13 +106,13 @@ def test_file_and_url_sources_wait_for_explicit_start_and_publish_separate_proje
         assert (Path(item['project']) / p['guideFiles']['call:section']).is_file()
         assert not p['preparation'].get('validatedAt')
         assert not work.root(item).exists()
-    assert source.is_file() and work.items[1]['title'] == 'Titre YouTube é'
+    assert source.is_file() and work.items[1]['title'] == 'Deuxième morceau'
 
 
 def test_failure_does_not_block_next_song_and_retry_preserves_successful_steps(queue_setup, monkeypatch):
     work, source = queue_setup
     first = work.items[0]
-    work.command(dict(action='add', kind='url', sources=['https://youtu.be/example']))
+    work.command(dict(action='add', kind='file', sources=[str(second_file(source))]))
     calls, failures = fake_workers(monkeypatch, work, source, {(first['id'], 'separate')})
     work.command(dict(action='start'));finish(work)
     assert [e['status'] for e in work.items] == ['error', 'done']
@@ -152,11 +158,15 @@ def test_duplicate_inputs_and_invalid_batch_are_atomic(queue_setup):
     work, source = queue_setup
     work.command(dict(action='add', kind='file', sources=[str(source), str(source)]))
     assert len(work.items) == 1
+    other = second_file(source)
     with pytest.raises(ValueError):
-        work.command(dict(action='add', kind='url', sources=['https://youtu.be/valid', 'file:///tmp/private']))
+        work.command(dict(action='add', kind='file', sources=[str(other), str(source.with_name('absent.wav'))]))
     assert len(work.items) == 1
     with pytest.raises(ValueError):
-        work.command(dict(action='add', kind='url', sources=['https://youtu.be/valid'], options={'model': '../bad'}))
+        work.command(dict(action='add', kind='url', sources=['https://example.com/song.mp3']))
+    assert len(work.items) == 1
+    with pytest.raises(ValueError):
+        work.command(dict(action='add', kind='file', sources=[str(other)], options={'model': '../bad'}))
 
 
 def test_busy_host_and_missing_heartbeat_prevent_work(queue_setup, monkeypatch):
@@ -169,8 +179,8 @@ def test_busy_host_and_missing_heartbeat_prevent_work(queue_setup, monkeypatch):
 
 
 def test_missing_separation_engine_leaves_the_entire_list_pending(queue_setup):
-    work, _ = queue_setup
-    work.command(dict(action='add', kind='url', sources=['https://youtu.be/example']))
+    work, source = queue_setup
+    work.command(dict(action='add', kind='file', sources=[str(second_file(source))]))
     work.command(dict(action='start'));heartbeat(work);work.tick()
     assert not work.enabled and work.proc is None and 'Installe' in work.message
     assert all(item['status'] == 'pending' for item in work.items)
@@ -225,7 +235,7 @@ def test_pipe_service_persists_entries_and_reopens_paused(queue_setup, monkeypat
                         + diagnostic.read_text(encoding='utf-8', errors='replace'))
     try:
         assert receive(client)['enabled'] is False
-        client.send(dict(action='add', kind='url', sources=['https://youtu.be/example']))
+        client.send(dict(action='add', kind='file', sources=[str(second_file(source))]))
         state = receive(client)
         assert len(state['items']) == 2 and state['enabled'] is False
         client.send(dict(action='start'))
@@ -269,7 +279,7 @@ def test_packagers_include_queue_and_shared_project_model():
 
 
 @pytest.mark.parametrize('browser_name', [os.environ['BANDSTUDIO_BROWSER']] if os.environ.get('BANDSTUDIO_BROWSER') else ['chromium', 'webkit'])
-def test_queue_ui_batches_links_and_requires_start(tmp_path, browser_name):
+def test_queue_ui_adds_files_and_requires_start(tmp_path, browser_name):
     from playwright.sync_api import sync_playwright, expect
     class Handler(SimpleHTTPRequestHandler):
         def log_message(self, *args):
@@ -285,17 +295,12 @@ def test_queue_ui_batches_links_and_requires_start(tmp_path, browser_name):
             page.goto(f'http://127.0.0.1:{host.server_port}/index.html')
             page.locator('.rail [data-view=queue]').click()
             expect(page.locator('#queueStart')).to_be_disabled()
-            page.locator('#queueLinks').fill('https://youtu.be/one\nhttps://www.youtube.com/watch?v=two')
-            page.locator('#queueAddLinks').click()
-            sent = page.evaluate('sent.at(-1)')
-            assert sent['args']['action'] == 'add' and len(sent['args']['sources']) == 2
+            assert page.locator('#queueLinks').count() == 0
+            page.locator('#queueFiles').click()
+            assert page.evaluate('sent.at(-1).args.action') == 'files'
             assert not page.evaluate('sent.some(m=>m.args.action==="start")')
-            item = dict(id='a', title='Titre <script>bad()</script>', source='https://youtu.be/one', status='pending', completed=0, total=0)
-            page.evaluate('v=>studioReceive({type:"batchQueue",items:[v.item],enabled:false,status:"En pause",ack:{id:v.request,ok:true},message:"2 morceau(x) ajouté(s)."})', dict(item=item, request=sent['args']['requestID']))
-            expect(page.locator('#queueLinks')).to_have_value('')
-            page.locator('#queueLinks').fill('https://youtu.be/next')
-            page.evaluate('v=>studioReceive({type:"batchQueue",items:[v.item],enabled:false,ack:{id:v.request,ok:true}})', dict(item=item, request=sent['args']['requestID']))
-            expect(page.locator('#queueLinks')).to_have_value('https://youtu.be/next')
+            item = dict(id='a', title='Titre <script>bad()</script>', source='/musique/un.wav', status='pending', completed=0, total=0)
+            page.evaluate('v=>studioReceive({type:"batchQueue",items:[v],enabled:false,status:"En pause",message:"1 morceau(x) ajouté(s)."})', item)
             expect(page.locator('.queue-info h3')).to_have_text(item['title'])
             page.locator('#queueStart').click()
             assert page.evaluate('sent.at(-1).args.action') == 'start'

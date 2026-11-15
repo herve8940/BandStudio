@@ -414,12 +414,6 @@ class Api:
                     self._notice='Pochette enregistrée.'
                 self._op('Ajout de la pochette',assign_artwork)
             return
-        if cmd=='link':
-            from services import checked_url
-            url=checked_url(args.get('url',''))
-            def linked():
-                _,result=self._work('link',arguments=['--url',url]);self._import([result['audio']],True,result['title'],url,result.get('artwork'),result.get('musicMetadata'))
-            a.pause();self._op('Import du lien',linked);return
         if m.get('projectID')!=p['id']:raise ValueError('Le projet a changé. Recommence ton action.')
         if cmd=='newSession':recording.command(self,dict(action='new',name=args.get('name','Répétition')));return
         if cmd=='captureSettings':recording.command(self,dict(action='configure',settings=args));return

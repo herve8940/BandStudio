@@ -280,7 +280,7 @@ $('wave-canvas').onclick=guarded(event=>{const r=focusRegion();if(!r)return;cons
 window.addEventListener('resize',drawWave);
 document.addEventListener('keydown',event=>{if(page==='practice' && tab==='work' && event.code==='Space' && !event.repeat && !['INPUT','SELECT','TEXTAREA','BUTTON'].includes(event.target.tagName) && !$('section-dialog').open){event.preventDefault();if(connected)$('play').click();}});
 const features=[
-  ['Préparation & import','Fichier, stems, lien, tempo, grille, décompte, sections et reprise.','song'],
+  ['Préparation & import','Fichier, stems, tempo, grille, décompte, sections et reprise.','song'],
   ['Stems & modèles','Séparation, modèles installés, caches, récupération des traitements.','song'],
   ['Paroles & prompteurs','Paroles automatiques, calage mot par mot, rôles, PIN et QR.','stage'],
   ['Batterie & accords','Analyse, MIDI batterie, accords, grille et PDF.','song'],

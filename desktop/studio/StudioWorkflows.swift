@@ -45,7 +45,7 @@ extension StudioApp {
             }
         }
         StudioDiagnostics.shared.event("job.start",["kind":kind]);try p.run();job=p;busy=true;jobLog=log;jobStarted=ProcessInfo.processInfo.systemUptime;lastBroadcast=0
-        let titles=["validate":"Vérification du morceau et des médias","generate":"Création musicale locale","vocalsplit":"Séparation chant principal et chœurs","smartgrid":"Détection des temps et débuts de mesure","drumsep":"Séparation des éléments de batterie","key":"Estimation de la tonalité","lyricsimport":"Import des paroles synchronisées","lyricsexport":"Export des paroles","stemsexport":"Export des stems","master":"Normalisation du mix","report":"Analyse des niveaux audio","portable":"Création du projet portable","sheet":"Création de la fiche PDF","guides":"Préparation du click, des appels et du décompte","separate":"Séparation des instruments","structure":"Analyse de la structure","grid":"Détection du tempo et des temps","link":"Import du lien","reaper":"Création du projet REAPER","lyrics":"Transcription des paroles","chords":"Détection des accords","drums":"Transcription de la batterie","midi":"Export MIDI","decode":"Conversion du fichier audio"]
+        let titles=["validate":"Vérification du morceau et des médias","generate":"Création musicale locale","vocalsplit":"Séparation chant principal et chœurs","smartgrid":"Détection des temps et débuts de mesure","drumsep":"Séparation des éléments de batterie","key":"Estimation de la tonalité","lyricsimport":"Import des paroles synchronisées","lyricsexport":"Export des paroles","stemsexport":"Export des stems","master":"Normalisation du mix","report":"Analyse des niveaux audio","portable":"Création du projet portable","sheet":"Création de la fiche PDF","guides":"Préparation du click, des appels et du décompte","separate":"Séparation des instruments","structure":"Analyse de la structure","grid":"Détection du tempo et des temps","reaper":"Création du projet REAPER","lyrics":"Transcription des paroles","chords":"Détection des accords","drums":"Transcription de la batterie","midi":"Export MIDI","decode":"Conversion du fichier audio"]
         jobName=kind == "rpp" ? "Import des pistes et régions REAPER" : (titles[kind] ?? kind);notice="";sendState()
     }
     // Stop revokes a queued transport action while guides are still rendering.
@@ -100,16 +100,6 @@ extension StudioApp {
         if settings.firstBeat != project.settings.firstBeat || settings.gridMode != project.settings.gridMode || settings.beatsPerBar != project.settings.beatsPerBar || settings.manualBPM != project.settings.manualBPM {project.gridLocked=true}
         project.settings=settings;audio.project=project;audio.applyMix();try changed()
         try withGuides{self.notice="Réglages appliqués et guides actualisés."}
-    }
-    func importURL(_ value:String) throws {
-        guard let u=URL(string:value),["http","https"].contains(u.scheme ?? ""),u.host != nil else {throw StudioError("Colle un lien HTTP ou HTTPS vers un morceau ou une vidéo.")}
-        try startJob("link",arguments:["--url",value]) {result in
-            let data=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
-            guard let path=data["audio"] as? String else {throw StudioError("Aucun audio reçu.")}
-            self.pendingImportTitle=data["title"] as? String;self.pendingSourceURL=value;self.pendingArtwork=data["artwork"] as? String
-            if let tags=data["musicMetadata"],let encoded=try? JSONSerialization.data(withJSONObject:tags) {self.pendingMusicMetadata=String(data:encoded,encoding:.utf8) ?? "{}"}
-            self.importFiles([URL(fileURLWithPath:path)],new:true)
-        }
     }
     func decodeFile(_ url:URL,to target:URL) throws {
         let p=Process();p.executableURL=runtime.appendingPathComponent("import-tools/ffmpeg")

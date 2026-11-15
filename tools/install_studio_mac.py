@@ -40,7 +40,7 @@ def install(update=False):
     for name in ('__init__.py','project.py'):
         shutil.copy2(BUILD/'Engine/windows'/name,engine_stage/'windows'/name)
     if (BUILD/'Engine/build.json').is_file():shutil.copy2(BUILD/'Engine/build.json',engine_stage/'build.json')
-    for name in ('.venv','.venv-demucs','.venv-structure','.venv-import','.venv-words','.venv-chords','.venv-drums','.venv-creative'):
+    for name in ('.venv','.venv-demucs','.venv-structure','.venv-words','.venv-chords','.venv-drums','.venv-creative'):
         if not (engine_stage/name).is_dir():continue
         version='3.11' if name=='.venv-structure' else '3.12';base=engine/('python'+version.replace('.',''))
         (engine_stage/name/'pyvenv.cfg').write_text(f'home = {base}/bin\ninclude-system-site-packages = false\nversion = {version}\n')

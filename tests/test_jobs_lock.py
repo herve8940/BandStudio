@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from reacue_mcp import jobs as J, show_lock, cli, import_audio
+from reacue_mcp import jobs as J, show_lock, cli, concert_manage
 from reacue_mcp.bridge import Bridge, BridgeError
 from test_lua import load_run
 
@@ -18,14 +18,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_job_records_result_project_and_terminal_state(tmp_path):
-    job = J.Job(tmp_path, "import-audio", job_id="example", project="/songs/Song.RPP", launch_command="import-audio --job example.json")
+    job = J.Job(tmp_path, "concert-manage", job_id="example", project="/songs/Song.RPP", launch_command="concert-manage --operation package")
     assert not job.cancelled
     Path(job.data["cancel_file"]).touch()
     assert job.cancelled
-    job.update("done", import_audio={"operation": "download", "file": "/audio.ogg"})
+    job.update("done", concert_manage={"operation": "package", "file": "/concert.zip"})
     record = json.loads(job.path.read_text())
     assert record["state"] == "done" and record["finished"] >= record["started"]
-    assert record["project"] == "/songs/Song.RPP" and record["import_audio"]["file"] == "/audio.ogg"
+    assert record["project"] == "/songs/Song.RPP" and record["concert_manage"]["file"] == "/concert.zip"
     with pytest.raises(ValueError, match="already exists"):
         J.Job(tmp_path, "prepare", job_id="example")
     assert json.loads(job.path.read_text()) == record
@@ -120,8 +120,8 @@ def _cli_dir(monkeypatch, directory):
 def test_cli_lock_prevents_dispatch_and_finishes_ledger(tmp_path, monkeypatch):
     _cli_dir(monkeypatch, tmp_path)
     (tmp_path / "show_lock.json").write_text('{"locked":true}')
-    monkeypatch.setattr(import_audio, "dispatch_request", lambda *a, **k: pytest.fail("locked import ran"))
-    assert cli.main(["import-audio", "--job-id", "locked", "--request", '{}']) == 1
+    monkeypatch.setattr(concert_manage, "dispatch_request", lambda *a, **k: pytest.fail("locked job ran"))
+    assert cli.main(["concert-manage", "--job-id", "locked", "--operation", "package"]) == 1
     record = json.loads((tmp_path / "jobs/locked.json").read_text())
     assert record["state"] == "error"
     lease = J.WorkerLease(tmp_path)
@@ -135,9 +135,9 @@ def test_cli_busy_does_not_replace_another_jobs_status(tmp_path, monkeypatch):
     status.write_text('{"id":"other","state":"running"}')
     lease = J.WorkerLease(tmp_path)
     assert lease.acquire()
-    monkeypatch.setattr(import_audio, "dispatch_request", lambda *a, **k: pytest.fail("second import ran"))
+    monkeypatch.setattr(concert_manage, "dispatch_request", lambda *a, **k: pytest.fail("second job ran"))
     try:
-        assert cli.main(["import-audio", "--job-id", "blocked", "--request", '{}']) == 1
+        assert cli.main(["concert-manage", "--job-id", "blocked", "--operation", "package"]) == 1
     finally:
         lease.release()
     assert json.loads(status.read_text())["id"] == "other"
@@ -147,26 +147,26 @@ def test_cli_busy_does_not_replace_another_jobs_status(tmp_path, monkeypatch):
 def test_cli_result_terminal_identity_and_expected_project_restored(tmp_path, monkeypatch):
     _cli_dir(monkeypatch, tmp_path)
     monkeypatch.setenv("REACUE_EXPECTED_PROJECT", "/before.RPP")
-    def downloaded(data, progress):
+    def packaged(data, progress):
         assert os.environ["REACUE_EXPECTED_PROJECT"] == "/source.RPP"
-        assert str(data["cancel_file"]).endswith("/jobs/import1.cancel")
-        progress("downloaded")
-        return {"operation": "download", "file": "/cache/audio.ogg"}
-    monkeypatch.setattr(import_audio, "dispatch_request", downloaded)
-    assert cli.main(["import-audio", "--job-id", "import1", "--origin-project", "/source.RPP", "--request", '{}']) == 0
-    record = json.loads((tmp_path / "jobs/import1.json").read_text())
+        assert data["operation"] == "package"
+        progress("packaged")
+        return {"operation": "package", "file": "/cache/concert.zip"}
+    monkeypatch.setattr(concert_manage, "dispatch_request", packaged)
+    assert cli.main(["concert-manage", "--job-id", "manage1", "--origin-project", "/source.RPP", "--operation", "package"]) == 0
+    record = json.loads((tmp_path / "jobs/manage1.json").read_text())
     assert record["state"] == "done" and record["project"] == "/source.RPP"
-    assert record["import_audio"]["file"] == "/cache/audio.ogg"
+    assert record["concert_manage"]["file"] == "/cache/concert.zip"
     assert os.environ["REACUE_EXPECTED_PROJECT"] == "/before.RPP"
 
 
 def test_cli_cancellation_terminal_is_not_success(tmp_path, monkeypatch):
     _cli_dir(monkeypatch, tmp_path)
     def cancelled(data, progress):
-        Path(data["cancel_file"]).touch()
-        raise import_audio.ImportCancelled("cancelled")
-    monkeypatch.setattr(import_audio, "dispatch_request", cancelled)
-    assert cli.main(["import-audio", "--job-id", "cancel", "--request", '{}']) == 130
+        (tmp_path / "jobs/cancel.cancel").touch()
+        raise RuntimeError("cancelled")
+    monkeypatch.setattr(concert_manage, "dispatch_request", cancelled)
+    assert cli.main(["concert-manage", "--job-id", "cancel", "--operation", "package"]) == 130
     assert json.loads((tmp_path / "jobs/cancel.json").read_text())["state"] == "cancelled"
 
 
@@ -350,8 +350,8 @@ def test_cli_lease_context_allows_nested_server_helper(tmp_path, monkeypatch):
     def inspect(data, progress):
         assert J.lease_owned.get() is True
         return asyncio.run(helper())
-    monkeypatch.setattr(import_audio, "dispatch_request", inspect)
-    assert cli.main(["import-audio", "--job-id", "nested", "--request", '{}']) == 0
+    monkeypatch.setattr(concert_manage, "dispatch_request", inspect)
+    assert cli.main(["concert-manage", "--job-id", "nested", "--operation", "package"]) == 0
     assert J.lease_owned.get() is False
     assert len(list((tmp_path / "jobs").glob("*.json"))) == 1
 

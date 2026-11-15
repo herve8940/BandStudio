@@ -46,13 +46,10 @@ def request(item, stage, root, folder, engine, library):
     command = stage
     args = []
     if stage == 'import':
-        command = 'link' if item['kind'] == 'url' else 'decode'
-        if command == 'link':
-            args = ['--url', item['source']]
-        else:
-            source = item['source']
-            if not Path(source).is_file():
-                raise ValueError('Fichier source introuvable. Remets-le à son emplacement puis réessaie.')
+        command = 'decode'
+        source = item['source']
+        if item.get('kind') != 'file' or not Path(source).is_file():
+            raise ValueError('Fichier source introuvable. Remets-le à son emplacement puis réessaie.')
     elif stage != 'guides':
         role = 'vocals' if stage == 'lyrics' else 'source'
         track = next((t for t in p['tracks'] if t['role'] == role), None)
@@ -90,7 +87,7 @@ def apply(item, stage, root, folder, library):
     if stage == 'import':
         target = copy_media(result['audio'], 'Audio', 'original.wav')
         p['name'] = str(result.get('title') or item['title'])[:200]
-        p['sourceURL'] = item['source'] if item['kind'] == 'url' else ''
+        p['sourceURL'] = ''
         p['tracks'] = [model.track(target, root, 'Original', 'source')]
         if result.get('artwork'):
             copy_media(result['artwork'], '.', 'Artwork.jpg')

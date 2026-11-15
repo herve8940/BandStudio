@@ -11,7 +11,7 @@ return function(ctx)
   local L, U, T, R, SEP = ctx.L, ctx.U, ctx.T, ctx.R, ctx.SEP
   local TXT = {
     fr = {
-      button = "+ Nouveau morceau", menu = "Un fichier (MP3, WAV…)|Des stems (un dossier)|Depuis un lien YouTube…",
+      button = "+ Nouveau morceau", menu = "Un fichier (MP3, WAV…)|Des stems (un dossier)",
       pick_file = "ReaCue - Fichier du nouveau morceau (MP3, WAV…)",
       pick_folder = "ReaCue - Dossier des stems du nouveau morceau",
       pick_one_stem = "Choisis UN des fichiers de stems : tous les fichiers audio de son dossier seront importés.",
@@ -26,7 +26,7 @@ return function(ctx)
       created = "Nouveau morceau « %s » : %d fichier(s) copié(s) dans %s",
     },
     en = {
-      button = "+ New song", menu = "One file (MP3, WAV…)|Stems (a folder)|From a YouTube link…",
+      button = "+ New song", menu = "One file (MP3, WAV…)|Stems (a folder)",
       pick_file = "ReaCue - File of the new song (MP3, WAV…)",
       pick_folder = "ReaCue - Stems folder of the new song",
       pick_one_stem = "Choose ONE of the stem files: every audio file in its folder will be imported.",
@@ -342,11 +342,7 @@ return function(ctx)
       gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y
       local c = gfx.showmenu(t("menu"))
       if not c or c < 1 then return false end
-      kind = (c == 1) and "file" or (c == 2 and "stems" or "link")
-    end
-    if kind == "link" then
-      if not ctx.audio_import then ctx.audio_import = dofile(ctx.dir .. "ReaCue_import.lua")(ctx) end
-      return ctx.audio_import.start()
+      kind = (c == 1) and "file" or "stems"
     end
     local src, files, single = N.choose(kind)
     if not src then return false end

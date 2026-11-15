@@ -22,9 +22,6 @@ The exact downloaded archive URL and SHA-256 are recorded in BUILD_INFO.json.
 These binaries are separate programs invoked by BandStudio, and have their own
 licence terms. The BandStudio MIT licence does not replace those terms.
 
-yt-dlp: https://github.com/yt-dlp/yt-dlp (Unlicense; see bundled dependency licences).
-Deno 2.9.8: https://github.com/denoland/deno/tree/v2.9.8 (MIT and bundled notices).
-Full upstream licence: engine/import-tools/deno-LICENSE.md.
 uv: https://github.com/astral-sh/uv (MIT OR Apache-2.0).
 MIT licence: engine/tools/uv-LICENSE-MIT.
 

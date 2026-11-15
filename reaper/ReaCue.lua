@@ -635,7 +635,6 @@ local function background(now)
       local actions = {
         new_file=function()ctx.newsong.start("file")end,
         new_stems=function()ctx.newsong.start("stems")end,
-        new_link=function()ctx.newsong.start("link")end,
         prepare=tabs.song.prepare,publish=tabs.song.publish,separate=tabs.song.separate,
         do_all=tabs.song.do_all,reanalyse=tabs.song.reanalyse,
         jobs=function()ctx.overlay="jobs"end,qr=ctx.open_qr,check=ctx.open_check,
