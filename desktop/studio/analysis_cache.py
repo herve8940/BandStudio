@@ -36,12 +36,15 @@ def model_signature(engine,kind):
         files=[engine/'rhythm/final0.ckpt']
         code=Path(__file__).with_name('advanced.py')
         packages=('torch','torchaudio','numpy','soundfile','beat-this')
-    # Include ctime: replacing a model while preserving size and mtime must
-    # invalidate its results. No multi-gigabyte checkpoint scan on every hit.
+    # Unix ctime tracks changes, but Windows ctime is the creation time.
+    # Hash Windows models too: an in-place replacement can keep all three
+    # metadata values unchanged. Unix avoids rescanning large checkpoints.
     stamps=[]
     for path in sorted(files):
         stat=path.stat()
-        stamps.append((str(path.relative_to(engine)),stat.st_size,stat.st_mtime_ns,stat.st_ctime_ns))
+        stamp=(str(path.relative_to(engine)),stat.st_size,stat.st_mtime_ns,stat.st_ctime_ns)
+        if os.name=='nt':stamp+= (digest(path),)
+        stamps.append(stamp)
     versions={}
     for name in packages:
         try:versions[name]=metadata.version(name)

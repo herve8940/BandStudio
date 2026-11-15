@@ -74,8 +74,10 @@ def test_queue_resets_inherited_grid_and_calibrates_before_guides(tmp_path):
 
 def test_import_automatically_calibrates_renders_and_reuses_the_grid(tmp_path,monkeypatch):
     engine=tmp_path/'engine';library=tmp_path/'library';library.mkdir()
-    python=engine/'.venv-demucs/bin/python';python.parent.mkdir(parents=True);python.touch()
-    (engine/'.venv-demucs/lib/python3.12/site-packages/beat_this').mkdir(parents=True)
+    from platform_tools import python_for
+    python=python_for(engine,'.venv-demucs');python.parent.mkdir(parents=True);python.touch()
+    packages='Lib/site-packages' if python.suffix=='.exe' else 'lib/python3.12/site-packages'
+    (engine/'.venv-demucs'/packages/'beat_this').mkdir(parents=True)
     source=tmp_path/'New song.wav';sf.write(source,np.zeros((30*44100,2)),44100,subtype='FLOAT')
     services.atomic(library/'defaults.json',{**model.GUIDE_DEFAULTS,'firstBeat':2.635,'clickGain':1.28,'countVoice':False})
     api=Api(engine,library);calls=[]

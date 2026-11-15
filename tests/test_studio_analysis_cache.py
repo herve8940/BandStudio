@@ -48,6 +48,24 @@ def test_models_settings_and_drum_stem_changes_invalidate_results(tmp_path):
     assert create(options={'window':420},extra_audio=[drums]).key!=changed_stem.key
 
 
+def test_windows_model_changes_are_detected_with_frozen_timestamps(tmp_path,monkeypatch):
+    engine,audio,p=setup(tmp_path);model=engine/'structure/model.pt'
+    original=model.stat();stat=Path.stat
+    def frozen(path,*args,**kwargs):
+        value=stat(path,*args,**kwargs)
+        if path==model:
+            return SimpleNamespace(st_mode=value.st_mode,st_size=value.st_size,
+                                   st_mtime_ns=original.st_mtime_ns,st_ctime_ns=original.st_ctime_ns)
+        return value
+    # Simulate Windows creation-time semantics without changing pathlib's OS.
+    monkeypatch.setattr(analysis_cache,'os',SimpleNamespace(name='nt'))
+    monkeypatch.setattr(Path,'stat',frozen)
+    before=analysis_cache.AnalysisCache.create(p,'structure',audio,engine)
+    model.write_bytes(b'model-two')
+    after=analysis_cache.AnalysisCache.create(p,'structure',audio,engine)
+    assert before.key!=after.key
+
+
 def test_corrupt_or_partial_cache_recomputes_and_evidence_is_retained(tmp_path):
     engine,audio,p=setup(tmp_path);cache=analysis_cache.AnalysisCache.create(p,'structure',audio,engine)
     evidence=tmp_path/'source.npz';np.savez(evidence,values=[1,2,3])
