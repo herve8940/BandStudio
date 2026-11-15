@@ -4,6 +4,8 @@
 
 Mis à jour le 15 novembre 2026. Ce tutoriel concerne l’application autonome BandStudio sur macOS et Windows.
 
+**Pour débuter : [ouvrir le tutoriel visuel en 8 étapes](https://herve8940.github.io/BandStudio/tutoriel.html)** — import, tempo, premier « 1 », régions, guides, validation et export REAPER. Utilise les boutons Précédent et Suivant pour avancer à ton rythme.
+
 ## 1. Importer et préparer
 
 Ouvre un fichier audio de ton ordinateur. Pour plusieurs morceaux, utilise **File de préparation**, ajoute les fichiers puis clique sur **Démarrer la file**. La file ne démarre jamais seule après ouverture de l’application.

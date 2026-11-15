@@ -3,7 +3,7 @@
   <h1>BandStudio</h1>
   <p><strong>Ton morceau. À ta façon.</strong><br>Un atelier local pour tous les musiciens, de l’écoute à la répétition.</p>
 
-[💬 Discord · aide & communauté](https://discord.gg/5UnQPdMUpR) · [Site](https://herve8940.github.io/BandStudio/) · [Télécharger](https://github.com/herve8940/BandStudio/releases/tag/bandstudio-main) · [Guide](docs/BANDSTUDIO.md) · [Tutoriel](docs/BANDSTUDIO_TUTORIEL_fr.md) · [English](README.en.md) · [Signaler un bug](https://github.com/herve8940/BandStudio/issues/new/choose)
+[💬 Discord · aide & communauté](https://discord.gg/5UnQPdMUpR) · [Site](https://herve8940.github.io/BandStudio/) · [Télécharger](https://github.com/herve8940/BandStudio/releases/tag/bandstudio-main) · [Guide](docs/BANDSTUDIO.md) · [Tutoriel visuel](https://herve8940.github.io/BandStudio/tutoriel.html) · [Guide pas à pas](docs/BANDSTUDIO_TUTORIEL_fr.md) · [English](README.en.md) · [Signaler un bug](https://github.com/herve8940/BandStudio/issues/new/choose)
 
 ![Vérifications](https://github.com/herve8940/BandStudio/actions/workflows/bandstudio-release.yml/badge.svg)
 ![Site](https://github.com/herve8940/BandStudio/actions/workflows/pages.yml/badge.svg)
