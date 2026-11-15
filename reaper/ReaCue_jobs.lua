@@ -73,11 +73,6 @@ return function(ctx)
       U.text(U.fit(d.project or "",w-20,11),x+10,y+55,11,U.MUTED)
       if d.state=="running" and d.cancellable then
         if U.button("canceljob_"..i,text("Annuler","Cancel"),x+w-100,y+5,90,26,"warn") then J.cancel(d) end
-      elseif d.state=="done" and d.import_audio and d.import_audio.operation=="download" then
-        if U.button("importresume_"..i,text("Ouvrir","Open"),x+w-100,y+5,90,26) and ctx.require_edit() then
-          ctx.audio_import=ctx.audio_import or dofile(ctx.dir.."ReaCue_import.lua")(ctx)
-          ctx.audio_import.resume(d.import_audio)
-        end
       end
       if d.state=="error" or d.state=="interrupted" then
         local h=U.para(d.message or text("Le processus est arrêté. Reprends le morceau avec Tout faire.",

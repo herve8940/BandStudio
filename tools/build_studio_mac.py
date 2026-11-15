@@ -24,7 +24,7 @@ def clone(source, dest):
 def prepare_runtime(source, engine):
     """APFS copy-on-write snapshots; no runtime symlink to the source installation."""
     engine.mkdir(parents=True, exist_ok=True)
-    for name, version in [('.venv', '3.12'), ('.venv-demucs', '3.12'), ('.venv-structure', '3.11'),('.venv-import','3.12'),('.venv-words','3.12'),('.venv-chords','3.12'),('.venv-drums','3.12')]:
+    for name, version in [('.venv', '3.12'), ('.venv-demucs', '3.12'), ('.venv-structure', '3.11'),('.venv-words','3.12'),('.venv-chords','3.12'),('.venv-drums','3.12')]:
         base = (source / name / 'bin/python').resolve().parent.parent
         native = engine / ('python' + version.replace('.', ''))
         clone(base, native)

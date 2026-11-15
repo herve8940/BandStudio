@@ -257,7 +257,7 @@ def _main(argv=None):
     ap = argparse.ArgumentParser(prog="reacue")
     ap.add_argument("cmd", choices=["prepare", "publish", "concert", "concert-extras", "timecode",
                                     "concert-lighting", "export", "library", "notes", "open-song",
-                                    "concert-manage", "import-audio"])
+                                    "concert-manage"])
     ap.add_argument("--bpm", type=float, help="tempo approximatif (corrige double/moitié)")
     ap.add_argument("--count-in", type=int, help="mesures de count-in (défaut : réglages, 2)")
     ap.add_argument("--reanalyse", action="store_true",
@@ -270,7 +270,7 @@ def _main(argv=None):
     ap.add_argument("--job", help="export : tâche écrite par la fenêtre ReaCue (export_job.json)")
     ap.add_argument("--project", help="open-song : projet .RPP ouvert depuis l'écran BIBLIO de ReaCue Studio")
     ap.add_argument("--request", help="export : demande JSON (stems, format, kbps, range, mode, click)")
-    ap.add_argument("--operation", help="management or import operation")
+    ap.add_argument("--operation", help="concert management operation")
     ap.add_argument("--destination", help="new concert/package destination")
     ap.add_argument("--launch-command", help=argparse.SUPPRESS)
     ap.add_argument("--job-id", help=argparse.SUPPRESS)
@@ -305,26 +305,15 @@ def _main(argv=None):
             return 1
     if args.origin_project:
         os.environ["REACUE_EXPECTED_PROJECT"] = args.origin_project
-    if args.cmd in ("concert-manage", "import-audio"):
+    if args.cmd == "concert-manage":
         _status("running", cmd=args.cmd, step=t("cli_running"))
         try:
             progress = lambda text: _status("running", cmd=args.cmd, step=str(text))
-            if args.cmd == "concert-manage":
-                from .concert_manage import dispatch_request
-                data = {"operation": args.operation, "setlist": args.setlist,
-                        "name": args.name, "destination": args.destination}
-                result = dispatch_request(data, progress=progress)
-                field = "concert_manage"
-            else:
-                from .import_audio import dispatch_request
-                data = json.loads(Path(args.job).read_text(encoding="utf-8")) if args.job else json.loads(args.request or "{}")
-                if not isinstance(data, dict):
-                    raise ValueError("Invalid import request")
-                if args.operation:
-                    data["operation"] = args.operation
-                data["cancel_file"] = _JOB.data["cancel_file"]
-                result = dispatch_request(data, progress=progress)
-                field = "import_audio"
+            from .concert_manage import dispatch_request
+            data = {"operation": args.operation, "setlist": args.setlist,
+                    "name": args.name, "destination": args.destination}
+            result = dispatch_request(data, progress=progress)
+            field = "concert_manage"
             _status("done", cmd=args.cmd, message=result.get("message") or ("Terminé." if get_lang() == "fr" else "Done."), **{field: result})
             return 0
         except Exception as e:

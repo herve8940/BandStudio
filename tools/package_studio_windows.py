@@ -82,10 +82,6 @@ def build(output):
     ffroot=next(unpack.iterdir())
     for name in ['LICENSE','README.txt']:
         if (ffroot/name).is_file():shutil.copy2(ffroot/name,tools/('ffmpeg-'+name))
-    deno_url='https://github.com/denoland/deno/releases/download/v2.9.8/deno-x86_64-pc-windows-msvc.zip';deno=cache/'deno.zip';download(deno_url,deno)
-    assert hashlib.sha256(deno.read_bytes()).hexdigest()=='cba84b26e0df5ae7f74fc66b86a95b866872a86292ebd84fa1e959927edd93bf'
-    extract(deno,tools)
-    download('https://raw.githubusercontent.com/denoland/deno/v2.9.8/LICENSE.md',tools/'deno-LICENSE.md')
     dependency_list=subprocess.check_output([str(python),'-c',"import importlib.metadata,json; print(json.dumps(sorted([(d.metadata['Name'],d.version) for d in importlib.metadata.distributions()])))"],text=True)
     (package/'BUNDLED_PACKAGES.json').write_text(dependency_list,encoding='utf-8')
     demo=package/'examples/Decouverte.bandstudio'
@@ -94,7 +90,7 @@ def build(output):
     subprocess.run([str(compiler),'/nologo','/target:winexe','/platform:x64','/reference:System.Windows.Forms.dll','/win32icon:'+str(ROOT/'desktop/studio/assets/BandStudio.ico'),'/out:'+str(package/'BandStudio.exe'),str(ROOT/'desktop/studio/windows/Bootstrap.cs')],check=True)
     (package/'Demarrer-avec-console.cmd').write_bytes(b'@echo off\r\nsetlocal\r\ncd /d "%~dp0"\r\nset PYTHONUTF8=1\r\n"%~dp0engine\\python\\python.exe" "%~dp0engine\\windows\\launcher.py"\r\nif errorlevel 1 pause\r\n')
     commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip();runtime=subprocess.check_output([str(python),'--version'],text=True).strip()
-    manifest=dict(product='BandStudio',version=VERSION,commit=commit,platform='Windows 11 x64',python=runtime,models_bundled=False,ffmpeg_url=ffmpeg_url,ffmpeg_sha256=expected,deno_url=deno_url,deno_sha256=hashlib.sha256(deno.read_bytes()).hexdigest())
+    manifest=dict(product='BandStudio',version=VERSION,commit=commit,platform='Windows 11 x64',python=runtime,models_bundled=False,ffmpeg_url=ffmpeg_url,ffmpeg_sha256=expected)
     (package/'BUILD_INFO.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
     archive=output/('BandStudio-'+VERSION+'-Windows-x64.zip')
     with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=6) as z:

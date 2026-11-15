@@ -96,7 +96,7 @@ jobs:
           2. Décompresser tout le dossier dans un emplacement permanent.
           3. Ouvrir **BandStudio.exe**. Un morceau synthétique permet de tester immédiatement le lecteur et le guidage.
 
-          Python, FFmpeg et Deno sont inclus. REAPER n’est pas nécessaire pour lancer l’application.
+          Python et FFmpeg sont inclus. REAPER n’est pas nécessaire pour lancer l’application.
           Les moteurs de séparation des stems, structure, paroles, accords et batterie s’installent depuis **Réglages → Analyses locales** (Internet et plusieurs Go possibles).
           BandStudio est recentré sur la préparation : stems, tempo, structure, click, cues, paroles et accords.
           Dans **Valider & envoyer**, vérifier les trois points, valider le morceau, puis ouvrir le projet dans REAPER.

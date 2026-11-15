@@ -131,9 +131,8 @@ def test_portable_reaper_export_keeps_counts_regions_pan_and_original_mute(tmp_p
     assert np.max(np.abs(count[int(2*sr):]))>.2
 
 
-@pytest.mark.parametrize('url',['file:///etc/passwd','javascript:alert(1)','https://user:pass@example.com/a','https://example.com/a\n--exec=oops'])
-def test_link_rejects_non_public_url_syntax(url):
-    with pytest.raises(ValueError):services.checked_url(url)
+def test_link_import_is_not_available():
+    assert not hasattr(services,'checked_url') and not hasattr(services,'import_link')
 
 
 @pytest.mark.parametrize('extension,codec',[('mp3','libmp3lame'),('flac','flac'),('ogg','libvorbis'),('opus','libopus'),('wma','wmav2'),('aiff','pcm_s16be'),('m4a','aac'),('mkv','flac')])

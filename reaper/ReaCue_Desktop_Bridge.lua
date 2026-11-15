@@ -253,7 +253,7 @@ end
 function H.native(a)
   local tab=a.tab or "song"
   assert(({song=true,concert=true,stage=true,lighting=true,settings=true})[tab],"Onglet inconnu")
-  local actions={new_file=true,new_stems=true,new_link=true,prepare=true,publish=true,separate=true,do_all=true,reanalyse=true,jobs=true,qr=true,check=true}
+  local actions={new_file=true,new_stems=true,prepare=true,publish=true,separate=true,do_all=true,reanalyse=true,jobs=true,qr=true,check=true}
   assert(a.action==nil or actions[a.action],"Action inconnue")
   local alive=tonumber(reaper.GetExtState("ReaCue","win_alive")) or -100
   local ready=reaper.GetExtState("ReaCue","desktop_ready")

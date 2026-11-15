@@ -32,7 +32,7 @@ Les numéros des mesures de l’écran de travail suivent **la grille REAPER**. 
 
 | Fonctions du ReaCue actuel | Accès dans Desktop |
 | --- | --- |
-| Import fichier, dossier de stems, lien, reprise des imports | Préparer / Nouveau morceau → outils REAPER inclus |
+| Import fichier, dossier de stems, reprise des imports | Préparer / Nouveau morceau → outils REAPER inclus |
 | Séparation des stems, modèles, caches, récupération | Préparer → Séparer / Tout préparer |
 | Tempo, grille, structure, click et annonces | Préparer / Structure / Outils complets → Morceau |
 | Paroles automatiques, mots, accords, batterie/MIDI, grille PDF | Préparer / Outils complets → Morceau et Réglages |

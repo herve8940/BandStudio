@@ -12,9 +12,8 @@ import shutil
 import signal
 import subprocess
 import time
-from urllib.parse import urlsplit
 import uuid
-from platform_tools import executable, python_for, creation_flags
+from platform_tools import executable, creation_flags
 
 
 def atomic(path,value):
@@ -56,36 +55,6 @@ def decode(source,target,engine,*,start=None,duration=None,channels=2):
     if duration is not None:command+=['-t',str(duration)]
     command+=['-map','0:a:0','-vn','-ac',str(channels),'-ar','44100','-c:a','pcm_f32le',target]
     run(command)
-
-
-def checked_url(value):
-    if not isinstance(value,str) or len(value)>4096:raise ValueError('Lien invalide.')
-    u=urlsplit(value.strip())
-    if u.scheme not in ('https','http') or not u.hostname or u.username or u.password:
-        raise ValueError('Utilise un lien public HTTP ou HTTPS.')
-    if '\n' in value or '\r' in value:raise ValueError('Lien invalide.')
-    # The user explicitly chooses the URL. Never inherit browser cookies or account credentials.
-    return value.strip()
-
-
-def import_link(url,output,engine):
-    url=checked_url(url);folder=Path(output).parent;folder.mkdir(parents=True,exist_ok=True)
-    args=[python_for(engine,'.venv-import'),'-m','yt_dlp','--ignore-config','--no-plugin-dirs',
-          '--no-playlist','--no-cookies','--no-cookies-from-browser','--no-remote-components',
-          '--no-js-runtimes','--js-runtimes','deno:'+str(executable(engine,'deno')),
-          '--socket-timeout','25','--retries','2','--max-filesize','1G',
-          '--match-filter','!is_live & duration <= 10800','--ffmpeg-location',engine/'import-tools',
-          '--write-info-json','--write-thumbnail','--no-progress','-f','bestaudio/best','-o',folder/'source.%(ext)s','--',url]
-    run(args,timeout=3600)
-    metadata=next(folder.glob('source.info.json'),None)
-    info=json.loads(metadata.read_text()) if metadata else {}
-    files=[p for p in folder.glob('source.*') if p.suffix not in ('.json','.part','.ytdl','.jpg','.jpeg','.png','.webp','.avif')]
-    if len(files)!=1:raise RuntimeError('Aucun fichier audio unique reçu. Choisis un lien vers un morceau ou une vidéo.')
-    target=folder/'import.wav';decode(files[0],target,engine)
-    from catalog import extract
-    picture=next((p for p in folder.glob('source.*') if p.suffix in ('.jpg','.jpeg','.png','.webp','.avif')),files[0])
-    artwork=str(folder/'Artwork.jpg') if extract(picture,folder,engine) else None
-    atomic(output,dict(audio=str(target),title=str(info.get('title') or 'Morceau importé'),sourceURL=url,artwork=artwork,musicMetadata={k:v for k,v in dict(title=info.get('track'),artist=info.get('artist'),album=info.get('album')).items() if v}))
 
 
 def beat_grid(project):

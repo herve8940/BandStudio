@@ -13,7 +13,7 @@ def python_for(engine,environment='.venv'):
     target=engine/environment/('Scripts/python.exe' if os.name=='nt' else 'bin/python')
     if target.is_file():return target
     bundled=engine/'python/python.exe'
-    if os.name=='nt' and environment in ('.venv','.venv-import') and bundled.is_file():return bundled
+    if os.name=='nt' and environment=='.venv' and bundled.is_file():return bundled
     return target
 
 

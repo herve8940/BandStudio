@@ -13,7 +13,7 @@ import time
 import uuid
 
 from platform_tools import creation_flags, python_for
-from services import atomic, checked_url, safe_name
+from services import atomic, safe_name
 
 
 def options(value):
@@ -122,8 +122,8 @@ class PreparationQueue:
         if action == 'add':
             sources = value.get('sources', [])
             kind = value.get('kind')
-            if kind not in ('file', 'url') or not isinstance(sources, list) or not 1 <= len(sources) <= 100:
-                raise ValueError('Ajoute de 1 à 100 fichiers ou liens à la fois.')
+            if kind != 'file' or not isinstance(sources, list) or not 1 <= len(sources) <= 100:
+                raise ValueError('Ajoute de 1 à 100 fichiers à la fois.')
             if len(self.items) + len(sources) > 500:
                 raise ValueError('Vide les tâches terminées avant d’ajouter d’autres morceaux (500 maximum).')
             settings = options(value.get('options') or {})
@@ -132,15 +132,15 @@ class PreparationQueue:
             for source in sources:
                 if not isinstance(source, str) or not source.strip():
                     raise ValueError('Source vide ou invalide.')
-                source = checked_url(source) if kind == 'url' else str(Path(source).expanduser().resolve())
-                if kind == 'file' and not Path(source).is_file():
+                source = str(Path(source).expanduser().resolve())
+                if not Path(source).is_file():
                     raise ValueError('Fichier source introuvable : ' + Path(source).name)
                 key = (kind, source)
                 if key in keys:
                     continue
                 keys.add(key)
                 added.append(dict(id=uuid.uuid4().hex, kind=kind, source=source,
-                                  title=Path(source).stem if kind == 'file' else source,
+                                  title=Path(source).stem,
                                   options=settings.copy(), status='pending', completed=[], error=''))
             self.items.extend(added)
             self.message = f'{len(added)} morceau(x) ajouté(s).'

@@ -27,7 +27,7 @@ def main():
 
 Windows : extraire le ZIP complet dans un nouveau dossier puis ouvrir BandStudio.exe. Les installations existantes peuvent recevoir le code à la fermeture via les mises à jour automatiques. Les paquets update macOS sont destinés aux installations existantes.
 
-File de préparation : ajoute plusieurs fichiers de ton ordinateur ou des liens audio, puis clique sur Démarrer la file quand ta liste est prête. Un morceau est préparé à la fois, sans remplacer celui ouvert dans l’atelier. Pause et reprise conservent les étapes terminées ; une erreur sur un titre ne bloque pas les suivants. Les morceaux prêts apparaissent dans Mes morceaux et restent à vérifier avant validation. Laisse BandStudio ouvert pendant le traitement. Après fermeture, la file attend un nouveau clic ; elle ne redémarre jamais seule.
+File de préparation : ajoute plusieurs fichiers de ton ordinateur, puis clique sur Démarrer la file quand ta liste est prête. Un morceau est préparé à la fois, sans remplacer celui ouvert dans l’atelier. Pause et reprise conservent les étapes terminées ; une erreur sur un titre ne bloque pas les suivants. Les morceaux prêts apparaissent dans Mes morceaux et restent à vérifier avant validation. Laisse BandStudio ouvert pendant le traitement. Après fermeture, la file attend un nouveau clic ; elle ne redémarre jamais seule.
 
 Windows : correction des formes d’onde des morceaux longs (débordement d’entiers après 68 secondes). Les anciens affichages sont recalculés à l’ouverture sans modifier l’audio. La fenêtre démarre maximisée et le transport reste accessible sur les petits écrans.
 
