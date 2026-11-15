@@ -37,6 +37,8 @@ Les quatre niveaux **Métronome**, **Appels**, **Cues** et **Décompte** se règ
 
 ## 5. Corriger la fiche du morceau
 
+**[Suivre le tuto visuel Fiche morceau → PDF](https://herve8940.github.io/BandStudio/fiche-morceau.html)** — 8 étapes pour corriger les accords, les paroles, leur placement et exporter la fiche.
+
 Ouvre **Fiche morceau**. La fiche rassemble l’identité du morceau, la pochette disponible, le tempo, la tonalité, les sections, les accords et les paroles, mesure par mesure. Choisis un passage dans la liste ; clique sur une mesure ou un titre de section pour déplacer le curseur d’écoute.
 
 - Clique sur un accord ou une ligne de paroles pour modifier le texte et sa position. **Détails** affiche les repères supplémentaires.
