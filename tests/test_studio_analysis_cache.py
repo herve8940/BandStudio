@@ -90,11 +90,11 @@ def test_cached_structure_avoids_model_loading_without_rewriting_boundaries(tmp_
     for key in ('REACUE_STRUCTURE_DIR','REAPER_RESOURCE_PATH','HF_HUB_OFFLINE','REACUE_CPU_THREADS'):
         monkeypatch.setenv(key,os.environ.get(key,''))
     engine,audio,p=setup(tmp_path);calls=[]
-    def analyze(app,audio,window,evidence_path=None):
+    def analyze(app,audio,window,notify):
         calls.append('inference')
         return [dict(start=0,end=4.12,label='intro'),dict(start=4.12,end=8,label='verse')]
     module=SimpleNamespace(load_app=lambda:calls.append('load') or SimpleNamespace(device='cpu'),
-                           init_models=lambda app:None,segments_from_app=analyze,ram_gb=lambda:16)
+                           init_models=lambda app,notify:None,segments_from_app=analyze,choose_window=lambda:420)
     monkeypatch.setitem(sys.modules,'reacue_structure',module)
     snap=tmp_path/'project.json';snap.write_text(json.dumps(p));output=tmp_path/'job1/result.json'
     worker.analyze(str(audio),output,'structure',engine,snap)
@@ -105,6 +105,9 @@ def test_cached_structure_avoids_model_loading_without_rewriting_boundaries(tmp_
     result=json.loads(second.read_text())
     assert result['cacheHit'] and calls==['load','inference']
     assert result['sections'][1]['start']==4.12  # no stale alignment from the previous grid
+    worker.analyze(str(audio),second,'structure',engine,snap,reanalyze=True)
+    assert not json.loads(second.read_text())['cacheHit']
+    assert calls==['load','inference','load','inference']
 
 
 def test_compilation_cache_is_shared_across_jobs(tmp_path,monkeypatch):
@@ -125,9 +128,9 @@ def test_structure_pipeline_aligns_new_intros_using_cached_analysis(tmp_path,mon
     p['beats']=[.25+n*.5 for n in range(16)];p['settings']['firstBeat']=.25;p['bpm']=120
     cache=analysis_cache.AnalysisCache.create(p,'structure',audio,engine,dict(window=420))
     cache.store(dict(segments=[dict(start=0,end=2.12,label='intro'),dict(start=2.12,end=4.12,label='intro'),dict(start=4.12,end=8,label='verse')]))
-    monkeypatch.setitem(sys.modules,'reacue_structure',SimpleNamespace(ram_gb=lambda:16,load_app=lambda:pytest.fail('Model rerun despite cached analysis')))
+    monkeypatch.setitem(sys.modules,'reacue_structure',SimpleNamespace(choose_window=lambda:420,load_app=lambda:pytest.fail('Model rerun despite cached analysis')))
     snap=tmp_path/'project.json';snap.write_text(json.dumps(p));out=tmp_path/'job/result.json'
     worker.analyze(str(audio),out,'structure',engine,snap)
     result=json.loads(out.read_text());assert result['cacheHit'] is True
-    assert [s['name'] for s in result['sections']]==['Avant départ','Intro','Intro','Couplet']
-    assert [s['start'] for s in result['sections']]==[0,.25,2.25,4.12]
+    assert [s['name'] for s in result['sections']]==['Avant départ','Intro','Couplet']
+    assert [s['start'] for s in result['sections']]==[0,.25,4.12]

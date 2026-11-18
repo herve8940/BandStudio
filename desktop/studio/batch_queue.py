@@ -103,10 +103,17 @@ class PreparationQueue:
         status = 'Traitement en cours' if running else (
             'En attente : lecture ou traitement dans BandStudio' if self.enabled and not self.available()
             else 'File démarrée' if self.enabled else 'En pause · démarrage manuel')
+        progress={}
+        if running:
+            try:
+                progress=json.loads((self.directory/self.current['id']/'work/progress.json').read_text(encoding='utf-8'))
+                if not isinstance(progress,dict):progress={}
+            except (OSError,ValueError):pass
         return dict(type='batchQueue', enabled=self.enabled, running=running, status=status,
                     message=self.message, ack=self.ack, libraryChanged=self.library_changed,
                     items=[{**{k: e.get(k) for k in ('id', 'title', 'kind', 'source', 'status', 'error', 'project')},
                             'completed': len(e.get('completed', [])), 'total': len(e.get('plan', [])),
+                            'progress': progress if e is self.current else {},
                             'stage': LABELS.get(e.get('stage'), e.get('stage', ''))} for e in self.items])
 
     def available(self):

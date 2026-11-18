@@ -9,6 +9,7 @@ import numpy as np
 import soundfile as sf
 
 GUIDE_DEFAULTS=dict(clickEnabled=False,clickGain=.45,clickPan=0,subdivision=1,beatsPerBar=4,firstBeat=0,gridMode='detected',manualBPM=120,countBars=2,countClick=True,countVoice=True,countGain=.8,countPan=0,countEveryLoop=False,countOnSeek=True,callsEnabled=True,callsGain=.9,cuesGain=.9,callsPan=0,leadBeats=8,voice='Système',language='fr',speechRate=180,speakCues=True,regionCountEnabled=True,regionCountBeats=4,exportGuides=True,exportCount=True,loopStep=0,loopEvery=4,loopMaxRate=1)
+GUIDE_DEFAULTS.update(pulseUnit=None,referenceBPM=None)
 
 def ident():return str(uuid.uuid4())
 
@@ -55,6 +56,8 @@ def validate(p,root=None):
     for x in p['drumHits']:number(x['time'],0,length);number(x['pitch'],0,127);number(x['velocity'],1,127)
     for v in p['beats']:number(v,0,length+.1)
     s={**GUIDE_DEFAULTS,**p['settings']}
+    if s.get('pulseUnit') not in (None,'quarter','dottedQuarter'):raise ValueError('Unité de pulsation invalide.')
+    if s.get('referenceBPM') is not None:number(s['referenceBPM'],20,400)
     for key,low,high in [('clickGain',0,1.5),('callsGain',0,1.5),('cuesGain',0,1.5),('countGain',0,1.5),('clickPan',-1,1),('callsPan',-1,1),('countPan',-1,1),('firstBeat',-30,43200),('manualBPM',20,400),('loopStep',0,.25),('loopMaxRate',.5,1.5)]:number(s[key],low,high)
     for key,low,high in [('subdivision',1,4),('beatsPerBar',1,12),('countBars',0,8),('regionCountBeats',1,12),('leadBeats',0,32),('speechRate',100,360),('loopEvery',1,32)]:
         if int(s[key])!=number(s[key],low,high):raise ValueError('Nombre entier attendu : '+key)
@@ -78,7 +81,8 @@ def load(root):
 
 def save(p,root):
     from services import atomic
-    validate(p,root);atomic(Path(root)/'project.json',p)
+    from cue_feedback import record
+    validate(p,root);record(root,p);atomic(Path(root)/'project.json',p)
 
 def waveform(path):
     path=Path(path);info=sf.info(path);peaks=np.zeros(720,dtype=np.float32);at=0
@@ -93,13 +97,15 @@ def track(path,root,name,role,offset=0):
 def guide_key(p):
     value={k:p[k] for k in ['settings','bpm','beats','sections','cues']};value['duration']=duration(p)
     value=copy.deepcopy(value)
+    value['settings'].pop('referenceBPM',None)
+    if value['settings']['gridMode']=='detected':value['settings'].pop('pulseUnit',None)
     for key in ('clickGain','callsGain','cuesGain','countGain'):value['settings'][key]=1
     for key in ('clickPan','callsPan','countPan'):value['settings'][key]=0
     for key in ('clickEnabled','callsEnabled','speakCues'):value['settings'][key]=True
     for item in value['sections']+value['cues']:
         for key in ('reviewed','locked','origin'):item.pop(key,None)
     # Platform names prevent accidentally reusing Mac voice assets after editing on Windows.
-    return 'windows-guides-4:'+hashlib.sha256(json.dumps(value,sort_keys=True,allow_nan=False).encode()).hexdigest()
+    return 'windows-guides-6:'+hashlib.sha256(json.dumps(value,sort_keys=True,allow_nan=False).encode()).hexdigest()
 
 def period(p,at):
     import bisect
@@ -107,7 +113,8 @@ def period(p,at):
     if s['gridMode']=='detected' and len(beats)>1:
         i=max(1,min(len(beats)-1,bisect.bisect_right(beats,at)));delta=beats[i]-beats[i-1]
         if .1<delta<3:return delta
-    return 60/(s['manualBPM'] if s['gridMode']=='fixed' else p['bpm'] or s['manualBPM'])
+    from musical_timing import pulse_bpm
+    return 60/pulse_bpm(p)
 
 def apply_sections(p,suggestions):
     protected=[s for s in p['sections'] if s.get('locked') or s.get('origin')=='manual'];result=copy.deepcopy(protected)
@@ -125,6 +132,7 @@ def apply_sections(p,suggestions):
 
 def analysis_done(p,kind):
     """Existing musical decisions take priority over a preparation request."""
+    if kind=='chords':return bool(p.get('chordReference') or any(c.get('manual') for c in p.get('chords',[])) or (p.get('preparation') or {}).get('fingerprint'))
     if kind in ('grid','smartgrid'):
         return bool(p.get('gridLocked') or (p.get('preparation') or {}).get('fingerprint') or (p.get('settings') or {}).get('gridMode')=='fixed' or p.get('beats') or any(k in p.get('analysesCompleted',[]) for k in ('grid','smartgrid')))
     if kind in ('structure','lyrics','chords','drums','key'):
@@ -140,8 +148,8 @@ def analysis_completed(p,kind):
     p['analysesCompleted']=list(dict.fromkeys([*p.get('analysesCompleted',[]),kind]))
 
 
-def apply_grid(p,result,offset=0):
-    if analysis_done(p,'smartgrid'):return
+def apply_grid(p,result,offset=0,*,reanalyze=False):
+    if p.get('gridLocked') or (not reanalyze and analysis_done(p,'smartgrid')):return
     from services import calibrate_grid
     result=calibrate_grid(result)
     length=duration(p)
@@ -149,7 +157,7 @@ def apply_grid(p,result,offset=0):
     p['downbeats']=[t+offset for t in result.get('downbeats',[]) if 0<=t+offset<length]
     p['bpm']=result.get('bpm',0)
     p['settings'].update(gridMode='detected', firstBeat=result['firstBeat']+offset,
-                         beatsPerBar=result['beatsPerBar'])
+                         beatsPerBar=result['beatsPerBar'],pulseUnit=result.get('pulseUnit','quarter'))
     p['analysisNote']=result['gridStatus']
 
 

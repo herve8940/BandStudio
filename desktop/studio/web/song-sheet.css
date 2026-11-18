@@ -47,6 +47,7 @@ body.sheet-open header h1{font-size:16px}
 .sheet-lyrics .sheet-entry-text{color:#a65343;font-size:12px}
 .sheet-entry small{display:none;font-size:8px;color:#8c9485;line-height:1.4;font-weight:400}.sheet-details .sheet-entry small{display:block}
 #view-sheet .sheet-entry.manual .sheet-entry-text{text-decoration:underline;text-decoration-color:#c3d3a0;text-underline-offset:4px;text-decoration-thickness:2px}
+#view-sheet .sheet-entry.uncertain .sheet-entry-text{color:#876017}
 #view-sheet .sheet-add{font-size:9px;border:0;background:transparent;align-self:flex-start;padding:3px 4px;color:#8a947e;line-height:1.2;border-radius:3px}
 .sheet-lane-chords .sheet-add{flex-basis:100%;text-align:left}.sheet-lane.has-entries .sheet-add{opacity:.35}.sheet-bar:hover .sheet-add,.sheet-bar:focus-within .sheet-add{opacity:1}
 #view-sheet .sheet-add:hover{background:#e9efdd;color:#3b5735}

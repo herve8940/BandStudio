@@ -10,10 +10,13 @@ from windows.audio import Audio
 
 
 def advanced_task(host, kind, options):
-    if model.analysis_done(host._project,kind):
+    reanalyze=options.get('reanalyze') is True
+    if not reanalyze and model.analysis_done(host._project,kind):
         host._notice='Analyse déjà disponible et résultat protégé. Les corrections et validations sont conservées.';return
     p=host._project;root=host._root
     if root is None:raise ValueError('Ouvre d’abord un morceau.')
+    if kind=='smartgrid' and p.get('gridLocked'):
+        raise ValueError('Le calage est protégé. Décoche « Protéger le calage » dans Click & cues avant de relancer.')
     audio=None;offset=0
     if kind in ('smartgrid','key'):
         source=next((t for t in p['tracks'] if t['role']=='source'),next((t for t in p['tracks'] if not t['role'].startswith('guide_')),None))
@@ -26,7 +29,7 @@ def advanced_task(host, kind, options):
         render.render(audio,0,model.duration(p),False)
     _,obj=host._work(kind,audio,['--options',json.dumps(options,ensure_ascii=True)])
     if kind=='smartgrid':
-        host._remember();model.apply_grid(p,obj,offset)
+        host._remember();model.apply_grid(p,obj,offset,reanalyze=reanalyze)
         model.analysis_completed(p,kind);host._reload();host._save();host._notice=p['analysisNote']
     elif kind=='key':
         host._remember();p['key']=obj['key'];model.analysis_completed(p,kind);host._save();host._notice='Tonalité proposée : '+p['key']+'. Vérifie et corrige-la dans le prompteur.'

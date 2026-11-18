@@ -15,7 +15,7 @@ function renderPreparation(){
  $('deliveryStatus').classList.toggle('approved',ready);
  $('deliveryName').textContent=loaded?p.name:'Aucun morceau ouvert';
  const rate=transport.rate||1,pitch=transport.pitch||0,tracks=p.tracks.filter(t=>!t.role.startsWith('guide_'));
- const bpm=s.gridMode==='fixed'?s.manualBPM:p.bpm;
+ const bpm=tempoSummary(p).bpm;
  const metrics=[['Pistes',tracks.length],['Sections',p.sections.length],['Repères',p.cues.length],['Tempo',bpm?(bpm*rate).toFixed(1)+' BPM':'À caler'],['Vitesse',Math.round(rate*100)+' %'],['Transposition',(pitch>0?'+':'')+pitch+' demi-tons']];
  $('deliveryMetrics').replaceChildren(...metrics.map(([label,value])=>{const e=node('div');e.append(node('small','',label),node('strong','',String(value)));return e;}));
  $('deliveryTracks').replaceChildren(...tracks.map(t=>{const row=node('div','delivery-track');row.append(node('span','track-dot'),node('span','',t.name),node('small','',t.muted?'Muette':t.solo?'Solo':roles[t.role]||'Piste'));row.firstChild.style.background=colors[t.role]||colors.other;return row;}));
@@ -48,7 +48,7 @@ renderTransport=function(){previousPreparationTransport();const key=[state.proje
 const navigation=node('div','navigation-tools');
 function navigate(direction){
  const at=transport.position||0,s={...guideDefaults,...state.project.settings};
- const period=60/(s.gridMode==='fixed'?s.manualBPM:state.project.bpm||s.manualBPM);
+ const period=60/pulseTempo(state.project);
  const marks=[...state.project.sections.map(x=>x.start),...state.project.cues.map(x=>x.time)].sort((a,b)=>a-b);
  const target=direction==='start'?0:direction==='end'?state.duration:direction==='back'?at-period*s.beatsPerBar:direction==='forward'?at+period*s.beatsPerBar:direction==='previous'?[...marks].reverse().find(x=>x<at-.05)??0:marks.find(x=>x>at+.05)??state.duration;
  send('seek',{time:Math.max(0,Math.min(state.duration,target))});

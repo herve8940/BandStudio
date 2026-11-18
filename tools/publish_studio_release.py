@@ -23,36 +23,8 @@ def main():
         platforms[info['platform']]={'url':f'https://github.com/{repo}/releases/download/{tag}/{asset.name}','sha256':info['sha256']}
         assets.append(str(asset))
     assets+=list(map(str,dist.rglob('BandStudio-1.1.0-Windows-x64.zip*')))
-    notes=dist/'notes.md';notes.write_text(f'''BandStudio · préparation musicale pour tous les musiciens.
-
-Windows : extraire le ZIP complet dans un nouveau dossier puis ouvrir BandStudio.exe. Les installations existantes peuvent recevoir le code à la fermeture via les mises à jour automatiques. Les paquets update macOS sont destinés aux installations existantes.
-
-Nouveautés du 15 novembre 2026 : éditeur manuel avec zoom, déplacement des sections et cues par temps/mesure, écoute autour et validation un repère à la fois. Quatre niveaux indépendants : métronome, appels, cues et décompte.
-
-Fiche morceau : corrige accords et paroles mesure par mesure, déplace les lignes avec leurs mots synchronisés, annule/rétablis les modifications et exporte une grille PDF. Choisis où enregistrer la copie, puis ouvre-la dans ton lecteur PDF.
-
-Calage et préparation : la grille est vérifiée à l’import, le décompte suit les temps enregistrés et préserve les levées. Les analyses déjà disponibles sont réutilisées ; les corrections protégées sont conservées. Réexporte les anciens projets REAPER pour appliquer le nouveau décompte.
-
-Tutoriel FR : https://github.com/herve8940/BandStudio/blob/main/docs/BANDSTUDIO_TUTORIEL_fr.md
-Tutorial EN : https://github.com/herve8940/BandStudio/blob/main/docs/BANDSTUDIO_TUTORIAL_en.md
-
-File de préparation : ajoute plusieurs fichiers de ton ordinateur, puis clique sur Démarrer la file quand ta liste est prête. Un morceau est préparé à la fois, sans remplacer celui ouvert dans l’atelier. Pause et reprise conservent les étapes terminées ; une erreur sur un titre ne bloque pas les suivants. Les morceaux prêts apparaissent dans Mes morceaux et restent à vérifier avant validation. Laisse BandStudio ouvert pendant le traitement. Après fermeture, la file attend un nouveau clic ; elle ne redémarre jamais seule.
-
-Windows : correction des formes d’onde des morceaux longs (débordement d’entiers après 68 secondes). Les anciens affichages sont recalculés à l’ouverture sans modifier l’audio. La fenêtre démarre maximisée et le transport reste accessible sur les petits écrans.
-
-Mes morceaux : recherche automatique des pochettes par titre et artiste, y compris pour les morceaux déjà importés. Les pochettes existantes restent conservées. Clique sur une pochette pour préciser les informations, choisir un album ou une image locale. Recherche en arrière-plan, cache hors ligne et relance des pochettes manquantes. Seuls le titre et l’artiste sont envoyés à MusicBrainz ; aucun audio n’est transmis.
-
-Tout préparer : enchaînement des analyses installées puis des guides, depuis Séparer & analyser ou Pistes & structure. Les pistes déjà séparées et les repères protégés sont conservés. Une interruption conserve les étapes terminées. La validation finale reste à faire après écoute.
-
-REAPER : le décompte avant la musique est rétabli pour laisser aux musiciens le temps de se préparer. Les pistes, le tempo, les régions et les repères sont décalés ensemble. Le nombre de mesures et l’inclusion du décompte dans les exports restent réglables dans Click & cues. Refais l’export REAPER pour retrouver ce départ préparé.
-
-Annonces Windows : voix locales OneCore en français et anglais, normalisation du niveau et cache distinct par langue. Si une langue manque, l’application indique comment l’ajouter dans Réglages → Voix Windows. Aucun texte n’est envoyé à un service vocal en ligne.
-
-Communauté et support Discord : https://discord.gg/5UnQPdMUpR
-Aide & Discord : prépare et relis un rapport, puis copie-le dans le salon des bugs. Diagnostic compact facultatif, sans audio ni projet.
-
-Révision : {sha}
-''',encoding='utf-8')
+    notes=dist/'notes.md'
+    notes.write_text(Path('docs/RELEASE_2026-11-19.md').read_text(encoding='utf-8')+'\n\nRévision : '+sha+'\n',encoding='utf-8')
     exists=subprocess.run(['gh','release','view',tag],capture_output=True).returncode==0
     if not exists:gh('release','create',tag,*assets,'--target',sha,'--title','BandStudio 1.1 · '+sha[:7],'--notes-file',str(notes),'--latest=true')
     # A retried job may find a release whose first upload was interrupted.

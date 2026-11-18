@@ -67,7 +67,8 @@ def review(p):
     else:
         if len(beats) < 2 or any(not math.isfinite(b) for b in beats) or any(b <= a for a, b in zip(beats, beats[1:])):
             raise ValueError('Détecte les temps ou choisis un tempo fixe dans Click & cues avant de valider.')
-        bpm = 60 / (beats[1] - beats[0])
+        from musical_timing import pulse_scale
+        bpm = 60 * pulse_scale(settings) / (beats[1] - beats[0])
     if not math.isfinite(bpm) or not 20 <= bpm <= 400:
         raise ValueError('Vérifie le tempo du morceau dans Click & cues.')
     end = 0
@@ -167,6 +168,7 @@ def transformed(p, folder, engine):
         result[key] = [b / rate for b in result.get(key, [])]
     result['bpm'] *= rate
     result['settings']['manualBPM'] *= rate
+    if result['settings'].get('referenceBPM'):result['settings']['referenceBPM'] *= rate
     result['settings']['firstBeat'] /= rate
     result['key'] = transpose(result.get('key', ''), pitch)
     result['_root'] = str(folder)

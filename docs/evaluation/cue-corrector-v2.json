@@ -1,0 +1,96 @@
+{
+  "schema": 1,
+  "candidateSHA256": "7c73724d433dea377a67e66424ea613f22ef26c4febe4958f35553134982f1d2",
+  "releasePlanSHA256": "1f0f014b8f43ff8a4587e7e33fa527c2e232f17b53ea967c34872de49a34ae89",
+  "freshSongs": 24,
+  "passed": true,
+  "checks": {
+    "validation": {
+      "passed": true,
+      "checks": {
+        "sufficientEvaluation": true,
+        "measurable": true,
+        "f1Gain": true,
+        "intervalGain": true,
+        "looseF1Preserved": true,
+        "labelsPreserved": true,
+        "goodBoundariesPreserved": true,
+        "noSevereRegression": true
+      }
+    },
+    "holdout": {
+      "passed": true,
+      "checks": {
+        "sufficientEvaluation": true,
+        "measurable": true,
+        "f1Gain": true,
+        "intervalGain": true,
+        "looseF1Preserved": true,
+        "labelsPreserved": true,
+        "goodBoundariesPreserved": true,
+        "noSevereRegression": true
+      }
+    },
+    "positive95PercentConfidence": true,
+    "knownRegressionPreserved": true,
+    "newPreviouslyGoodTransitionsPreserved": true
+  },
+  "validation": {
+    "songs": 24,
+    "matchedConsensusPairs": 87,
+    "changes": 178,
+    "removed": 0,
+    "before": {
+      "f1HalfSecond": 0.5551765779331878,
+      "f1ThreeSeconds": 0.6131275497950157,
+      "labelF1HalfSecond": 0.2811946983987439,
+      "intervalMAESeconds": 0.24888828894252915
+    },
+    "after": {
+      "f1HalfSecond": 0.5735649779791965,
+      "f1ThreeSeconds": 0.6131275497950157,
+      "labelF1HalfSecond": 0.29578737725772714,
+      "intervalMAESeconds": 0.15129696949265642
+    },
+    "previouslyGood": 49,
+    "brokenGood": 0,
+    "brokenGoodFraction": 0.0,
+    "severeRegressions": []
+  },
+  "holdout": {
+    "songs": 24,
+    "matchedConsensusPairs": 79,
+    "changes": 150,
+    "removed": 0,
+    "before": {
+      "f1HalfSecond": 0.46843593913622344,
+      "f1ThreeSeconds": 0.6259802208861108,
+      "labelF1HalfSecond": 0.2425825111499902,
+      "intervalMAESeconds": 0.30967318459493604
+    },
+    "after": {
+      "f1HalfSecond": 0.5205525138346293,
+      "f1ThreeSeconds": 0.6299962654352437,
+      "labelF1HalfSecond": 0.27157445534414026,
+      "intervalMAESeconds": 0.20586940291153222
+    },
+    "previouslyGood": 46,
+    "brokenGood": 0,
+    "brokenGoodFraction": 0.0,
+    "severeRegressions": []
+  },
+  "confidenceInterval": {
+    "method": "Paired artist/song bootstrap; both annotators stay together",
+    "samples": 5000,
+    "lower": 0.026707134789603366,
+    "upper": 0.08242225045416747,
+    "mean": 0.052116574698405825,
+    "level": 0.95
+  },
+  "limitation": "New to this corrector; SALAMI overlap with SongFormer pretraining unknown. Structural transition timing only.",
+  "modelVersion": "cue-corrector-v2",
+  "sourceReportSHA256": "d6c8c6c27bc7097d4fc3483cece466e57b4fe7b7e06506ffe455ec898208ba50",
+  "modelSHA256": "30aa2cd7c03316195c5691622610ab5e4ab113db3ee50a23ae876948308a8735",
+  "evaluatedOn": "macOS Intel, SongFormer window 60 seconds",
+  "evaluationDate": "2026-11-18"
+}

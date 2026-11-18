@@ -49,7 +49,13 @@ def model_signature(engine,kind):
     for name in packages:
         try:versions[name]=metadata.version(name)
         except metadata.PackageNotFoundError:pass
-    return dict(files=stamps,code=digest(code),packages=versions)
+    signature=dict(files=stamps,code=digest(code),packages=versions)
+    if kind=='rhythm':
+        # Calibration weights and bar voting change interpretation of raw logits.
+        # Never reuse confidence from a different fitted model.
+        signature['calibration']={name:digest(code.with_name(name)) if code.with_name(name).is_file() else None
+                                  for name in ('services.py','rhythm_quality.py','rhythm-quality.json','rhythm_adapter.py','rhythm-adapter.json')}
+    return signature
 
 
 class AnalysisCache:

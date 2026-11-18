@@ -4,7 +4,7 @@ let batchState={items:[],enabled:false},batchSignature='';
 const queueView=node('section','view');queueView.id='view-queue';queueView.hidden=true;
 queueView.innerHTML=`<div class="page-heading"><div class="eyebrow">AJOUTER · LANCER · RETROUVER</div><h2>File de préparation</h2><p>Ajoute tous tes morceaux, puis lance leur préparation. Rien ne démarre avant ton clic.</p></div>
 <div class="cards preparation queue-inputs">
-<article><h3>1. Choisir la préparation</h3><label>Instruments<select id="queueModel"><option value="htdemucs">4 pistes · chant, batterie, basse, autres</option><option value="htdemucs_ft">4 pistes · modèle affiné, plus lent</option><option value="htdemucs_6s">6 pistes · avec guitare et piano</option></select></label><label>Calcul<select id="queueQuality"><option value="standard">Équilibré</option><option value="careful">Approfondi · plus long</option><option value="fast">Rapide</option></select></label><label>Langue des paroles<select id="queueLanguage"><option value="auto">Détection automatique</option><option value="fr">Français</option><option value="en">Anglais</option></select></label><small>Ces choix s’appliquent aux prochains ajouts. Séparation, tempo, tonalité et guides ; structure, paroles et accords selon les moteurs installés.</small></article>
+<article><h3>1. Choisir la préparation</h3><label>Instruments<select id="queueModel"><option value="htdemucs" selected>4 pistes · standard (recommandé)</option><option value="htdemucs_ft">4 pistes · affiné (beaucoup plus long)</option><option value="htdemucs_6s">6 pistes · avec guitare et piano</option></select></label><small>Chant, batterie, basse et autres instruments. Le profil affiné effectue 4 passages en mode Équilibré : le calcul est beaucoup plus long, surtout sur processeur.</small><label>Calcul<select id="queueQuality"><option value="standard">Équilibré</option><option value="careful">Approfondi · plus long</option><option value="fast">Rapide</option></select></label><label>Langue des paroles<select id="queueLanguage"><option value="auto">Détection automatique</option><option value="fr">Français</option><option value="en">Anglais</option></select></label><small>Ces choix s’appliquent aux prochains ajouts. Séparation, tempo, tonalité et guides ; structure, paroles et accords selon les moteurs installés.</small></article>
 <article><h3>2. Ajouter les sources</h3><button id="queueFiles">＋ Fichiers sur mon ordinateur</button><p>Plusieurs fichiers à la fois, un morceau par fichier. Garde les sources disponibles jusqu’à leur import.</p></article>
 </div><div class="queue-toolbar"><button id="queueStart" class="primary">▶ Démarrer la file</button><button id="queuePause">Pause</button><button id="queueClear">Retirer les tâches terminées</button><button id="queueRefresh">Actualiser la file</button></div>
 <p id="queueStatus" role="status">Prête à recevoir tes morceaux.</p><p id="queueMessage" role="status" hidden></p><p class="queue-help">Laisse BandStudio ouvert. La file attend pendant une lecture ou une autre analyse. Les étapes terminées sont conservées ; après une pause ou une fermeture, seule l’étape interrompue est relancée. Les morceaux préparés restent à écouter et à valider.</p>
@@ -38,6 +38,16 @@ function renderBatch(){
   const row=node('article','queue-item'),info=node('div','queue-info'),actions=node('div','queue-actions');
   info.append(node('small','queue-state '+item.status,labels[item.status]||item.status),node('h3','',item.title),node('small','queue-source',item.source));
   if(item.total)info.append(node('p','',item.completed+'/'+item.total+' étapes terminées'+(item.stage?' · '+item.stage:'')));
+  if(item.total){
+   const current=item.progress||{},part=Number.isFinite(current.progress)?Math.max(0,Math.min(100,current.progress)):0;
+   const value=item.status==='done'?100:Math.min(99,100*(item.completed+(item.status==='running'?part/100:0))/item.total);
+   const meter=progressMeter('Préparation du morceau');
+   updateMeter(meter,value,Math.floor(value)+' % des étapes terminées');info.append(meter);
+   if(item.status==='running'){
+    const step=progressMeter(item.stage||'Analyse');
+    updateMeter(step,part,(item.stage||'Analyse')+' · '+Math.floor(part)+' % · '+(current.progressLabel||'Préparation…'),!!current.indeterminate);info.append(step);
+   }
+  }
   if(item.error)info.append(node('p','queue-error',item.error));
   if(item.status==='done'&&item.project)actions.append(button('Ouvrir le morceau',()=>{send('library',{path:item.project});view('studio');},'primary'));
   if(item.status==='error')actions.append(button('Réessayer',()=>queueSend('retry',{id:item.id})));

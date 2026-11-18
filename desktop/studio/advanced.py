@@ -31,6 +31,68 @@ def media_path(root, relative):
     return path
 
 
+def consistent_pulses(beats, downbeats):
+    """Remove subdivisions only when other bars establish the same slower pulse.
+
+    Count-weighted tempo can favor a short run of triplets over most of a song.
+    Weight intervals by their duration, require several supporting bars, and use
+    downbeats to preserve phase. Genuine faster bars and irregular passages stay.
+    """
+    import numpy as np
+    if len(beats) < 16 or len(downbeats) < 6:
+        return beats, 0
+    delta = np.diff(beats)
+    valid = delta[(delta > .15) & (delta < 3)]
+    if not len(valid):return beats, 0
+    ordered = np.sort(valid)
+    pulse = ordered[np.searchsorted(np.cumsum(ordered), ordered.sum()/2)]
+    indices = sorted(set(int(np.argmin(abs(beats-t))) for t in downbeats
+                         if beats[0] <= t <= beats[-1]))
+    bars = [(a,b) for a,b in zip(indices,indices[1:]) if b>a]
+    regular = [(a,b) for a,b in bars if b-a>=2
+               and np.std(delta[a:b])/np.mean(delta[a:b])<.15]
+    # Subdivisions may occupy over half the track. Compare equal-length bars
+    # as well as interval duration; a true tempo increase shortens the bars.
+    for count in sorted(set(b-a for a,b in regular)):
+        matching = [(a,b) for a,b in regular if b-a==count]
+        if len(matching)<4:continue
+        length = float(np.median([beats[b]-beats[a] for a,b in matching]))
+        if length/count < 1.5*pulse:continue
+        support = sum(beats[b]-beats[a] for a,b in matching)
+        subdivisions = sum((b-a) in (count*2,count*3,count*4)
+                           and abs((beats[b]-beats[a])/length-1)<.18 for a,b in regular)
+        if support >= .2*(beats[-1]-beats[0]) and subdivisions>=3:
+            pulse = length/count
+            break
+    anchors = [(a,b) for a,b in bars if b-a>=2
+               and abs(np.median(delta[a:b])/pulse-1)<.15
+               and np.std(delta[a:b])/np.mean(delta[a:b])<.15]
+    if len(anchors)<4:return beats, 0
+    # A missed downbeat may span two bars; the shortest common bar count wins.
+    counts = np.asarray([b-a for a,b in anchors])
+    meter = int(np.bincount(counts).argmax())
+    bar_seconds = float(np.median([beats[b]-beats[a] for a,b in anchors if b-a==meter]))
+    keep = np.ones(len(beats), dtype=bool)
+    corrected = 0
+    for a,b in bars:
+        steps = delta[a:b]
+        units = round((beats[b]-beats[a])/bar_seconds)
+        if (not 1<=units<=4 or b-a<=meter*units
+                or abs((beats[b]-beats[a])/(bar_seconds*units)-1)>.18):continue
+        count = meter*units
+        period = (beats[b]-beats[a])/count
+        positions = (beats[a:b]-beats[a])/period
+        # Missing/weak subdivisions are allowed; off-grid expressive beats are not.
+        if not any(b-a<=count*factor and np.max(abs(positions*factor-np.round(positions*factor)))<.22
+                   for factor in (2,3,4)):continue
+        selected = [a+int(np.argmin(abs(positions-j))) for j in range(count)]
+        if any(abs(beats[index]-(beats[a]+j*period))>.15*period for j,index in enumerate(selected)):continue
+        keep[a:b] = False
+        keep[selected] = True
+        corrected += 1
+    return (beats[keep], corrected) if corrected>=3 else (beats, 0)
+
+
 def musical_grid(beats, downbeats, duration):
     """Accept a bar phase only when several consecutive bars agree."""
     import numpy as np
@@ -38,6 +100,7 @@ def musical_grid(beats, downbeats, duration):
     beats = beats[np.isfinite(beats) & (beats >= 0) & (beats < duration)]
     downbeats = np.asarray(downbeats, dtype=float)
     downbeats = downbeats[np.isfinite(downbeats) & (downbeats >= 0) & (downbeats < duration)]
+    beats, corrected = consistent_pulses(beats, downbeats)
     indices = sorted(set(int(np.argmin(abs(beats - t))) for t in downbeats)) if len(beats) else []
     intervals = np.diff(indices)
     meter, agreement, first = 0, 0., None
@@ -57,19 +120,149 @@ def musical_grid(beats, downbeats, duration):
     return dict(beats=beats.tolist(), downbeats=beats[indices].tolist(),
                 bpm=float(60 / np.median(delta)) if len(delta) else 0,
                 beatsPerBar=meter, firstBeat=first, agreement=agreement,
-                gridStatus=status)
+                gridStatus=status,
+                tempoNote='Subdivisions regroupées pour garder une pulsation cohérente · à vérifier à l’écoute' if corrected else '')
 
 
-def smart_grid(audio, engine, notify=lambda info: None, project=None):
+def grid_from_frames(beat_logits, downbeat_logits, duration, fps=50, *, quality=True):
+    """Decode pulse continuity before voting for a bar phase.
+
+    Model windows can alternate between beats and subdivisions or lose quiet
+    pulses during syncopation. Use the established local tempo and bar evidence;
+    retain observed onsets, genuine tempo changes and separate passages.
+    """
+    import numpy as np
+    from services import calibrate_grid
+    beat_logits = np.asarray(beat_logits, dtype=float).reshape(-1)
+    downbeat_logits = np.asarray(downbeat_logits, dtype=float).reshape(-1)
+    if (beat_logits.shape != downbeat_logits.shape or not np.isfinite(beat_logits).all()
+            or not np.isfinite(downbeat_logits).all()):
+        raise ValueError('Prédictions rythmiques incomplètes ou invalides.')
+    def peaks(values, threshold=0):
+        # Only NumPy is required by the packaged rhythm environment. Include
+        # boundary attacks and suppress nearby weaker peaks, including plateaus.
+        padded = np.pad(values, (1,1), constant_values=-np.inf)
+        indices = np.flatnonzero((values>threshold) & (values>padded[:-2]) & (values>=padded[2:]))
+        available, selected = np.ones(len(values), dtype=bool), []
+        distance = max(1, round((.08 if threshold < 0 else .14)*fps))
+        for i in indices[np.argsort(-values[indices], kind='stable')]:
+            if available[i]:
+                selected.append(i)
+                available[max(0,i-distance+1):i+distance] = False
+        indices = np.sort(np.asarray(selected, dtype=int))
+        return indices[indices/fps < duration]
+    peak_frames, down_frames = peaks(beat_logits), peaks(downbeat_logits)
+    candidates = peak_frames / fps
+    initial = musical_grid(candidates, down_frames / fps, duration)
+    beats = np.asarray(initial['beats'])
+    continuity_changed = False
+    if len(beats) >= 26:
+        # The median rejects residual short runs of subdivisions at boundaries.
+        delta = np.diff(beats)
+        periods = np.median(np.lib.stride_tricks.sliding_window_view(
+            np.pad(delta, (12,12), mode='edge'), 25), axis=-1)
+        periods[:12], periods[-12:] = np.median(delta[:25]), np.median(delta[-25:])
+        # A sparse, unmetered ending must not become the tempo reference.
+        regular = delta[(delta > .15) & (delta < 3)]
+        baseline = float(np.median(regular)) if len(regular) else 0
+        if baseline and np.count_nonzero(abs(delta[-25:]/baseline-1) < .2) < 13:
+            periods[-12:] = baseline
+        # Quiet beats in a syncopated break may fall just below the model's
+        # binary threshold. Consider them, with a negative score, so a louder
+        # offbeat does not add/remove a beat and shift every subsequent bar.
+        path_frames = peaks(beat_logits, -3)
+        path_times = path_frames / fps
+        scores = np.zeros(len(path_times))
+        previous = np.full(len(path_times), -1, dtype=int)
+        for i, moment in enumerate(path_times):
+            period = float(np.interp(moment, beats[:-1], periods))
+            indices = np.arange(np.searchsorted(path_times, moment-1.5*period),
+                                np.searchsorted(path_times, moment-.6*period))
+            if len(indices):
+                choices = scores[indices]-60*np.log((moment-path_times[indices])/period)**2
+                best = int(choices.argmax())
+                if choices[best] > 0:
+                    scores[i], previous[i] = choices[best], indices[best]
+            scores[i] += float(np.clip(beat_logits[path_frames[i]], -3, 8))/4
+            # Bar accents support the same pulse path, particularly when a
+            # guitar attack on the offbeat is louder than the underlying beat.
+            frame = path_frames[i]
+            scores[i] += .1*max(0., float(np.max(downbeat_logits[max(0,frame-2):frame+3])))
+        end, path = int(scores.argmax()), []
+        while end >= 0:
+            path.append(end)
+            end = previous[end]
+        decoded = path_times[path[::-1]]
+        # Retain a final almost-threshold pulse only if it continues the last
+        # established interval. Do not follow isolated hits through a free outro.
+        if len(decoded) >= 4:
+            tail = float(np.median(np.diff(decoded[-8:])))
+            following = np.flatnonzero((path_times > decoded[-1]+.85*tail)
+                                      & (path_times < decoded[-1]+1.15*tail)
+                                      & (beat_logits[path_frames] > -.25))
+            if len(following):
+                end = following[np.argmin(abs(path_times[following]-decoded[-1]-tail))]
+                decoded = np.r_[decoded, path_times[end]]
+        # Preserve genuine tempo changes and separated rhythmic passages if
+        # the continuous path loses their confident pulses. Only sparse weak
+        # tails may be discarded, never a second verse after a long silence.
+        reliable = candidates[beat_logits[peak_frames] >= max(2., float(np.median(beat_logits[peak_frames]))*.5)]
+        retained = np.isin(reliable, decoded)
+        covered = (not len(reliable) or ((initial['tempoNote'] or np.mean(retained) >= .95)
+                   and decoded[0] <= reliable[0]+periods[0]
+                   and decoded[-1] >= reliable[-1]-periods[-1]))
+        if covered and decoded[0] <= beats[0]+periods[0]:
+            continuity_changed = not np.array_equal(beats, decoded)
+            beats = decoded
+    # Keep the strength of each downbeat: a weak pickup must not outvote the
+    # sustained bar accents just because it was the first model peak.
+    strengths = np.asarray([max(0., float(np.max(downbeat_logits[
+        max(0, round(t*fps)-2):min(len(downbeat_logits), round(t*fps)+3)]))) for t in beats])
+    selected = strengths > 0
+    intervals = np.diff(beats)
+    intervals = intervals[(intervals > .15) & (intervals < 3)]
+    result = {**initial, 'beats': beats.tolist(), 'downbeats': beats[selected].tolist(),
+              'bpm': float(60/np.median(intervals)) if len(intervals) else 0,
+              'downbeatStrengths': strengths[selected].tolist(), 'decoderVersion': 2}
+    result=calibrate_grid(result)
+    if not result['gridReviewRequired']:
+        phase=int(np.argmin(abs(beats-result['firstBeat'])))
+        spans=np.diff(beats[phase::result['beatsPerBar']])
+        if len(spans):result['bpm']=float(60*result['beatsPerBar']/np.median(spans))
+    # Compound pulse proposals need repeated evidence of BOTH inner thirds.
+    # A swung offbeat alone, or a duple meter alone, is not sufficient.
+    triplets=0
+    for a,b in zip(beats,beats[1:]):
+        inside=(candidates[(candidates>a+.1*(b-a)) & (candidates<b-.1*(b-a))]-a)/(b-a)
+        if all(np.any(abs(inside-position)<.075) for position in (1/3,2/3)):triplets+=1
+    compound=bool(initial['tempoNote'] and not result['gridReviewRequired']
+                  and result['beatsPerBar'] in (2,3,4) and triplets>=8
+                  and triplets>=.2*max(1,len(beats)-1))
+    result.update(pulseUnit='dottedQuarter' if compound else 'quarter',
+                  pulseUnitConfidence=triplets/max(1,len(beats)-1),decoderVersion=4,
+                  continuityCorrected=continuity_changed)
+    if continuity_changed and not result['tempoNote']:
+        result['tempoNote']='Continuité des pulsations corrigée dans les passages syncopés'
+        result=calibrate_grid(result)
+    if compound:
+        result['tempoNote']='Pulsations ternaires proposées (noires pointées) · tempo affiché à la noire · à vérifier à l’écoute'
+        result=calibrate_grid(result)
+    if not quality:return result
+    from rhythm_adapter import adapt
+    from rhythm_quality import assess
+    return assess(adapt(result, beat_logits, downbeat_logits, fps), beat_logits, downbeat_logits, fps)
+
+
+def smart_grid(audio, engine, notify=lambda info: None, project=None, *, reanalyze=False):
     from analysis_cache import AnalysisCache
     cache=AnalysisCache.create(project,'rhythm',audio,engine)
-    cached=cache.load() if cache else None
+    cached=cache.load() if cache and not reanalyze else None
     if cached is not None:
         notify(dict(cacheHit=True))
         return {**cached,'cacheHit':True}
     import soundfile as sf
     import torch
-    from beat_this.inference import Audio2Beats
+    from beat_this.inference import Audio2Frames
     checkpoint = Path(engine) / 'rhythm/final0.ckpt'
     if not checkpoint.is_file():
         raise ValueError('Le modèle Beat This n’est pas installé. Installe le composant Rythme avancé.')
@@ -82,16 +275,27 @@ def smart_grid(audio, engine, notify=lambda info: None, project=None):
     signal, sr = sf.read(audio, dtype='float32', always_2d=True)
     from compute import run
     def inference(info):
-        predictor = Audio2Beats(checkpoint_path=str(checkpoint), device=info['device'], dbn=False)
-        with torch.inference_mode():
-            return predictor(signal.mean(axis=1), sr)
+        predictor = Audio2Frames(checkpoint_path=str(checkpoint), device=info['device'])
+        from analysis_progress import track_beat_chunks
+        import beat_this.inference as beat_inference
+        with torch.inference_mode(), track_beat_chunks(beat_inference):
+            beats, downbeats = predictor(signal.mean(axis=1), sr)
+            return beats.cpu().numpy(), downbeats.cpu().numpy()
     (beats, downbeats), _ = run(torch,'smartgrid',inference,notify=notify)
-    result=musical_grid(beats, downbeats, len(signal) / sr)
-    if cache:cache.store(result)
+    result=grid_from_frames(beats, downbeats, len(signal) / sr)
+    if cache:
+        # Preserve model evidence for diagnosis without keeping audio in memory.
+        import tempfile
+        import numpy as np
+        with tempfile.TemporaryDirectory() as folder:
+            evidence=Path(folder)/'rhythm.npz'
+            np.savez_compressed(evidence,beat=beats,downbeat=downbeats,fps=50,duration=len(signal)/sr)
+            cache.store(result,evidence)
     return {**result,'cacheHit':False}
 
 
 def detect_key(audio):
+    from analysis_progress import emit
     import numpy as np
     import librosa
     import soundfile as sf
@@ -99,7 +303,8 @@ def detect_key(audio):
     info = sf.info(audio)
     moments = np.linspace(0, max(0, info.duration - 20), min(12, max(1, math.ceil(info.duration / 20))))
     chroma = np.zeros(12)
-    for start in moments:
+    for index,start in enumerate(moments):
+        emit(completed=index,total=len(moments),progressLabel=f'Extrait {index+1} sur {len(moments)}')
         y, sr = librosa.load(audio, sr=22050, mono=True, offset=float(start), duration=20)
         if not len(y) or np.max(abs(y)) < 1e-7:
             continue
@@ -249,7 +454,8 @@ def practice_grid(p, options=None):
     options = options or {}
     settings = p.get('settings') or {}
     meter = int(settings.get('beatsPerBar', 4))
-    bpm = settings.get('manualBPM', 120) if settings.get('gridMode') == 'fixed' else p.get('bpm') or settings.get('manualBPM', 120)
+    from musical_timing import pulse_bpm, pulse_scale, tempo_info
+    bpm = pulse_bpm(p)
     duration = max(p.get('sessionDuration', 0), max((t.get('offset', 0)+t['duration'] for t in p.get('tracks', []) if not t.get('role', '').startswith('guide_')), default=0))
     if duration <= 0:
         duration = max((x.get('end', 0) for kind in ('sections', 'lyrics', 'chords') for x in p.get(kind, [])), default=0)
@@ -342,7 +548,7 @@ def practice_grid(p, options=None):
                               cues=cues, partial=a > bar['start']+1e-7 or b < bar['end']-1e-7,
                               continuation=a > bar['start']+1e-7))
         group['cells'] = cells
-    return dict(groups=groups, bpm=bpm, meter=meter, key=transpose(p.get('key') or '?', shift),
+    return dict(groups=groups, bpm=tempo_info(p)['bpm'], pulseBPM=bpm, meter=meter, timeSignature=f'{meter*3}/8' if pulse_scale(settings)==1.5 else f'{meter}/4', key=transpose(p.get('key') or '?', shift),
                 capo=capo, shift=shift, has_lyrics=bool(lyrics), duration=duration)
 
 
@@ -438,7 +644,7 @@ def practice_sheet(p, target, options):
             c.setStrokeColor(line);c.setLineWidth(.5);c.line(0,53,width,53)
             duration = f'{int(data["duration"])//60}:{int(data["duration"])%60:02}'
             key = data['key']+(f' / capo {data["capo"]}' if data['capo'] else '')
-            for i,(label,value) in enumerate([('TEMPO',f'{data["bpm"]:g} BPM'),('TONALITÉ',key),('MESURE',f'{data["meter"]}/4'),('DURÉE',duration)]):
+            for i,(label,value) in enumerate([('TEMPO',f'{data["bpm"]:g} BPM'),('TONALITÉ',key),('MESURE',data['timeSignature']),('DURÉE',duration)]):
                 x=i*width/4
                 c.setFillColor(quiet);c.setFont('Studio',6);c.drawString(x,40,label)
                 c.setFillColor(ink);c.setFont('StudioBold',12);c.drawString(x,23,value)
@@ -588,7 +794,7 @@ def practice_sheet(p, target, options):
             short=title if len(title)<=55 else title[:52]+'...'
             canvas.drawString(44,A4[1]-27,short)
             canvas.setFont('Studio',6);canvas.setFillColor(quiet)
-            canvas.drawRightString(A4[0]-44,A4[1]-27,f'{data["bpm"]:g} BPM / {data["key"]} / {data["meter"]}/4')
+            canvas.drawRightString(A4[0]-44,A4[1]-27,f'{data["bpm"]:g} BPM / {data["key"]} / {data["timeSignature"]}')
         canvas.restoreState()
     SimpleDocTemplate(str(target), pagesize=A4, leftMargin=38, rightMargin=38, topMargin=42, bottomMargin=44,
                       title=p['name'], author='BandStudio').build(body, onFirstPage=footer, onLaterPages=footer)
@@ -625,11 +831,12 @@ def portable_project(p, root, target):
 
 
 def run(kind, project_file, output, engine, options, audio=''):
+    from analysis_progress import emit, phase_items
     p = json.loads(Path(project_file).read_text())
     root = Path(p['_root']).resolve()
     length = max((t['duration']+t['offset'] for t in p['tracks'] if not t['role'].startswith('guide_')), default=0)
     if kind == 'smartgrid':
-        result = smart_grid(audio, engine, project=p, notify=lambda info:atomic(Path(output).parent/'progress.json',dict(stage='smartgrid',**info)))
+        result = smart_grid(audio, engine, project=p, reanalyze=options.get('reanalyze') is True, notify=lambda info:emit(stage='smartgrid',**info))
     elif kind == 'key':
         result = detect_key(audio)
     elif kind == 'lyricsimport':
@@ -650,7 +857,7 @@ def run(kind, project_file, output, engine, options, audio=''):
             if not tracks:
                 raise ValueError('Sépare les instruments avant d’exporter les stems.')
             manifest = []
-            for i, t in enumerate(tracks):
+            for i, t in enumerate(phase_items(tracks,0,1,"Export des pistes")):
                 dest = folder / (f'{i+1:02}-'+safe_name(t['name'])+'.'+fmt)
                 encode_audio(media_path(root,t['file']), dest, engine, fmt)
                 manifest.append(dict(file=dest.name, name=t['name'], role=t['role'], offset=t['offset'], gain=t['gain'], pan=t['pan']))

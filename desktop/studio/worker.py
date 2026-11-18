@@ -18,11 +18,18 @@ def write(path, value):
 
 def progress(output, stage, **values):
     """UI status is separate from diagnostic stdout/stderr (including warnings)."""
-    write(Path(output).parent / 'progress.json', dict(stage=stage, **values))
+    from analysis_progress import emit, _active
+    if _active is not None:emit(stage=stage, **values)
+    else:write(Path(output).parent / 'progress.json', dict(stage=stage, **values))
 
 
 def sections(raw, duration):
-    """Keep precise boundaries and short breaks; never coerce four-bar phrases."""
+    """Group adjacent phrases of the same function into one announced section.
+
+    Model phrase boundaries are finer than the rehearsal sections. Keep every
+    change of function (including very short breaks), gap and exact outer edge.
+    This only processes raw proposals; hosts preserve manual sections separately.
+    """
     labels = {'intro': 'Intro', 'verse': 'Couplet', 'chorus': 'Refrain',
               'pre-chorus': 'Pré-refrain', 'bridge': 'Pont', 'inst': 'Instrumental',
               'outro': 'Outro', 'silence': 'Silence', 'solo': 'Solo'}
@@ -35,13 +42,20 @@ def sections(raw, duration):
             start = max(start, result[-1]['end'])
         if start >= end:
             continue
+        label=str(item['label']).strip()
+        name=labels.get(label.casefold(), label)
+        if result and result[-1]['name']==name and abs(start-result[-1]['end'])<1e-6:
+            result[-1]['end']=end
+            continue
         result.append(dict(id=str(uuid.uuid4()), start=start, end=end,
-                           name=labels.get(item['label'], item['label']), locked=False,
+                           name=name, locked=False,
                            origin='analysis'))
     return result
 
 
 def grid(audio):
+    from analysis_progress import emit
+    emit(progress=0,progressLabel='Lecture audio · étape 1 sur 3',progressBasis='steps',indeterminate=True)
     import numpy as np
     import librosa
     y, sr = librosa.load(audio, sr=22050, mono=True)
@@ -49,7 +63,9 @@ def grid(audio):
     if duration < 1 or np.max(np.abs(y), initial=0) < 1e-7:
         return dict(duration=duration, bpm=0, beats=[], downbeats=[], cues=[])
     # Beat positions are estimates, not a fabricated fixed tempo map.
+    emit(progress=100/3,progressLabel='Recherche des attaques · étape 2 sur 3',indeterminate=True)
     onset = librosa.onset.onset_strength(y=y, sr=sr, hop_length=256)
+    emit(progress=200/3,progressLabel='Calage des temps · étape 3 sur 3',indeterminate=True)
     tempo, frames = librosa.beat.beat_track(onset_envelope=onset, sr=sr, hop_length=256)
     beats = librosa.frames_to_time(frames, sr=sr, hop_length=256).tolist()
     return dict(duration=duration, bpm=float(np.asarray(tempo).reshape(-1)[0]),
@@ -57,6 +73,9 @@ def grid(audio):
 
 
 def separate(audio, output, model, engine, quality='standard'):
+    from analysis_progress import emit, PassProgress
+    import demucs.apply as demucs_apply
+    emit(progressLabel='Chargement des modèles…', indeterminate=True)
     import soundfile as sf
     import torch
     from demucs.apply import apply_model
@@ -87,12 +106,14 @@ def separate(audio, output, model, engine, quality='standard'):
         def inference(info):
             segment=demucs_segment(info)
             if segment is not None:segment=min(segment,float(getattr(net,'max_allowed_segment',getattr(net,'segment',segment))))
-            with torch.inference_mode():
+            counter=PassProgress(len(getattr(net,'models',[net])) * max(1,shifts))
+            with torch.inference_mode(), counter.track(demucs_apply):
                 return apply_model(net, x[None], device=info['device'], shifts=shifts,
                     split=True, overlap=overlap, progress=True, num_workers=0, segment=segment)[0].cpu()
         sources,compute=run(torch,'drumsep' if model=='49469ca8' else 'separate',inference,
             cleanup=lambda:net.to('cpu'),notify=lambda info:progress(output,'separation',**info))
         sources = sources * std + mean
+    emit(progress=99,progressLabel='Enregistrement des pistes…',indeterminate=True)
     # Preserve relative stem levels; never normalize each stem independently.
     folder = Path(output).parent / 'stems'
     folder.mkdir(parents=True, exist_ok=True)
@@ -105,12 +126,12 @@ def separate(audio, output, model, engine, quality='standard'):
     write(output, dict(tracks=files, model=model,quality=quality))
 
 
-def analyze(audio, output, mode, engine, project_file=None):
+def analyze(audio, output, mode, engine, project_file=None, *, reanalyze=False):
     from analysis_cache import AnalysisCache
     project=json.loads(Path(project_file).read_text()) if project_file else None
     if mode == 'grid':
         cache=AnalysisCache.create(project,'grid',audio,engine)
-        result=cache.load() if cache else None
+        result=cache.load() if cache and not reanalyze else None
         hit=result is not None
         if not hit:
             result=grid(audio)
@@ -123,28 +144,33 @@ def analyze(audio, output, mode, engine, project_file=None):
     os.environ['REAPER_RESOURCE_PATH'] = str(Path(output).parent / 'worker-state')
     os.environ['HF_HUB_OFFLINE'] = '1'
     os.environ['REACUE_CPU_THREADS'] = '4'
-    progress(output, 'structure-loading')
+    progress(output, 'structure-loading',progressLabel='Chargement des modèles…',indeterminate=True)
     import reacue_structure as structure
-    window=420 if structure.ram_gb() >= 15 else 120
+    window=structure.choose_window()
     cache=AnalysisCache.create(project,'structure',audio,engine,dict(window=window))
-    cached=cache.load() if cache else None
+    cached=cache.load() if cache and not reanalyze else None
     if cached is not None:
         raw=cached['segments']
         progress(output,'analysis-reuse')
     else:
         app=structure.load_app()
-        structure.init_models(app)
+        notify=lambda info:progress(output,**info)
+        structure.init_models(app,notify=notify)
         progress(output,'structure-analysis',device=str(app.device))
-        raw=structure.segments_from_app(app,audio,window)
+        from analysis_progress import track_structure
+        with track_structure(app,audio,window):
+            raw=structure.segments_from_app(app,audio,window,notify=notify)
         if cache:cache.store(dict(segments=raw))
-    progress(output, 'structure-saving')
+    progress(output, 'structure-saving',progress=99,progressLabel='Enregistrement des sections…',indeterminate=True)
     import soundfile as sf
     info = sf.info(audio)
     proposed=sections(raw, info.duration)
+    from cue_corrector_runtime import adapt
+    proposed,correction=adapt(audio,proposed,engine,info.duration,window,project)
     if project and project.get('beats'):
         from musical_timing import align_intro_sections,cached_audio_entry
         proposed=align_intro_sections({**project,'sections':proposed},cached_audio_entry(audio,project,engine))['sections']
-    write(output, dict(sections=proposed, engine='SongFormer',cacheHit=cached is not None))
+    write(output, dict(sections=proposed, engine='SongFormer',cacheHit=cached is not None,cueCorrection=correction))
 
 
 def main():
@@ -156,10 +182,18 @@ def main():
     p.add_argument('--project')
     p.add_argument('--language',default='auto')
     p.add_argument('--quality',choices=['fast','standard','careful'],default='standard')
+    p.add_argument('--reanalyze',action='store_true',help='Recompute explicitly instead of reusing a previous result')
+    p.add_argument('--chord-source',default='',help='Use a matching saved web chart for local chord alignment')
     p.add_argument('--output', required=True)
     p.add_argument('--engine', required=True)
     p.add_argument('--model', choices=['htdemucs', 'htdemucs_6s', 'htdemucs_ft'], default='htdemucs')
     a = p.parse_args()
+    from analysis_progress import reporting
+    with reporting(a.output,a.command):
+        execute(a)
+
+
+def execute(a):
     engine = Path(a.engine).resolve()
     a.input = str(Path(a.input).resolve())
     a.output = str(Path(a.output).resolve())
@@ -174,6 +208,7 @@ def main():
     from compute import versions
     versions(a.command)
     progress(a.output, a.command)
+    from analysis_progress import emit, legacy_status
     from services import guides,decode,export_reaper,export_midi,import_reaper
     if a.command in ('generate','vocalsplit'):
         from creative import run
@@ -201,17 +236,20 @@ def main():
     if a.command=='lyrics':
         print('Transcription locale du chant et alignement des mots…',flush=True)
         import reacue_transcribe
-        if reacue_transcribe.transcribe(a.input,a.output,lang=a.language)!=0:raise RuntimeError('La transcription des paroles a échoué.')
+        with legacy_status(reacue_transcribe):
+            if reacue_transcribe.transcribe(a.input,a.output,lang=a.language)!=0:raise RuntimeError('La transcription des paroles a échoué.')
         return
     if a.command=='chords':
-        print('Écoute harmonique et détection des changements d’accords…',flush=True)
-        import reacue_chords
-        if reacue_chords.analyze(a.input,a.output)!=0:raise RuntimeError('La détection des accords a échoué.')
+        print('Recherche d’une grille Internet à partir du titre et de l’artiste…',flush=True)
+        from chord_sources import analyze as analyze_chord_reference
+        project=json.loads(Path(a.project).read_text())
+        write(a.output,analyze_chord_reference(project,a.input,reanalyze=a.reanalyze,source_url=getattr(a,'chord_source','')))
         return
     if a.command=='drums':
         print('Détection des frappes sur la piste batterie…',flush=True)
         import reacue_drums
-        if reacue_drums.analyze(a.input,a.output)!=0:raise RuntimeError('La transcription batterie a échoué.')
+        with legacy_status(reacue_drums):
+            if reacue_drums.analyze(a.input,a.output)!=0:raise RuntimeError('La transcription batterie a échoué.')
         return
     if a.command=='midi':
         target=Path(a.output).parent/'batterie.mid';export_midi(json.loads(Path(a.project).read_text()),target)
@@ -219,7 +257,7 @@ def main():
     if a.command == 'separate':
         separate(a.input, a.output, a.model, engine,a.quality)
     else:
-        analyze(a.input, a.output, a.command, engine,a.project)
+        analyze(a.input, a.output, a.command, engine,a.project,reanalyze=a.reanalyze)
 
 
 if __name__ == '__main__':

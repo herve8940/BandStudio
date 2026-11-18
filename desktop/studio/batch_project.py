@@ -8,7 +8,7 @@ from services import atomic, import_settings, calibrate_grid
 from windows import project as model
 
 ENVIRONMENTS = {'separate': '.venv-demucs', 'smartgrid': '.venv-demucs',
-                'structure': '.venv-structure', 'lyrics': '.venv-words', 'chords': '.venv-chords'}
+                'structure': '.venv-structure', 'lyrics': '.venv-words', 'chords': '.venv'}
 LABELS = {'import': 'Import', 'separate': 'Séparation des instruments', 'grid': 'Tempo',
           'smartgrid': 'Temps et mesures', 'structure': 'Structure', 'key': 'Tonalité',
           'lyrics': 'Paroles', 'chords': 'Accords', 'guides': 'Click et annonces'}
@@ -21,7 +21,7 @@ def plan(engine):
     smart = any((engine / '.venv-demucs').glob('**/site-packages/beat_this'))
     return ['import', 'separate', 'smartgrid' if smart else 'grid'] + [
         k for k in ('structure', 'key', 'lyrics', 'chords')
-        if k == 'key' or python_for(engine, ENVIRONMENTS[k]).is_file()] + ['guides']
+        if k in ('key','chords') or python_for(engine, ENVIRONMENTS[k]).is_file()] + ['guides']
 
 
 def snapshot(root, library, title):
@@ -114,7 +114,10 @@ def apply(item, stage, root, folder, library):
         model.apply_sections(p, result['sections'])
     elif stage == 'key':
         p['key'] = result['key']
-    elif stage in ('lyrics', 'chords'):
+    elif stage=='chords':
+        from chord_sources import apply as apply_chord_reference
+        apply_chord_reference(p,result)
+    elif stage=='lyrics':
         entries = []
         for row in result['segments']:
             start, end = row.get('start', row.get('t', 0)), min(model.duration(p), row['end'])

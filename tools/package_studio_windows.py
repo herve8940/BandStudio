@@ -31,7 +31,10 @@ def extract(zip_path,target):
 
 def source_files():
     files=[ROOT/'LICENSE',ROOT/'THIRD_PARTY_NOTICES.md']
-    for name in ['services.py','analysis_cache.py','musical_timing.py','listening.py','diagnostics.py','compute.py','catalog.py','artwork.py','updater.py','preparation.py','batch_queue.py','batch_project.py','platform_tools.py','worker.py','advanced.py','phone.py','creative.py']:files.append(ROOT/'desktop/studio'/name)
+    for name in ['services.py','analysis_cache.py','rhythm_quality.py','rhythm_adapter.py','cue_corrector.py','cue_corrector_runtime.py','cue_corrector_bundle.py','chord_provider_defaults.py','cue_feedback.py','chord_sources.py','chord_alignment.py','chord-providers.json','musical_timing.py','listening.py','diagnostics.py','compute.py','catalog.py','artwork.py','updater.py','preparation.py','batch_queue.py','batch_project.py','platform_tools.py','worker.py','analysis_progress.py','advanced.py','phone.py','creative.py']:files.append(ROOT/'desktop/studio'/name)
+    for name in ('rhythm-quality.json','rhythm-adapter.json'):
+        calibration=ROOT/'desktop/studio'/name
+        if calibration.is_file():files.append(calibration)
     files += [ROOT/'desktop/studio/assets/BandStudio.ico']
     files+=list((ROOT/'desktop/studio/windows').glob('*.py'))+list((ROOT/'desktop/studio/windows').glob('*.js'))+list((ROOT/'desktop/studio/windows').glob('*.ps1'))
     files+=[p for p in (ROOT/'desktop/studio/web').iterdir() if p.suffix in ('.html','.js','.css','.svg','.ico')]

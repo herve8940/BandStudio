@@ -140,3 +140,7 @@ docs-perso/
 .perso/
 perso/
 notes/
+
+# Local learning corpora, reports and scratch work (never distribute audio).
+/output/
+/tmp/

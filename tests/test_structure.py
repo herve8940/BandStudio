@@ -193,8 +193,8 @@ def test_launcher_analyze_and_window(tmp_path, monkeypatch):
 def test_choose_window_from_ram():
     sys.path.insert(0, str(ROOT))
     import reacue_structure as RS
-    assert RS.choose_window("auto", 16) == 420
-    assert RS.choose_window("auto", 8) == 120
+    assert RS.choose_window("auto", 16) == 60
+    assert RS.choose_window("auto", 8) == 30
     assert RS.choose_window("300", 8) == 300 and RS.choose_window("5", 64) == 30
     assert RS.ram_gb() > 0
 

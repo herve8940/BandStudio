@@ -6,10 +6,29 @@ import statistics
 import uuid
 
 
+def pulse_scale(settings):
+    """Quarter notes per saved pulse; the audio grid always stores pulses."""
+    return 1.5 if settings.get('pulseUnit') == 'dottedQuarter' else 1.
+
+
+def pulse_bpm(project):
+    s=project.get('settings',{})
+    fallback=s.get('manualBPM',120)/pulse_scale(s)
+    return fallback if s.get('gridMode')=='fixed' else project.get('bpm') or fallback
+
+
+def tempo_info(project):
+    s=project.get('settings',{});pulse=pulse_bpm(project)
+    estimated=pulse*pulse_scale(s)
+    reference=s.get('referenceBPM') if s.get('gridMode')!='fixed' else None
+    return dict(bpm=reference or estimated,estimatedBPM=estimated,pulseBPM=pulse,
+                source='manual' if s.get('gridMode')=='fixed' else 'reference' if reference else 'estimated')
+
+
 def grid(project):
     s=project['settings'];meter=s['beatsPerBar']
     beats=sorted(set(t for t in project.get('beats',[]) if math.isfinite(t) and t>=0))
-    period=60/(s['manualBPM'] if s['gridMode']=='fixed' else project.get('bpm') or s['manualBPM'])
+    period=60/pulse_bpm(project)
     if s['gridMode']=='detected' and len(beats)>1:
         anchor=min(range(len(beats)),key=lambda i:abs(beats[i]-s['firstBeat']))%meter
         head=statistics.median([b-a for a,b in zip(beats,beats[1:])][:8])
@@ -31,6 +50,8 @@ def count_plan(project,position=0):
     s=project['settings'];meter=s['beatsPerBar'];n=s['countBars']*meter
     if not n:return dict(lead=0,end=0,target=position,events=[])
     at,following,anchor=grid(project);target=following(position)
+    # Count every beat through an opening pickup, including the final "four".
+    # The music keeps its pickup; the generated click takes over on the "one".
     lead=max(0,position-at(target-n))
     events=[dict(time=at(i)-position+lead,end=at(i+1)-position+lead,
                  number=(i-anchor)%meter+1,spoken=i>=target-meter)
@@ -80,7 +101,7 @@ def align_intro_sections(project,entry,force=False):
     at,_,anchor=grid(p);meter=p['settings']['beatsPerBar'];beats=p['beats']
     first=next((i for i in prefix if rows[i]['name'].strip().casefold()=='levée'),intros[0])
     if not 0<=entry<rows[first]['end']:return p
-    nearest=min(beats,key=lambda t:abs(t-entry));period=60/(p.get('bpm') or p['settings']['manualBPM'])
+    nearest=min(beats,key=lambda t:abs(t-entry));period=60/pulse_bpm(p)
     start=nearest if abs(nearest-entry)<=min(.08,period*.15) else entry
     changes=[]
     if abs(rows[first]['start']-start)>.001:

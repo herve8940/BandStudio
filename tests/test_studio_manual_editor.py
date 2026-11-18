@@ -107,6 +107,7 @@ def test_zoom_seeking_volumes_and_one_by_one_validation(manual_page):
     page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:3})',p)
     assert page.locator('#markerName').inner_text()=='Fill'
     assert page.locator('#markerProgress').inner_text()=='1 / 3 repères validés'
+    page.locator('#workspaceMix').click()
     page.locator('#mix-cuesGain').evaluate('(e)=>e.value=0.35')
     page.locator('#mix-cuesGain').dispatch_event('change')
     assert page.evaluate('sent.at(-1)')==dict(command='guideMix',projectID='manual',args=dict(key='cuesGain',value=.35))
@@ -145,3 +146,55 @@ def test_variable_tempo_drag_and_project_binding(manual_page):
     page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:3})',p)
     assert page.locator('#markerValidate').is_disabled()
     assert page.locator('#markerProgress').inner_text()=='0 / 0 repères validés'
+
+
+def test_wheel_zoom_keeps_mouse_anchor_and_plain_wheel_still_scrolls(manual_page):
+    page,p=manual_page
+    page.locator('#zoomFollow').uncheck()
+    def wheel(delta,**modifiers):
+        return page.locator('.track-wave').evaluate('''(lane, args) => {
+            const r=lane.getBoundingClientRect();
+            const event=new WheelEvent('wheel',{bubbles:true,cancelable:true,clientX:r.left+r.width*.3,deltaY:args.delta,...args.modifiers});
+            const ratio=(event.clientX-r.left)/r.width;
+            lane.dispatchEvent(event);return {prevented:event.defaultPrevented,ratio};
+        }''',dict(delta=delta,modifiers=modifiers))
+    assert not wheel(-120)['prevented']
+    assert page.evaluate('viewport().span')==32
+    event=wheel(-120,ctrlKey=True)
+    assert event['prevented']
+    first=page.evaluate('viewport()')
+    assert 2<first['span']<32
+    assert first['start']+event['ratio']*first['span']==pytest.approx(32*event['ratio'])
+    assert wheel(120,metaKey=True)['prevented']
+    assert page.evaluate('viewport().span')==pytest.approx(32)
+    for _ in range(10):wheel(-1000,ctrlKey=True)
+    assert page.evaluate('viewport().span')==2
+    page.evaluate('state.busy=true')
+    assert not wheel(120,ctrlKey=True)['prevented']
+    assert page.evaluate('viewport().span')==2
+
+
+def test_zoom_toolbar_remains_visible_below_many_tracks(manual_page):
+    page,p=manual_page
+    p['tracks']=[{**p['tracks'][0],'id':str(i),'name':f'Piste {i}'} for i in range(16)]
+    page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:2})',p)
+    page.locator('main').evaluate('(e)=>e.scrollTop=650')
+    page.wait_for_function('document.querySelector("main").scrollTop>=650')
+    main=page.locator('main').bounding_box();bar=page.locator('.editor-zoom').bounding_box()
+    assert main['y']<=bar['y']<=main['y']+40
+    assert bar['y']+bar['height']<main['y']+main['height']
+
+
+def test_manual_analysis_buttons_request_recalculation_and_vocals_are_findable(manual_page):
+    page,p=manual_page
+    page.locator('.rail [data-view=prepare]').click()
+    page.locator('#view-prepare [data-studio-task=smartgrid]').click()
+    assert page.evaluate('sent.at(-1).args.options.reanalyze') is True
+    page.locator('[data-analysis=structure]').click()
+    assert page.evaluate('sent.at(-1).args.reanalyze') is True
+    assert page.locator('#view-prepare #splitVocals').is_visible()
+    assert page.locator('#splitVocals').is_disabled()  # A separated vocal track is required.
+    p['tracks'].append({**p['tracks'][0],'id':'vocals','role':'vocals','name':'Chant'})
+    page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:2})',p)
+    page.locator('#splitVocals').click()
+    assert page.evaluate('sent.at(-1).args.kind')=='vocalsplit'

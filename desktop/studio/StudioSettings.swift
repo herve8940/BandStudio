@@ -10,6 +10,9 @@ struct GuideSettings: Codable {
     var firstBeat=0.0
     var gridMode="detected"
     var manualBPM=120.0
+    var pulseUnit:String?=nil
+    var referenceBPM:Double?=nil
+    var pulseScale:Double {pulseUnit=="dottedQuarter" ? 1.5 : 1}
     var countBars=2
     var countClick=true
     var countVoice=true
@@ -37,10 +40,15 @@ struct GuideSettings: Codable {
     func forNewSong()->GuideSettings {
         var value=self
         value.firstBeat=0;value.gridMode="detected";value.manualBPM=120;value.beatsPerBar=4
+        value.pulseUnit=nil;value.referenceBPM=nil
         return value
     }
 
     func validate() throws {
+        guard pulseUnit==nil || ["quarter","dottedQuarter"].contains(pulseUnit!),
+              referenceBPM==nil || (referenceBPM!.isFinite && (20...400).contains(referenceBPM!)) else {
+            throw StudioError("Unité de pulsation ou tempo de référence invalide.")
+        }
         guard [1,2,3,4].contains(subdivision),(1...12).contains(beatsPerBar),
               (0...8).contains(countBars),(0...32).contains(leadBeats),(1...12).contains(regionCountBeats),(100...360).contains(speechRate),
               ["detected","fixed"].contains(gridMode),["fr","en"].contains(language),
@@ -61,14 +69,38 @@ struct TimedText:Codable {
     var text:String
     var manual=false
     var words:[TimedWord]?=nil
+    var sourceURL:String?=nil
+    var confidence:Double?=nil
 }
 struct TimedWord:Codable {var start:Double;var end:Double;var text:String}
+struct ChordSource:Codable {var title:String;var publisher:String;var url:String;var chords:[String];var transitions:[[String]]?=nil;var sections:[String:[String]]?=nil;var note:String?=nil}
+struct ChordAlignment:Codable {var status:String;var message:String;var subdivision:Int?=nil;var tuningCents:Double?=nil;var uncertainCells:Int?=nil}
+struct ChordCheck:Codable {var id:String;var status:String}
+struct ChordReference:Codable {var query:String;var status:String;var sources:[ChordSource];var checkedAt:Double;var message:String;var alignment:ChordAlignment?=nil;var selectedURL:String?=nil;var catalogVersion:Int?=nil;var checks:[ChordCheck]?=nil}
+struct ChordProvider:Codable {
+    var id:String;var publisher:String;var domain:String;var template:String?=nil
+    static let all:[ChordProvider] = {
+        guard let file=Bundle.main.url(forResource:"chord-providers",withExtension:"json"),let data=try? Data(contentsOf:file),let rows=try? JSONDecoder().decode([ChordProvider].self,from:data) else{return []}
+        return rows
+    }()
+    static func searchURL(query:String,kind:String,provider:String="") throws -> URL {
+        var site=""
+        if !provider.isEmpty {
+            guard let entry=all.first(where:{$0.id==provider}) else{throw StudioError("Source de recherche inconnue.")}
+            site=" site:"+entry.domain
+        }
+        var url=URLComponents(string:"https://www.google.com/search")!
+        url.queryItems=[URLQueryItem(name:"q",value:String(query.prefix(300))+(kind == "chords" ? " chords accords" : " lyrics paroles")+site)]
+        guard let target=url.url else{throw StudioError("Recherche invalide.")};return target
+    }
+}
 struct DrumHit:Codable {var time:Double;var pitch:Int;var velocity:Int}
 struct StudioSetlist:Codable {var id=UUID().uuidString;var name:String;var paths:[String]=[]}
 struct CountEvent {var time:Double;var end:Double;var number:Int;var spoken:Bool}
 struct CountPlan {var lead:Double;var end:Double;var target:Double;var events:[CountEvent]}
 
 extension StudioProject {
+    var pulseBPM:Double {settings.gridMode=="fixed" ? settings.manualBPM/settings.pulseScale : bpm>0 ? bpm : settings.manualBPM/settings.pulseScale}
     func countPlan(at position:Double)->CountPlan {
         let meter=settings.beatsPerBar,n=settings.countBars*meter
         guard n>0 else{return CountPlan(lead:0,end:0,target:position,events:[])}
@@ -85,20 +117,22 @@ extension StudioProject {
             else if position>grid.last! {target=grid.count-1+Int(ceil((position-grid.last!)/tail-1e-7))}
             else {target=grid.firstIndex(where:{$0>=position-1e-7}) ?? grid.count-1}
         } else {
-            let period=60/(settings.gridMode=="fixed" ? settings.manualBPM : bpm>0 ? bpm : settings.manualBPM),first=settings.firstBeat
+            let period=60/pulseBPM,first=settings.firstBeat
             at={first+Double($0)*period};target=Int(ceil((position-first)/period-1e-7))
         }
+        // Speak the full count through the pickup, including "four" before "one".
         let lead=max(0,position-at(target-n))
         let events=(target-n..<target).map{i in CountEvent(time:at(i)-position+lead,end:at(i+1)-position+lead,number:((i-anchor)%meter+meter)%meter+1,spoken:i>=target-meter)}
         return CountPlan(lead:lead,end:at(target)-position+lead,target:at(target),events:events)
     }
 
-    mutating func applyDetectedGrid(_ result:[String:Any],offset:Double=0) {
-        guard !analysisDone("smartgrid") else{return}
+    mutating func applyDetectedGrid(_ result:[String:Any],offset:Double=0,reanalyze:Bool=false) {
+        guard !gridLocked, reanalyze || !analysisDone("smartgrid") else{return}
         beats=(result["beats"] as? [Double] ?? []).map{$0+offset}.filter{$0>=0 && $0<duration}
         downbeats=(result["downbeats"] as? [Double] ?? []).map{$0+offset}.filter{$0>=0 && $0<duration}
         bpm=result["bpm"] as? Double ?? 0
         settings.gridMode="detected"
+        settings.pulseUnit=result["pulseUnit"] as? String ?? "quarter"
         settings.firstBeat=(result["firstBeat"] as? Double).map{$0+offset} ?? beats.first ?? 0
         let meter=result["beatsPerBar"] as? Int ?? 4
         settings.beatsPerBar=(2...12).contains(meter) ? meter : 4
@@ -106,7 +140,7 @@ extension StudioProject {
     }
 
     enum CodingKeys:String,CodingKey {
-        case preparation,sessionDuration,capture,version,id,name,tracks,sections,cues,bpm,beats,notes,settings,guideFiles,guideKey,lyrics,chords,drumHits,key,sourceURL,capo,analysesCompleted,gridLocked,downbeats,analysisNote
+        case preparation,sessionDuration,capture,version,id,name,tracks,sections,cues,bpm,beats,notes,settings,guideFiles,guideKey,lyrics,chords,chordReference,drumHits,key,sourceURL,capo,analysesCompleted,gridLocked,downbeats,analysisNote
     }
     init(from decoder:Decoder) throws {
         let d=try decoder.container(keyedBy:CodingKeys.self)
@@ -125,6 +159,7 @@ extension StudioProject {
         guideKey=try d.decodeIfPresent(String.self,forKey:.guideKey) ?? ""
         lyrics=try d.decodeIfPresent([TimedText].self,forKey:.lyrics) ?? []
         chords=try d.decodeIfPresent([TimedText].self,forKey:.chords) ?? []
+        chordReference=try d.decodeIfPresent(ChordReference.self,forKey:.chordReference)
         drumHits=try d.decodeIfPresent([DrumHit].self,forKey:.drumHits) ?? []
         key=try d.decodeIfPresent(String.self,forKey:.key) ?? ""
         capo=try d.decodeIfPresent(Int.self,forKey:.capo) ?? 0
@@ -135,8 +170,10 @@ extension StudioProject {
         sourceURL=try d.decodeIfPresent(String.self,forKey:.sourceURL) ?? ""
     }
     func desiredGuideKey()->String {
-        struct Input:Encodable{var generator=3;var settings:GuideSettings;var bpm:Double;var beats:[Double];var sections:[Section];var cues:[Cue];var duration:Double}
+        struct Input:Encodable{var generator=5;var settings:GuideSettings;var bpm:Double;var beats:[Double];var sections:[Section];var cues:[Cue];var duration:Double}
         var sound=settings
+        sound.referenceBPM=nil
+        if sound.gridMode=="detected" {sound.pulseUnit=nil}
         sound.clickGain=1;sound.callsGain=1;sound.cuesGain=1;sound.countGain=1
         sound.clickPan=0;sound.callsPan=0;sound.countPan=0
         sound.clickEnabled=true;sound.callsEnabled=true;sound.speakCues=true
@@ -153,6 +190,6 @@ extension StudioProject {
             let i=max(1,index),delta=beats[i]-beats[i-1]
             if delta>0.1 && delta<3{return delta}
         }
-        return 60/(settings.gridMode == "fixed" ? settings.manualBPM : (bpm>20 ? bpm : settings.manualBPM))
+        return 60/pulseBPM
     }
 }

@@ -24,7 +24,7 @@ import catalog
 import artwork
 
 COMPONENTS={'generate':'creative','vocalsplit':'creative','separate':'stems','drumsep':'drumsep','structure':'structure','lyrics':'words','chords':'chords','drums':'drums','smartgrid':'rhythm'}
-ENVIRONMENTS={'generate':'.venv-creative','vocalsplit':'.venv-creative','separate':'.venv-demucs','drumsep':'.venv-demucs','structure':'.venv-structure','lyrics':'.venv-words','chords':'.venv-chords','drums':'.venv-drums','smartgrid':'.venv-demucs'}
+ENVIRONMENTS={'generate':'.venv-creative','vocalsplit':'.venv-creative','separate':'.venv-demucs','drumsep':'.venv-demucs','structure':'.venv-structure','lyrics':'.venv-words','chords':'.venv','drums':'.venv-drums','smartgrid':'.venv-demucs'}
 
 class Api:
     def __init__(self,engine,library=None):
@@ -48,12 +48,13 @@ class Api:
         if not self._project.get('gridLocked'):steps.append('smartgrid' if available['smartgrid'] else 'grid')
         if available['structure']:steps.append('structure')
         if not self._project.get('key'):steps.append('key')
-        steps += [k for k in ('lyrics','chords') if available[k]]
+        steps += (['lyrics'] if available['lyrics'] else [])+['chords']
         return [kind for kind in steps if not model.analysis_done(self._project,kind)]+([] if self._ready_guides() else ['guides'])
     def _ready_guides(self):
         return bool(self._root and self._project['guideKey']==model.guide_key(self._project) and all(model.relative_file(self._root,p).is_file() for p in self._project['guideFiles'].values()))
     def _state(self):
-        self._send(dict(type='state',project=self._project,duration=model.duration(self._project),loaded=self._root is not None,library=self._list(),trashAvailable=bool(catalog.trashed(self._library)),analysisPlan=self._plan(),setlists=self._setlists,busy=self._busy,job=self._job_name,notice=self._notice,undo=bool(self._history),redo=bool(self._future),revision=self._revision,lastExport=self._last_export,guidesReady=self._ready_guides(),platform='windows',components={k:python_for(self._engine,v).is_file() for k,v in ENVIRONMENTS.items()}))
+        from chord_sources import public_catalog
+        self._send(dict(type='state',project=self._project,duration=model.duration(self._project),loaded=self._root is not None,library=self._list(),trashAvailable=bool(catalog.trashed(self._library)),analysisPlan=self._plan(),setlists=self._setlists,busy=self._busy,job=self._job_name,jobTask=getattr(self,'_job_kind',''),jobID=str(self._job_log or ''),jobPlan=getattr(self,'_job_plan',[]),jobPlanIndex=getattr(self,'_job_plan_index',0),notice=self._notice,undo=bool(self._history),redo=bool(self._future),revision=self._revision,lastExport=self._last_export,guidesReady=self._ready_guides(),platform='windows',components={k:python_for(self._engine,v).is_file() for k,v in ENVIRONMENTS.items()},chordProviders=public_catalog()))
         self._transport()
     def _transport(self):
         a=self._audio
@@ -83,7 +84,7 @@ class Api:
                     try:status=json.loads((self._job_log.parent/'progress.json').read_text(encoding='utf-8'))
                     except (OSError,ValueError):status={}
                     if not isinstance(status,dict):status={}
-                    self._send(dict(type='job',detail=detail[-1] if detail else '',stage=status.get('stage'),device=status.get('device'),fallback=bool(status.get('fallback')),elapsed=max(0,time.monotonic()-self._job_started)))
+                    self._send({**status,'type':'job','task':getattr(self,'_job_kind',''),'jobID':str(self._job_log),'plan':getattr(self,'_job_plan',[]),'planIndex':getattr(self,'_job_plan_index',0),'detail':detail[-1] if detail else '', 'elapsed':max(0,time.monotonic()-self._job_started)})
                 except OSError:pass
             for name,proc in list(self._components.items()):
                 if proc.poll() is not None:
@@ -128,7 +129,7 @@ class Api:
                     if root:
                         try:self._reload();model.save(before,root)
                         except Exception:pass
-            finally:self._busy=False;self._job=None;self._job_name='';self._job_log=None;self._state()
+            finally:self._busy=False;self._job=None;self._job_name='';self._job_log=None;self._job_plan=[];self._job_plan_index=0;self._state()
         threading.Thread(target=run,daemon=True).start()
     def _prepared_transport(self,action):
         generation=self._transport_generation
@@ -151,13 +152,16 @@ class Api:
         args=[str(python),str(self._engine/'worker.py'),kind,'--engine',str(self._engine),'--project',str(snapshot),'--output',str(result),*map(str,arguments)]
         if input:args+=['--input',str(input)]
         env=os.environ.copy();env.update(PYTHONUTF8='1',PYTHONIOENCODING='utf-8',PYTHONUNBUFFERED='1',PYTHONDONTWRITEBYTECODE='1',HF_HUB_OFFLINE='1',PATH=str(self._engine/'import-tools')+os.pathsep+env.get('PATH',''))
+        self._job_kind=kind
         self._job_started=time.monotonic();self._job_log=folder/'traitement.log'
+        self._state()
         with self._job_log.open('wb') as log:
             with self._lock:
                 if self._cancelled.is_set():raise RuntimeError('Traitement annulé.')
                 proc=subprocess.Popen(args,stdout=log,stderr=log,cwd=folder,env=env,creationflags=creation_flags());self._job=proc
             status=proc.wait()
         self._job=None
+        self._send(dict(type='job',task=kind,jobID=str(self._job_log),finished=status==0 and not self._cancelled.is_set(),failed=status!=0 or self._cancelled.is_set(),progress=100 if status==0 and not self._cancelled.is_set() else 0))
         if self._cancelled.is_set():raise RuntimeError('Traitement annulé.')
         diagnostics.event('job.finish', task=kind, exit=status, elapsed=round(time.monotonic()-self._job_started,2))
         if status:
@@ -194,6 +198,8 @@ class Api:
         self._project['tracks']=[t for t in self._project['tracks'] if not t['role'].startswith('guide_')]
         for key,name,role in [('click','Métronome','guide_click'),('calls','Appels de régions','guide_voice'),('cues','Cues','guide_cue'),('counts','Décompte des régions','guide_count')]:self._project['tracks'].append(model.track(self._root/mapping[key],self._root,name,role))
         self._project['guideFiles']=mapping;self._project['guideKey']=model.guide_key(self._project);self._reload();self._save(invalidate=False);self._notice='Appels, décomptes et métronome prêts.'
+        if obj.get('guideWarnings'):
+            self._notice=f"Guides prêts · {len(obj['guideWarnings'])} annonce(s) sans place avant l’entrée : raccourcis le texte ou le décompte."
     def _decode(self,source,target):
         args=[str(executable(self._engine,'ffmpeg')),'-nostdin','-hide_banner','-loglevel','error','-y','-protocol_whitelist','file,pipe,crypto,data','-i',str(source),'-map','0:a:0','-vn','-ac','2','-ar','44100','-c:a','pcm_f32le',str(target)]
         r=subprocess.run(args,capture_output=True,creationflags=creation_flags(),timeout=1800)
@@ -233,15 +239,22 @@ class Api:
         if not source.is_relative_to(result.parent.resolve()):raise ValueError('Dossier d’import invalide.')
         p=model.load(source);target=self._library/(safe_name(p['name'])+' '+p['id'][:6]+'.bandstudio');shutil.move(str(source),target);self._load(target);self._notice='Projet REAPER importé. '+' '.join(obj.get('warnings',[]))
     def _analysis(self,kind,args):
-        if model.analysis_done(self._project,kind):
+        reanalyze=args.get('reanalyze') is True
+        if not reanalyze and model.analysis_done(self._project,kind):
             self._notice='Analyse déjà disponible et résultat protégé. Les corrections et validations sont conservées.';return
-        if kind=='grid' and self._project.get('gridLocked'):raise ValueError('Le calage est protégé. Déverrouille-le dans Guidage avant une nouvelle analyse.')
+        if kind=='grid' and self._project.get('gridLocked'):raise ValueError('Le calage est protégé. Décoche « Protéger le calage » dans Click & cues avant de relancer.')
         desired={'lyrics':'vocals','drums':'drums','drumsep':'drums'}.get(kind,'source');source=next((t for t in self._project['tracks'] if t['role']==desired),None)
         if not source and kind not in ('drums','drumsep'):source=next((t for t in self._project['tracks'] if t['role']=='source'),None)
         if not source:raise ValueError('Il manque la piste '+desired+'. Importe un morceau ou sépare ses instruments.')
         offset=source['offset']
-        result,obj=self._work(kind,model.relative_file(self._root,source['file']),['--model',args.get('model','htdemucs'),'--quality',args.get('quality','standard'),'--language',args.get('language','auto')]);self._remember()
-        if kind=='grid':model.apply_grid(self._project,obj,offset)
+        arguments=['--model',args.get('model','htdemucs'),'--quality',args.get('quality','standard'),'--language',args.get('language','auto')]
+        if reanalyze:arguments.append('--reanalyze')
+        if args.get('sourceURL'):
+            if kind!='chords' or not any(s['url']==args['sourceURL'] for s in (self._project.get('chordReference') or {}).get('sources',[])):raise ValueError('Choisis une grille trouvée pour ce morceau.')
+            arguments+=['--chord-source',args['sourceURL']]
+        result,obj=self._work(kind,model.relative_file(self._root,source['file']),arguments);self._remember()
+        if kind=='grid':
+            model.apply_grid(self._project,obj,offset,reanalyze=reanalyze);self._reload()
         elif kind=='structure':model.apply_sections(self._project,obj['sections'])
         elif kind in ('separate','drumsep'):
             tracks=[];names={'drums':'Batterie','bass':'Basse','vocals':'Chant','guitar':'Guitare','piano':'Piano','other':'Autres instruments','drum_kick':'Grosse caisse','drum_snare':'Caisse claire','drum_toms':'Toms','drum_cymbals':'Cymbales et charleston'}
@@ -253,7 +266,10 @@ class Api:
             self._project['tracks']=keep+tracks;self._reload();self._audio.mode='mix'
         elif kind=='drums':
             pitches={'BD':36,'SD':38,'TT':45,'HH':42,'CY':49};self._project['drumHits']=sorted([dict(time=t,pitch=pitches[k],velocity=max(1,min(127,round(prob*127)))) for k,rows in obj['onsets'].items() for t,prob in rows if t<=model.duration(self._project)],key=lambda x:x['time'])
-        elif kind in ('lyrics','chords'):
+        elif kind=='chords':
+            from chord_sources import apply
+            apply(self._project,obj)
+        elif kind=='lyrics':
             entries=[];manual=[x for x in self._project[kind] if x.get('manual')]
             for row in obj['segments']:
                 start=row.get('start',row.get('t',0));end=min(model.duration(self._project),row['end'])
@@ -263,14 +279,15 @@ class Api:
                 entries.append(entry)
             self._project[kind]=sorted(manual+entries,key=lambda x:x['start'])
         model.analysis_completed(self._project,kind)
-        self._save();self._notice='Analyse ajoutée. Vérifie et corrige les propositions dans l’atelier ou le prompteur.'
+        self._save();self._notice=obj['reference']['message'] if kind=='chords' else 'Analyse ajoutée. Vérifie et corrige les propositions dans l’atelier ou le prompteur.'
     def _set_rate(self,rate,pitch,resume=False):
         self._audio.pause();self._audio.rate=model.number(rate,.5,1.5);self._audio.pitch=model.number(pitch,-12,12);self._audio.prepare()
         if resume:self._audio.play()
     def _prepare_all(self,args):
         from windows.advanced_host import advanced_task
-        steps=self._plan()
+        steps=self._plan();self._job_plan=steps
         for index,kind in enumerate(steps,1):
+            self._job_plan_index=index-1
             before=copy.deepcopy(self._project)
             titles={'separate':'Séparation','grid':'Tempo','smartgrid':'Temps et mesures','structure':'Structure','key':'Tonalité','lyrics':'Paroles','chords':'Accords','guides':'Click et annonces'}
             self._job_name=f'Tout préparer · {index}/{len(steps)} · '+titles[kind];self._state()
@@ -351,12 +368,19 @@ class Api:
                 self._send(dict(type='artworkResult',path=args.get('path'),**result))
             threading.Thread(target=lookup,daemon=True).start();return
         if cmd=='ready':return
+        if cmd=='chordSourceOpen':
+            import webbrowser
+            from urllib.parse import urlsplit
+            link=args.get('url','');url=urlsplit(link)
+            if not any(s['url']==link for s in (self._project.get('chordReference') or {}).get('sources',[])) or url.scheme!='https' or not url.hostname or url.username or url.password:raise ValueError('Source d’accords invalide.')
+            if not webbrowser.open(link):raise ValueError('Impossible d’ouvrir la grille.')
+            return
         if cmd=='referenceSearch':
             import webbrowser
-            from urllib.parse import urlencode
+            from chord_sources import search_url
             kind=args.get('kind');query=str(args.get('query','')).strip()[:300]
             if not self._root or kind not in ('chords','lyrics') or not query:raise ValueError('Précise le titre du morceau.')
-            url='https://www.google.com/search?'+urlencode({'q':query+(' chords accords' if kind=='chords' else ' lyrics paroles')})
+            url=search_url(query,kind,args.get('provider',''))
             if not webbrowser.open(url):raise ValueError('Impossible d’ouvrir le navigateur.')
             return
         if cmd=='supportInfo':self._send(diagnostics.support_info());return
@@ -499,7 +523,7 @@ class Api:
         if cmd=='settings':
             value={**model.GUIDE_DEFAULTS,**args['value']};candidate={**p,'settings':value};model.validate(candidate,self._root)
             a.pause();self._remember()
-            if any(value[k]!=p['settings'][k] for k in ('firstBeat','gridMode','beatsPerBar','manualBPM')):p['gridLocked']=True
+            if any(value[k]!=p['settings'][k] for k in ('firstBeat','gridMode','beatsPerBar','manualBPM')) or (value['gridMode']=='fixed' and value.get('pulseUnit')!=p['settings'].get('pulseUnit')):p['gridLocked']=True
             p['settings']=value;self._save();self._op('Préparation des guides',self._guides);return
         if cmd=='phone':
             from windows.phone_host import PhoneSession
@@ -531,7 +555,7 @@ class Api:
             from windows.advanced_host import advanced_task
             kind=args.get('kind');options=args.get('options') or {}
             if kind not in ('smartgrid','key','lyricsimport','lyricsexport','stemsexport','master','report','portable','sheet'):raise ValueError('Outil inconnu.')
-            if model.analysis_done(p,kind):
+            if options.get('reanalyze') is not True and model.analysis_done(p,kind):
                 self._notice='Analyse déjà disponible et résultat protégé. Les corrections et validations sont conservées.';return
             a.pause();self._op('Outil local : '+kind,lambda:advanced_task(self,kind,options));return
         if cmd=='analyze':

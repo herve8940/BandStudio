@@ -17,11 +17,12 @@ extension StudioApp {
     func advancedTask(_ args:[String:Any],completion:(() throws -> Void)?=nil) throws {
         try requireIdle()
         guard let root=root,let kind=args["kind"] as? String,["smartgrid","key","lyricsimport","lyricsexport","stemsexport","master","report","portable","sheet"].contains(kind) else{throw StudioError("Ouvre d’abord un morceau.")}
-        if project.analysisDone(kind) {notice="Analyse déjà disponible et résultat protégé. Les corrections et validations sont conservées.";sendState();try completion?();return}
         let options=args["options"] as? [String:Any] ?? [:]
+        let reanalyze=options["reanalyze"] as? Bool == true
+        if !reanalyze && project.analysisDone(kind) {notice="Analyse déjà disponible et résultat protégé. Les corrections et validations sont conservées.";sendState();try completion?();return}
         let optionData=try JSONSerialization.data(withJSONObject:options)
         guard optionData.count<=2_100_000,let json=String(data:optionData,encoding:.utf8) else{throw StudioError("Paramètres trop volumineux.")}
-        if kind == "smartgrid",project.gridLocked {throw StudioError("Le calage est protégé. Déverrouille-le dans Guidage avant une nouvelle analyse.")}
+        if kind == "smartgrid",project.gridLocked {throw StudioError("Le calage est protégé. Décoche « Protéger le calage » dans Click & cues avant de relancer.")}
         var input:URL?=nil
         var sourceOffset=0.0
         if ["smartgrid","key"].contains(kind) {
@@ -32,7 +33,7 @@ extension StudioApp {
             let object=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
             if kind == "smartgrid" {
                 self.remember()
-                self.project.applyDetectedGrid(object,offset:sourceOffset)
+                self.project.applyDetectedGrid(object,offset:sourceOffset,reanalyze:reanalyze)
                 self.project.analysisCompleted(kind)
                 self.audio.pause();try self.reloadAudio();try self.changed();self.notice=self.project.analysisNote
             } else if kind == "key" {

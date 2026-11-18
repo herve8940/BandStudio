@@ -2,7 +2,7 @@
 
 [Français](BANDSTUDIO_TUTORIEL_fr.md) · [Installation guide](BANDSTUDIO.md) · [Website](https://herve8940.github.io/BandStudio/en.html)
 
-Updated 15 November 2026. This tutorial covers the standalone BandStudio app on macOS and Windows. Button names below match the French labels currently displayed in the app.
+Updated 19 November 2026. This tutorial covers the standalone BandStudio app on macOS and Windows. Button names below match the French labels currently displayed in the app.
 
 ## 1. Import and prepare
 
@@ -20,20 +20,28 @@ The count-in follows the saved grid, including tempo changes. It can overlap the
 
 ## 3. Adjust sections and cues
 
-In **Pistes & structure**:
+In **Pistes & structure**, choose **Pistes** for mixing or **Structure** for the section list. Structure shows start/end positions, length and review status; **Modifier** opens a section and **↻** loops it. Use the coloured overview to jump to a passage.
 
-1. Use **＋**, **−** and **Tout** to zoom. **Parcourir le morceau** moves the visible window; **Suivre la lecture** follows playback.
+Search filters the current view. In Pistes, filter instruments, original audio or guides; **Compact** reduces track height and **Masquer l’inspecteur** gives the timeline more room. These controls do not change the mix.
+
+To refine a marker:
+
+1. Use **＋**, **−** and **Tout** to zoom. **Sélection** (**F**) fits the selected section; **L** toggles looping and **Alt + ← / →** navigates markers outside text fields. **Parcourir le morceau** moves the visible window; **Suivre la lecture** follows playback.
 2. Choose **Mesure** (bar) or **Temps** (beat) snapping, then drag a section boundary or cue. You can also use the **−1 mesure**, **+1 mesure**, **−1 temps** and **+1 temps** buttons in **Un repère à la fois**.
 3. Click **Écouter autour** to hear the announcement and entrance. Click the marker’s name to edit it.
 4. Click **Valider et suivant** to review the next marker. The counter shows progress. Moving a marker clears its reviewed status.
 
 Shared boundaries keep adjoining sections continuous. Changes are saved with the song and support undo/redo. Reviewing individual markers does not replace the final review before REAPER export.
 
+Compatible new SongFormer analyses receive a learned fine timing adjustment: at most 250 ms, with abstention when the learned proposals disagree. It does not rename sections or insert missing transitions. Manual and reviewed sections remain protected. Activation requires verified weights, a 60-second analysis window and a 2–10-minute recording; other configurations keep the original proposals. This corrects section boundaries, not tempo or spoken-cue anticipation. [Evaluation and protocol (FR)](CUE_CORRECTOR_TRAINING.md#résultats-du-lot-réservé-et-distribution).
+
 ## 4. Balance the guides
 
-**Métronome**, **Appels**, **Cues** and **Décompte** have separate levels. **Muet** mutes or restores each guide’s level. Changing levels or marking a cue as reviewed does not rerun AI analysis or rebuild guides. Moving a marker may require guide regeneration.
+Open **Mix des guides** in **Pistes & structure** to reveal the controls. **Métronome**, **Appels**, **Cues** and **Décompte** have separate levels. **Muet** mutes or restores each guide’s level. Changing levels or marking a cue as reviewed does not rerun AI analysis or rebuild guides. Moving a marker may require guide regeneration.
 
 ## 5. Edit the song sheet
+
+[Visual song sheet → PDF tutorial (FR)](https://herve8940.github.io/BandStudio/fiche-morceau.html) · [Visual import → REAPER tutorial (FR)](https://herve8940.github.io/BandStudio/tutoriel.html)
 
 Open **Fiche morceau**. The sheet brings together song identity, available artwork, tempo, key, sections, chords and lyrics, bar by bar. Select a passage from the list; click a bar or section title to move the listening cursor.
 
@@ -41,7 +49,9 @@ Open **Fiche morceau**. The sheet brings together song identity, available artwo
 - Use the start/end bar and beat fields, nudge buttons or **Placer au curseur**. Moving a lyric line preserves the relative timing of its synchronized words.
 - **+ Accord** and **+ Paroles** add annotations. Replacing chords over a selected interval preserves their portions outside that interval.
 - **Importer des paroles** uses your own file. **Annuler** and **Rétablir** undo and redo edits.
-- Chord/lyric reference buttons open a browser search using the song title and artist. Compare the version and key, then edit manually; nothing from those sites is imported automatically.
+- Search for an Internet chord chart in **Séparer & analyser** or **Paroles & accords**, after checking the song title and artist. Found sources stay separate: **Ouvrir la grille** opens the original page; **Utiliser cette grille** selects it for alignment. Internet access is required and some publishers may be unavailable.
+- Chords from the chosen source are proposed on the song’s beat grid. Listen and correct their placement; proposals do not guarantee the right arrangement or chord. **Caler sur le temps / contretemps** helps place a change. Manual edits remain protected.
+- **Autres sources sur Internet** and lyric searches open the browser. Lyrics from those websites are not imported automatically.
 
 The sheet edits the open song’s existing annotations. Estimated chords and transcription still need listening checks. A lyric line without word timing remains whole at its starting position.
 
