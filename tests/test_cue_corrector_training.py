@@ -99,9 +99,13 @@ def test_ready_requires_successful_complete_report_and_every_prediction(tmp_path
         training.ready(tmp_path, rows)
 
 
-def test_waiter_starts_only_after_success_and_respects_stop(tmp_path, monkeypatch):
+@pytest.mark.parametrize("windows_monitor", [False, True])
+def test_waiter_starts_only_after_success_and_respects_stop(tmp_path, monkeypatch, windows_monitor):
     import os
     import time
+    if windows_monitor:
+        monkeypatch.setattr(training.sys, 'platform', 'win32')
+        monkeypatch.setattr(training.os, 'kill', lambda *args: pytest.fail('Windows monitor sent a console signal'))
     analysis=tmp_path/'analysis';analysis.mkdir()
     output=tmp_path/'training';output.mkdir()
     rows=[dict(id='one')];folder=analysis/'one';folder.mkdir()

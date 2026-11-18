@@ -159,7 +159,9 @@ def await_analysis(analysis, output, rows, wait):
         if completed != last:
             emit(output, 'waiting_for_analysis', completedAnalyses=completed, totalAnalyses=len(rows), trainingStarted=False)
             last = completed
-        if state.get('pid'):
+        # Signal 0 probes existence on POSIX, but sends CTRL_C_EVENT on Windows.
+        # Windows monitoring relies on the progress heartbeat below.
+        if state.get('pid') and sys.platform != 'win32':
             try:
                 os.kill(state['pid'], 0)
             except ProcessLookupError:
