@@ -15,6 +15,10 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     var busy=false
     var job:Process?
     var jobName=""
+    var jobKind=""
+    var jobIdentifier=""
+    var jobPlan:[String]=[]
+    var jobPlanIndex=0
     var jobLog:URL?
     var jobStarted=0.0
     var notice=""
@@ -120,8 +124,9 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             var progress:[String:Any]=["type":"job","name":jobName,"detail":jobDetail(),"elapsed":max(0,ProcessInfo.processInfo.systemUptime-jobStarted)]
             if let url=jobLog?.deletingLastPathComponent().appendingPathComponent("progress.json"),
                let data=try? Data(contentsOf:url),let status=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any] {
-                progress["stage"]=status["stage"];progress["device"]=status["device"]
+                for key in ["stage","device","fallback","progress","progressLabel","progressBasis","indeterminate","passIndex","passCount","passProgress","completed","total","finished","failed"] {progress[key]=status[key]}
             }
+            progress["task"]=jobKind;progress["jobID"]=jobIdentifier;progress["plan"]=jobPlan;progress["planIndex"]=jobPlanIndex
             send(progress)
         }
     }
@@ -135,7 +140,8 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     func sendState() {
         let object=(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(project))) ?? [:]
         let lists=(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(setlists))) ?? []
-        send(["type":"state","project":object,"duration":project.duration,"loaded":root != nil,"library":projectList(),"analysisPlan":analysisPlan(),"trashAvailable":hasTrashedProjects(),"setlists":lists,"busy":busy,"job":jobName,"notice":notice,"undo":!history.isEmpty,"redo":!future.isEmpty,"revision":revision,"lastExport":lastExport,"guidesReady":project.guideKey==project.desiredGuideKey()])
+        let providers=ChordProvider.all.map{["id":$0.id,"publisher":$0.publisher,"domain":$0.domain,"automatic":$0.template != nil] as [String:Any]}
+        send(["type":"state","project":object,"duration":project.duration,"loaded":root != nil,"library":projectList(),"analysisPlan":analysisPlan(),"trashAvailable":hasTrashedProjects(),"setlists":lists,"busy":busy,"job":jobName,"jobTask":jobKind,"jobID":jobIdentifier,"jobPlan":jobPlan,"jobPlanIndex":jobPlanIndex,"notice":notice,"undo":!history.isEmpty,"redo":!future.isEmpty,"revision":revision,"lastExport":lastExport,"guidesReady":project.guideKey==project.desiredGuideKey(),"chordProviders":providers])
         sendTransport()
     }
     func changed(invalidate:Bool=true) throws {
@@ -256,25 +262,27 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             }
         }
     }
-    func runAnalysis(_ kind:String,model:String,language:String="auto",quality:String="standard",completion:(() throws -> Void)?=nil) throws {
+    func runAnalysis(_ kind:String,model:String,language:String="auto",quality:String="standard",reanalyze:Bool=false,chordSource:String="",completion:(() throws -> Void)?=nil) throws {
         guard ["grid","structure","separate","drumsep","lyrics","chords","drums"].contains(kind),["htdemucs","htdemucs_6s","htdemucs_ft"].contains(model) else {throw StudioError("Traitement inconnu.")}
-        if project.analysisDone(kind) {notice="Analyse déjà disponible et résultat protégé. Les corrections et validations sont conservées.";sendState();try completion?();return}
-        if kind == "grid" && project.gridLocked {throw StudioError("Le calage est protégé. Déverrouille-le dans Guidage avant une nouvelle analyse.")}
+        if !reanalyze && project.analysisDone(kind) {notice="Analyse déjà disponible et résultat protégé. Les corrections et validations sont conservées.";sendState();try completion?();return}
+        if kind == "grid" && project.gridLocked {throw StudioError("Le calage est protégé. Décoche « Protéger le calage » dans Click & cues avant de relancer.")}
         let desired=kind == "lyrics" ? "vocals" : (["drums","drumsep"].contains(kind) ? "drums" : "source")
         guard let root=root,let source=project.tracks.first(where:{$0.role==desired}) ?? (["drums","drumsep"].contains(kind) ? nil : project.tracks.first(where:{$0.role == "source"})) else {throw StudioError(["drums","drumsep"].contains(kind) ? "Sépare d’abord une piste batterie." : "Importe d’abord un morceau.")}
-        try startJob(kind,input:project.audioURL(source,root:root),arguments:["--model",model,"--language",language,"--quality",quality]) {result in
+        if !chordSource.isEmpty && (kind != "chords" || project.chordReference?.sources.contains(where:{$0.url==chordSource}) != true) {throw StudioError("Choisis une grille trouvée pour ce morceau.")}
+        try startJob(kind,input:project.audioURL(source,root:root),arguments:["--model",model,"--language",language,"--quality",quality]+(reanalyze ? ["--reanalyze"] : [])+(chordSource.isEmpty ? [] : ["--chord-source",chordSource])) {result in
             if ["lyrics","chords","drums"].contains(kind) {try self.applyTextAnalysis(kind,result:result)}
-            else{try self.applyAnalysis(kind,result:result);self.notice="Analyse terminée. Les corrections manuelles sont conservées."}
+            else{try self.applyAnalysis(kind,result:result,reanalyze:reanalyze);self.notice="Analyse terminée. Vérifie les nouvelles propositions à l’écoute."}
             try completion?()
         }
     }
-    func applyAnalysis(_ kind:String,result:URL) throws {
+    func applyAnalysis(_ kind:String,result:URL,reanalyze:Bool=false) throws {
         guard let root=root else{return}
         let data=try Data(contentsOf:result)
         let object=try JSONSerialization.jsonObject(with:data) as? [String:Any] ?? [:]
         remember()
         if kind == "grid" {
-            project.applyDetectedGrid(object,offset:project.tracks.first(where:{$0.role=="source"})?.offset ?? 0)
+            project.applyDetectedGrid(object,offset:project.tracks.first(where:{$0.role=="source"})?.offset ?? 0,reanalyze:reanalyze)
+            audio.pause();try reloadAudio()
         } else if kind == "structure" {
             let raw=try JSONSerialization.data(withJSONObject:object["sections"] ?? [])
             project.applySections(try JSONDecoder().decode([Section].self,from:raw))
@@ -354,12 +362,16 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 try load(URL(fileURLWithPath:path));return
             }
             guard m["projectID"] as? String == project.id else {throw StudioError("Le projet a changé. Recommence ton action.")}
+            if command == "chordSourceOpen" {
+                guard let link=args["url"] as? String,project.chordReference?.sources.contains(where:{$0.url==link}) == true,
+                      let url=URL(string:link),url.scheme=="https",url.host != nil,url.user==nil,url.password==nil else{throw StudioError("Source d’accords invalide.")}
+                guard NSWorkspace.shared.open(url) else{throw StudioError("Impossible d’ouvrir la grille.")};return
+            }
             if command == "referenceSearch" {
                 guard root != nil,let kind=args["kind"] as? String,["chords","lyrics"].contains(kind),
                       let query=args["query"] as? String,!query.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else{throw StudioError("Précise le titre du morceau.")}
-                var url=URLComponents(string:"https://www.google.com/search")!
-                url.queryItems=[URLQueryItem(name:"q",value:String(query.prefix(300))+(kind == "chords" ? " chords accords" : " lyrics paroles"))]
-                guard let target=url.url,NSWorkspace.shared.open(target) else{throw StudioError("Impossible d’ouvrir le navigateur.")}
+                let target=try ChordProvider.searchURL(query:query,kind:kind,provider:args["provider"] as? String ?? "")
+                guard NSWorkspace.shared.open(target) else{throw StudioError("Impossible d’ouvrir le navigateur.")}
                 return
             }
             if command == "cancel" {transportGeneration += 1;job?.terminate();job=nil;return}
@@ -430,7 +442,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 if let root=root{try audio.load(project,root:root)};try changed()
             case "addTracks":chooseAudio(new:false)
             case "prepareAll":try prepareAll(args)
-            case "analyze":try runAnalysis(args["kind"] as? String ?? "grid",model:args["model"] as? String ?? "htdemucs",language:args["language"] as? String ?? "auto",quality:args["quality"] as? String ?? "standard")
+            case "analyze":try runAnalysis(args["kind"] as? String ?? "grid",model:args["model"] as? String ?? "htdemucs",language:args["language"] as? String ?? "auto",quality:args["quality"] as? String ?? "standard",reanalyze:args["reanalyze"] as? Bool == true,chordSource:args["sourceURL"] as? String ?? "")
             case "export":try withGuides{try self.exportAudio()}
             case "exportCues":try exportCues()
             case "guideMix":try guideMix(args)

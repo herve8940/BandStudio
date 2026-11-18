@@ -1,7 +1,7 @@
 'use strict';
 // Local tools share the existing project-bound native message channel.
 const studioTask=(kind,options={})=>send('studioTask',{kind,options});
-document.querySelectorAll('[data-studio-task]').forEach(b=>b.onclick=()=>studioTask(b.dataset.studioTask));
+document.querySelectorAll('[data-studio-task]').forEach(b=>b.onclick=()=>studioTask(b.dataset.studioTask,['smartgrid','key'].includes(b.dataset.studioTask)?{reanalyze:true}:{}));
 const musicKeys=[['','Non renseignée']];
 for(const [name,label] of [['C','Do'],['C#','Do♯'],['D','Ré'],['Eb','Mi♭'],['E','Mi'],['F','Fa'],['F#','Fa♯'],['G','Sol'],['Ab','La♭'],['A','La'],['Bb','Si♭'],['B','Si']]){
  musicKeys.push([name,label+' majeur'],[name+'m',label+' mineur']);
@@ -10,6 +10,8 @@ for(const [value,label] of musicKeys){const o=node('option','',label);o.value=va
 $('songKey').onchange=()=>send('musicSettings',{key:$('songKey').value});
 $('capo').onchange=()=>send('musicSettings',{capo:Number($('capo').value)});
 $('lockGrid').onchange=()=>send('musicSettings',{gridLocked:$('lockGrid').checked});
+$('unlockTempo').onclick=()=>send('musicSettings',{gridLocked:false});
+$('editTempo').onclick=()=>{view('guides');$('setting-referenceBPM').focus();};
 $('markDownbeat').onclick=()=>{
  const s={...guideDefaults,...state.project.settings,firstBeat:transport.position||0};
  guideDirty=false;send('settings',{value:s});
@@ -22,8 +24,8 @@ $('tapTempo').onclick=()=>{
  const deltas=taps.slice(1).map((v,i)=>v-taps[i]).sort((a,b)=>a-b);
  const bpm=60000/deltas[Math.floor(deltas.length/2)];
  if(bpm<20||bpm>400)return;
- $('setting-manualBPM').value=bpm.toFixed(1);$('setting-gridMode').value='fixed';guideDirty=true;
- $('tapResult').textContent=bpm.toFixed(1)+' BPM · Appliquer au morceau pour enregistrer ce tempo fixe';
+ $('setting-manualBPM').value=(bpm*($('setting-pulseUnit').value==='dottedQuarter'?1.5:1)).toFixed(1);$('setting-gridMode').value='fixed';guideDirty=true;
+ $('tapResult').textContent=$('setting-manualBPM').value+' BPM à la noire · Appliquer au morceau pour enregistrer ce tempo fixe';
 };
 $('exportStems').onclick=()=>studioTask('stemsexport',{format:$('stemFormat').value});
 $('exportLyrics').onclick=()=>studioTask('lyricsexport',{format:$('lyricFormat').value});
@@ -41,7 +43,17 @@ renderFeatures=function(){oldFeatures();
  if(document.activeElement!==$('songKey'))$('songKey').value=p.key||'';
  if(document.activeElement!==$('capo'))$('capo').value=p.capo||0;
  $('lockGrid').checked=!!p.gridLocked;
- $('rhythmStatus').textContent=p.analysisNote||(p.gridLocked?'Calage protégé · tes corrections sont conservées':'Calage modifiable');
+ $('unlockTempo').hidden=!p.gridLocked;
+ $('unlockTempo').disabled=$('editTempo').disabled=!state.loaded||state.busy;
+ $('tempoStatus').textContent=p.gridLocked?'Calage protégé : tu peux le modifier ou le déverrouiller ici.':p.analysisNote||'Détection modifiable : tu peux la recalculer ou corriger le tempo.';
+ const {fixed,bpm,measured,reference}=tempoSummary(p);
+ $('bpmValue').textContent=bpm?Number(bpm).toFixed(1):'—';
+ $('bpmKind').textContent='BPM · noire · '+(fixed?'fixe':reference?'référence':'estimé');
+ const pulse=p.settings?.pulseUnit==='dottedQuarter'?'noires pointées':'noires';
+ const detail=(reference?'Référence renseignée ; grille mesurée ≈ '+measured.toFixed(1)+' BPM à la noire. ':fixed?'Tempo fixe. ':'Tempo mesuré à la noire. ')+(p.bpm||fixed?'Clic : '+pulseTempo(p).toFixed(1)+' pulsations/min · '+pulse+'.':'');
+ $('tempoDetail').textContent=detail;$('guideTempoDetail').textContent=detail;
+
+ $('rhythmStatus').textContent=p.gridLocked?'Calage protégé · décoche la protection pour relancer la détection':p.analysisNote||'Calage modifiable';
  document.querySelectorAll('[data-studio-task],#exportStems,#exportLyrics,#importLyrics,#masterForm button,#markDownbeat,#tapTempo,#songKey,#capo,#lockGrid,#exportSheet,#startPhone').forEach(b=>b.disabled=!state.loaded||state.busy);
 };
 const originalStage=renderStage;

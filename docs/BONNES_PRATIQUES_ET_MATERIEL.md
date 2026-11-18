@@ -298,7 +298,7 @@ En complément de la séparation de stems, ReaCue propose quatre composants d'IA
 1. **Analyse de Structure — SongFormer (MuQ + MusicFM) :**
    - *Rôle :* Découpe musicale intelligente en sections nommées (*Intro, Couplet, Refrain, Pont, Solo, Outro*) avec alignement automatique sur les barres de mesure de REAPER.
    - *Avantage :* Évite la découpe manuelle des régions et assure une navigation parfaite sur le prompteur et dans le concert.
-   - *Configuration :* Fenêtre de 420 s (résolution maximale si $\ge 15\text{ Go}$ RAM ou GPU puissant), ou fenêtre de 120 s (mode économique 4 Go RAM).
+   - *Configuration :* Fenêtres automatiques de 30 à 60 s sur CPU, 60 à 120 s sur Metal et 120 à 420 s sur CUDA selon la mémoire disponible. Le mode Rapide utilise 30 s. Les couches inutilisées sont évitées et l’attention limite les allocations temporaires. Les fenêtres courtes réduisent le contexte musical ; les sections restent à vérifier à l’écoute.
 
 2. **Reconnaissance d'Accords — Modèle ISMIR 2019 (Chord Structure Decomposition) :**
    - *Rôle :* Transcription harmonique de haute précision à partir des stems harmoniques (guitares, basse, claviers).
@@ -328,7 +328,7 @@ ReaCue intègre depuis la version 1.2 un module d'audit matériel intelligent (`
 | **NVIDIA RTX série 50** *(Blackwell, ex. 5070, 5080, 5090)* | CUDA 12.8 (`cu128`, SM_120) | **`htdemucs_6s`** | Fenêtre 420s (Résolution max) | **~ 8 à 15 secondes** |
 | **NVIDIA RTX série 40 / 30 / 20** *($\ge 8\text{ Go}$ VRAM)* | CUDA 12.4 (`cu124`) | **`htdemucs_6s`** | Fenêtre 420s | **~ 15 à 30 secondes** |
 | **NVIDIA RTX / GTX** *(2 à 8 Go VRAM, ex. 3060 6 Go, 2060)* | CUDA 12.4 (`cu124`) | **`htdemucs_ft`** ou `htdemucs_6s` | Fenêtre 120s | **~ 30 à 60 secondes** |
-| **Apple Silicon** *(M1, M2, M3, M4 - Pro / Max / Ultra / standard)* | Metal MPS (`mps`) | **`htdemucs_6s`** | Fenêtre 420s (si $\ge 16\text{ Go}$ mémoire unifiée) | **~ 20 à 45 secondes** |
+| **Apple Silicon** *(M1, M2, M3, M4 - Pro / Max / Ultra / standard)* | Metal MPS (`mps`) | **`htdemucs_6s`** | Fenêtre 60 s, ou 120 s à partir de 24 Go de mémoire unifiée | **~ 20 à 45 secondes** |
 | **AMD Radeon dédié** *(Windows / Linux ROCm)* | ROCm / DirectML | **`htdemucs_ft`** ou `htdemucs_6s` | Fenêtre 120s / 420s | **~ 30 à 90 secondes** |
 | **Processeur seul (CPU)** *(Intel / AMD sans GPU dédié)* | CPU (`cpu`) | **`htdemucs`** *(4 stems standard)* | Fenêtre 120s | **~ 5 à 8 minutes** |
 

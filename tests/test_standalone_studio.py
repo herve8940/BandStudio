@@ -44,14 +44,14 @@ def test_structure_reports_phases_separately_from_runtime_warnings(tmp_path,monk
     def load():
         assert json.loads(status.read_text())['stage']=='structure-loading'
         return SimpleNamespace(device='cpu')
-    def init(app):
+    def init(app,notify):
         print('UserWarning: Skipping device NVIDIA GeForce GT 750M')
         print('  return torch._C._mps_is_available()')
-    def analyze(app,audio,window):
+    def analyze(app,audio,window,notify):
         assert json.loads(status.read_text())=={'stage':'structure-analysis','device':'cpu'}
         if fails:raise RuntimeError('model failed')
         return [{'start':0,'end':24,'label':'verse'}]
-    monkeypatch.setitem(sys.modules,'reacue_structure',SimpleNamespace(load_app=load,init_models=init,segments_from_app=analyze,ram_gb=lambda:16))
+    monkeypatch.setitem(sys.modules,'reacue_structure',SimpleNamespace(load_app=load,init_models=init,segments_from_app=analyze,choose_window=lambda:420))
     monkeypatch.setitem(sys.modules,'soundfile',SimpleNamespace(info=lambda _:SimpleNamespace(duration=24)))
     if fails:
         with pytest.raises(RuntimeError,match='model failed'):worker.analyze('audio.wav',output,'structure',tmp_path)

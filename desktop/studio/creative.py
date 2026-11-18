@@ -18,6 +18,7 @@ KARAOKE_SHA='bf32e15105a09c0f7dddd2b67346146334d6f3ecb399ed7638eba2ab07cbf5f4'
 def split_vocals(audio, folder, engine):
     import torch
     import onnxruntime as ort
+    from analysis_progress import phase_items
     model=Path(engine)/'creative/UVR_MDXNET_KARA_2.onnx'
     if not model.is_file() or hashlib.sha256(model.read_bytes()).hexdigest()!=KARAOKE_SHA:raise ValueError('Modèle vocal absent ou empreinte incorrecte. Installe les outils créatifs locaux.')
     info=sf.info(audio)
@@ -35,7 +36,7 @@ def split_vocals(audio, folder, engine):
     mix=np.pad(wave.T,((0,0),(trim,chunk)));result=np.zeros_like(mix);weight=np.zeros(mix.shape[1],np.float32)
     window=torch.hann_window(n_fft);fade=np.hanning(chunk).astype(np.float32);input_name=session.get_inputs()[0].name
     with torch.inference_mode():
-        for start in range(0,len(wave)+trim,step):
+        for start in phase_items(range(0,len(wave)+trim,step),0,1,"Séparation chant et chœurs"):
             block=np.zeros((2,chunk),np.float32);n=min(chunk,mix.shape[1]-start);block[:,:n]=mix[:,start:start+n]
             spectrum=torch.stft(torch.from_numpy(block),n_fft,hop_length=hop,window=window,center=True,return_complex=True)
             features=torch.view_as_real(spectrum).permute(0,3,1,2).reshape(1,4,n_fft//2+1,frames)[:,:,:bins,:].contiguous().numpy()

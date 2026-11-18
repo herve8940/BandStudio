@@ -20,7 +20,7 @@ def build(output,platform_name,app=None):
     target=output/('BandStudio-update-'+platform_name+'.zip')
     with zipfile.ZipFile(target,'w',zipfile.ZIP_DEFLATED) as archive:
         for source in (ROOT/'desktop/studio').rglob('*'):
-            if not source.is_file() or source.suffix not in ('.py','.html','.js','.css','.svg','.ps1'):continue
+            if not source.is_file() or (source.suffix not in ('.py','.html','.js','.css','.svg','.ps1') and source.name not in ('rhythm-quality.json','rhythm-adapter.json')):continue
             path='engine/'+source.relative_to(ROOT/'desktop/studio').as_posix()
             if not allowed_path(path):continue
             content=source.read_bytes()

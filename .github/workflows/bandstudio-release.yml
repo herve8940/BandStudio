@@ -31,6 +31,8 @@ jobs:
           python -m pytest -q tests/test_studio_artwork.py tests/test_studio_windows.py tests/test_studio_windows_startup.py tests/test_studio_compute.py tests/test_studio_services.py tests/test_studio_preparation.py tests/test_studio_support.py
           python -m pytest -q tests/test_studio_queue.py -k "not queue_ui"
           python -m pytest -q tests/test_studio_analysis_cache.py tests/test_studio_grid_calibration.py tests/test_studio_grid_pdf.py tests/test_studio_musical_timing.py
+      - name: Verify portable correction and protected cues
+        run: python -m pytest -q tests/test_cue_corrector_release.py tests/test_cue_corrector_training.py tests/test_cue_corrector_portable.py tests/test_studio_cue_scheduling.py tests/test_studio_reanalysis.py tests/test_studio_structure_grouping.py tests/test_studio_tempo_consistency.py tests/test_studio_tempo_units.py
       - name: Reproduce and repair analysis dependency failure
         run: python tools/check_studio_analysis.py --report dist/checks
       - run: python tools/check_studio_windows.py dist/bandstudio/BandStudio-1.1.0-Windows-x64.zip --report dist/checks
@@ -63,6 +65,9 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.12'
+      - run: python -m pip install pytest numpy==1.26.4 scipy==1.13.1 soundfile==0.13.1
+      - name: Verify portable correction and protected cues
+        run: python -m pytest -q tests/test_cue_corrector_release.py tests/test_cue_corrector_training.py tests/test_cue_corrector_portable.py tests/test_studio_cue_scheduling.py tests/test_studio_reanalysis.py
       - run: python tools/build_studio_mac.py
       - name: Test native document and offline audio
         run: desktop-build/standalone/BandStudio.app/Contents/MacOS/BandStudio --self-test "$RUNNER_TEMP/BandStudio-test"
@@ -87,7 +92,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: python -m pip install pytest playwright==1.64.1 numpy scipy soundfile
-      - run: python -m pytest -q tests/test_standalone_studio.py tests/test_studio_support.py tests/test_studio_queue.py tests/test_studio_manual_editor.py tests/test_studio_song_sheet.py
+      - run: python -m pytest -q tests/test_standalone_studio.py tests/test_studio_support.py tests/test_studio_queue.py tests/test_studio_manual_editor.py tests/test_studio_song_sheet.py tests/test_studio_workspace.py tests/test_studio_progress.py tests/test_studio_web_chords.py tests/test_studio_chord_providers.py
   publish:
     needs: [windows, mac, interface]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'

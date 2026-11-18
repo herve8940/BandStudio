@@ -21,7 +21,11 @@ Windows packaging, speech, WebView2 and offline audio are exercised in CI; actua
 
 BandStudio grew from ReaCue. The [legacy REAPER documentation](README_REACUE.md) remains available. Code: [MIT](LICENSE). Optional models retain their own terms, including noncommercial restrictions for some structure/drum components: [third-party notices](THIRD_PARTY_NOTICES.md).
 
-## New · 15 November 2026
+## New · 19 November 2026
+
+- Tracks / Structure workspace with search, filters, compact mode, coloured overview and selection zoom.
+- Conservative timing correction for compatible new SongFormer analyses. On 24 held-out recordings, F1 at ±0.5 s improved from 46.84 to 52.06 / 100. [Scope and evaluation (FR)](docs/CUE_CORRECTOR_TRAINING.md#résultats-du-lot-réservé-et-distribution).
+- Internet chord charts with separate sources, explicit chart selection and proposed beat alignment to check by ear.
 
 - Zoom, move sections/cues by bar or beat, audition entrances and review markers one at a time.
 - Separate metronome, section-call, cue and count-in levels.

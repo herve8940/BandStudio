@@ -56,10 +56,11 @@ def test_guides_have_audible_calls_counts_and_exact_subdivision(tmp_path,monkeyp
     assert result['beats'][1]==.5 # fixed setting must win over the detected BPM=90
     assert np.max(np.abs(click[int(.25*sr):int(.28*sr)]))>.1
     assert np.max(np.abs(click[int(.29*sr):int(.45*sr)]))==0
-    assert [(e['time'],e['target']) for e in result['events']]==[(4,8),(7,11)]
+    assert [(e['time'],e['target']) for e in result['events']]==[(4,8),(5.5,11)]
     assert calls[int(4*sr),0]==pytest.approx(.25)
     cues,_=sf.read(result['files']['cues'])
-    assert cues[int(7*sr),0]==pytest.approx(.25)
+    assert cues[int(5.5*sr),0]==pytest.approx(.25)
+    assert np.max(np.abs(cues[int(6*sr):int(8*sr)]))==0 # Spoken count remains intelligible.
     assert calls[int(7*sr),0]==0 and cues[int(4*sr),0]==0
     for at in [6,6.5,7,7.5]:assert np.max(np.abs(counts[int(at*sr):int((at+.1)*sr)]))>.2
     assert np.max(np.abs(counts[:int(6*sr)]))==0
@@ -68,8 +69,46 @@ def test_guides_have_audible_calls_counts_and_exact_subdivision(tmp_path,monkeyp
 
 def test_variable_grid_anticipation_and_manual_first_beat():
     beats=[0,.5,1,1.6,2.2,2.8,3.5]
-    assert services.before_beat(3.6,4,beats,120)==pytest.approx(1.1)
+    assert services.before_beat(3.6,4,beats,120)==pytest.approx(1.)
     assert services.before_beat(.5,4,beats,120)==pytest.approx(-1.5)
+    assert services.before_beat(15,4,beats,120)==pytest.approx(13)
+
+
+@pytest.mark.parametrize('lead', [0, 2, 8])
+def test_calls_and_cues_anticipate_on_pulses_without_moving_offbeat_targets(tmp_path,monkeypatch,lead):
+    p=project(tmp_path)
+    p['beats']=[0,.52,1.03,1.55,2.1,2.65,3.2,3.75,4.31,4.86,5.42,5.99,6.55,7.10,7.64,8.2,8.75,9.3,9.85,10.4,10.95,11.5]
+    p['settings'].update(gridMode='detected',leadBeats=lead,regionCountEnabled=False)
+    p['sections']=[dict(id='verse',name='Couplet',start=8.07,end=12)]
+    p['cues']=[dict(id='pickup',name='Reprise',time=10.12)]
+    result=generate(p,tmp_path,monkeypatch)
+    for event,key in zip(result['events'],['calls','cues']):
+        assert event['target'] in (8.07,10.12)
+        assert event['time'] in p['beats'] if lead else event['time']==event['target']
+        wave,sr=sf.read(result['files'][key])
+        assert wave[round(event['time']*sr),0]==pytest.approx(.25)
+    assert p['sections'][0]['start']==8.07 and p['cues'][0]['time']==10.12
+
+
+def test_announcement_clears_spoken_count_by_whole_beats(tmp_path,monkeypatch):
+    p=project(tmp_path);p['settings']['leadBeats']=0
+    result=generate(p,tmp_path,monkeypatch)
+    event=next(e for e in result['events'] if e['target']==8)
+    assert event['time']==5.5
+    assert event['time']+.12+.05<=6
+
+
+def test_pickup_count_clicks_keep_the_metronome_bar_accent(tmp_path,monkeypatch):
+    p=project(tmp_path);p['settings'].update(countVoice=False,subdivision=1)
+    p['sections']=[dict(id='pickup',name='Reprise',start=8.9,end=12)]
+    result=generate(p,tmp_path,monkeypatch)
+    click,sr=sf.read(result['files']['click']);counts,_=sf.read(result['files']['counts'])
+    assert result['countEvents'][0]['time']==7
+    for event in result['countEvents']:
+        start=round(event['time']*sr);stop=start+int(sr*.035)
+        # Same waveform and bar accent, even though the first spoken number
+        # falls on beat three and the actual downbeat is two clicks later.
+        np.testing.assert_allclose(counts[start:stop],click[start:stop]*(.65/.8),atol=1e-7)
 
 
 @pytest.mark.parametrize('target,grid,expected',[

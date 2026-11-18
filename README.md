@@ -27,8 +27,11 @@ BandStudio est un logiciel gratuit de séparation d’instruments (stems) et de 
 
 La qualité dépend du morceau et des modèles installés. Une estimation d’IA se vérifie à l’écoute. BandStudio ne prétend pas reproduire tous les modèles de séparation spécialisés ou services de Moises. [Fonctions et limites](docs/BANDSTUDIO.md#traitement-du-morceau).
 
-## Nouveautés · 15 novembre 2026
+## Nouveautés · 19 novembre 2026
 
+- **Atelier Pistes / Structure** : recherche, filtres, vue compacte, vue d’ensemble colorée et cadrage de la section choisie.
+- **Correcteur de transitions** : ajustement conservateur des nouvelles analyses SongFormer compatibles. Sur 24 morceaux réservés au test, F1 à ±0,5 s : 46,84 → 52,06 / 100. [Périmètre et résultats](docs/CUE_CORRECTOR_TRAINING.md#résultats-du-lot-réservé-et-distribution).
+- **Grilles d’accords Internet** : sources distinctes, choix de la grille et placement proposé sur les temps, à vérifier à l’écoute.
 - **Corriger à l’écoute** : zoom, déplacement des sections et cues par mesure ou par temps, écoute autour d’un repère et validation un par un.
 - **Régler chaque guide** : niveaux indépendants pour métronome, appels, cues et décompte.
 - **Fiche morceau** : accords et paroles éditables par mesure, déplacements avec leurs mots synchronisés, annuler/rétablir et export PDF avec choix de destination.

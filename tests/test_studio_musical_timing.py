@@ -25,7 +25,7 @@ def song(first=2.68,period=.64,phase=0):
 
 
 @pytest.mark.parametrize('first,period,phase',[(2.68,.64,0),(.56,.62,1),(1.01,.54,3),(.26,.5,0),(12,.5,0)])
-def test_count_lands_on_first_downbeat_without_a_gap(first,period,phase):
+def test_full_count_hands_over_at_first_downbeat_with_pickup_preserved(first,period,phase):
     p=song(first,period,phase);plan=count_plan(p)
     assert plan['target']==pytest.approx(first+phase*period)
     assert plan['end']-plan['lead']==pytest.approx(plan['target'])
@@ -51,6 +51,30 @@ def test_fixed_grid_count_is_anchored_to_its_saved_first_beat():
     p=song();p['settings'].update(gridMode='fixed',manualBPM=120,firstBeat=.26)
     plan=count_plan(p)
     assert plan['lead']==pytest.approx(3.74) and plan['end']==4
+
+
+@pytest.mark.parametrize('meter,phase',[(2,1),(3,1),(4,1),(4,3)])
+def test_opening_voice_counts_every_beat_including_pickup(tmp_path,meter,phase):
+    p=song(.08,.8,phase);p['settings'].update(beatsPerBar=meter,countBars=1,
+                                           countClick=False,countVoice=True)
+    p['guideFiles']={}
+    # Distinct amplitudes verify that the final spoken number is actually
+    # rendered, including when it overlaps the music's opening pickup.
+    for number in range(1,meter+1):
+        name=f'{number}.wav';sf.write(tmp_path/name,np.full((SR//8,2),number/10,np.float32),SR,subtype='FLOAT')
+        p['guideFiles']['number:'+str(number)]=name
+    a=Audio(tmp_path);a.project=p;a.root=tmp_path
+    wave=a.make_count(0);plan=count_plan(p)
+    spoken=list(range(1,meter+1))
+    assert [e['number'] for e in plan['events'] if e['spoken']]==spoken
+    assert plan['lead']==pytest.approx((meter-phase)*.8-.08)
+    assert len(wave)==round((plan['lead']+p['settings']['firstBeat'])*SR)
+    for e,number in zip(plan['events'],spoken):
+        assert wave[round(e['time']*SR),0]==pytest.approx(number/10*p['settings']['countGain'])
+    last=plan['events'][-1]
+    assert last['time']>=plan['lead']+.08-1e-7
+    assert np.any(wave[round(last['time']*SR):])
+    assert p['settings']['firstBeat']==pytest.approx(.08+phase*.8)
 
 
 def test_count_display_counts_real_events_instead_of_rounded_average_tempo(tmp_path):
@@ -111,12 +135,15 @@ def test_render_keeps_full_music_and_no_duplicate_clicks_during_pickup(tmp_path,
     assert len(rendered)==len(source)+lead
     np.testing.assert_allclose(rendered[lead:,1],source[:,1]*p['tracks'][0]['gain']*.85,atol=1e-7)
     if with_count:
-        # At the pickup beat only the count-in should sound, with no guide added.
-        i=lead+round(.25*SR);count=a.make_count(0)
+        # During the pickup only the count-in sounds: do not double its click
+        # with the guide. The generated metronome takes over on the downbeat.
+        count=a.make_count(0)
+        i=lead+round(.25*SR)
         np.testing.assert_allclose(rendered[i:i+20,0],count[i:i+20,0]*.85,atol=1e-7)
-        # The generated metronome takes over exactly at the following downbeat.
+        assert len(count)==lead+round(.75*SR)
         i=lead+round(plan['target']*SR)
-        assert rendered[i,0]==pytest.approx(.2*.6*.85)
+        np.testing.assert_allclose(rendered[i:i+20,0],.2*.6*.85,atol=1e-7)
+        assert rendered[lead+round(.75*SR),0]==pytest.approx(.2*.6*.85)
 
 
 def test_reaper_count_overlaps_silent_head_and_keeps_source_position(tmp_path):

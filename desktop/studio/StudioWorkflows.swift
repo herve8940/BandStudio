@@ -15,7 +15,7 @@ extension StudioApp {
         try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
         let result=folder.appendingPathComponent("result.json"),snap=folder.appendingPathComponent("project.json")
         try snapshot(at:snap)
-        let environment=["generate":".venv-creative","vocalsplit":".venv-creative","structure":".venv-structure","separate":".venv-demucs","drumsep":".venv-demucs","smartgrid":".venv-demucs","lyrics":".venv-words","chords":".venv-chords","drums":".venv-drums"]
+        let environment=["generate":".venv-creative","vocalsplit":".venv-creative","structure":".venv-structure","separate":".venv-demucs","drumsep":".venv-demucs","smartgrid":".venv-demucs","lyrics":".venv-words","chords":".venv","drums":".venv-drums"]
         let p=Process();p.executableURL=runtime.appendingPathComponent((environment[kind] ?? ".venv")+"/bin/python")
         var safeArguments=arguments
         if let index=safeArguments.firstIndex(of:"--options"),index+1<safeArguments.count {
@@ -32,11 +32,13 @@ extension StudioApp {
         let log=folder.appendingPathComponent("traitement.log");FileManager.default.createFile(atPath:log.path,contents:nil)
         let handle=try FileHandle(forWritingTo:log);p.standardOutput=handle;p.standardError=handle
         let identity=project.id
+        jobKind=kind;jobIdentifier=folder.lastPathComponent;jobPlan=[];jobPlanIndex=0
         p.terminationHandler={[weak self] process in
             try? handle.close()
             DispatchQueue.main.async {
                 guard let self=self else{return}
                 StudioDiagnostics.shared.event("job.finish",["kind":kind,"exit":process.terminationStatus]);let cancelled=self.job == nil
+                self.send(["type":"job","task":kind,"jobID":folder.lastPathComponent,"finished":!cancelled && process.terminationStatus==0,"failed":cancelled || process.terminationStatus != 0,"progress":!cancelled && process.terminationStatus==0 ? 100 : 0])
                 self.busy=false;self.job=nil;self.jobName=""
                 if cancelled {self.notice="Traitement annulé. Le projet est conservé.";self.sendState();return}
                 guard self.project.id == identity else{self.sendState();return}
@@ -45,7 +47,7 @@ extension StudioApp {
             }
         }
         StudioDiagnostics.shared.event("job.start",["kind":kind]);try p.run();job=p;busy=true;jobLog=log;jobStarted=ProcessInfo.processInfo.systemUptime;lastBroadcast=0
-        let titles=["validate":"Vérification du morceau et des médias","generate":"Création musicale locale","vocalsplit":"Séparation chant principal et chœurs","smartgrid":"Détection des temps et débuts de mesure","drumsep":"Séparation des éléments de batterie","key":"Estimation de la tonalité","lyricsimport":"Import des paroles synchronisées","lyricsexport":"Export des paroles","stemsexport":"Export des stems","master":"Normalisation du mix","report":"Analyse des niveaux audio","portable":"Création du projet portable","sheet":"Création de la fiche PDF","guides":"Préparation du click, des appels et du décompte","separate":"Séparation des instruments","structure":"Analyse de la structure","grid":"Détection du tempo et des temps","reaper":"Création du projet REAPER","lyrics":"Transcription des paroles","chords":"Détection des accords","drums":"Transcription de la batterie","midi":"Export MIDI","decode":"Conversion du fichier audio"]
+        let titles=["validate":"Vérification du morceau et des médias","generate":"Création musicale locale","vocalsplit":"Séparation chant principal et chœurs","smartgrid":"Détection des temps et débuts de mesure","drumsep":"Séparation des éléments de batterie","key":"Estimation de la tonalité","lyricsimport":"Import des paroles synchronisées","lyricsexport":"Export des paroles","stemsexport":"Export des stems","master":"Normalisation du mix","report":"Analyse des niveaux audio","portable":"Création du projet portable","sheet":"Création de la fiche PDF","guides":"Préparation du click, des appels et du décompte","separate":"Séparation des instruments","structure":"Analyse de la structure","grid":"Détection du tempo et des temps","reaper":"Création du projet REAPER","lyrics":"Transcription des paroles","chords":"Recherche de grille Internet","drums":"Transcription de la batterie","midi":"Export MIDI","decode":"Conversion du fichier audio"]
         jobName=kind == "rpp" ? "Import des pistes et régions REAPER" : (titles[kind] ?? kind);notice="";sendState()
     }
     // Stop revokes a queued transport action while guides are still rendering.
@@ -90,6 +92,9 @@ extension StudioApp {
         }
         project.guideFiles=paths;project.guideKey=key
         try reloadAudio();try changed(invalidate:false);notice="Click, appels et décompte prêts."
+        if let warnings=obj["guideWarnings"] as? [[String:Any]], !warnings.isEmpty {
+            notice="Guides prêts · \(warnings.count) annonce(s) sans place avant l’entrée : raccourcis le texte ou le décompte."
+        }
     }
     func settingsCommand(_ args:[String:Any]) throws {
         try requireIdle()
@@ -97,7 +102,7 @@ extension StudioApp {
         let data=try JSONSerialization.data(withJSONObject:values)
         let settings=try JSONDecoder().decode(GuideSettings.self,from:data);try settings.validate()
         audio.pause();remember()
-        if settings.firstBeat != project.settings.firstBeat || settings.gridMode != project.settings.gridMode || settings.beatsPerBar != project.settings.beatsPerBar || settings.manualBPM != project.settings.manualBPM {project.gridLocked=true}
+        if settings.firstBeat != project.settings.firstBeat || settings.gridMode != project.settings.gridMode || settings.beatsPerBar != project.settings.beatsPerBar || settings.manualBPM != project.settings.manualBPM || (settings.gridMode == "fixed" && settings.pulseUnit != project.settings.pulseUnit) {project.gridLocked=true}
         project.settings=settings;audio.project=project;audio.applyMix();try changed()
         try withGuides{self.notice="Réglages appliqués et guides actualisés."}
     }
@@ -162,6 +167,19 @@ extension StudioApp {
     }
     func applyTextAnalysis(_ kind:String,result:URL) throws {
         let obj=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
+        if kind == "chords" {
+            guard obj["engine"] as? String == "web-reference",let reference=obj["reference"] else{throw StudioError("La détection audio des accords est désactivée. Recherche une grille Internet.")}
+            let value=try JSONDecoder().decode(ChordReference.self,from:JSONSerialization.data(withJSONObject:reference))
+            let manual=project.chords.filter{$0.manual}
+            let entries=(obj["segments"] as? [[String:Any]] ?? []).compactMap{row -> TimedText? in
+                guard let a=row["start"] as? Double,let end=row["end"] as? Double,let label=row["label"] as? String else{return nil}
+                let b=min(project.duration,end)
+                guard a>=0,b>a,!manual.contains(where:{$0.start<b && $0.end>a}) else{return nil}
+                return TimedText(start:a,end:b,text:label,sourceURL:row["sourceURL"] as? String,confidence:row["confidence"] as? Double)
+            }
+            remember();project.chordReference=value;project.chords=(manual+entries).sorted{$0.start<$1.start}
+            project.analysisCompleted(kind);try changed();notice=value.message;return
+        }
         remember()
         if kind == "drums" {
             let pitches=["BD":36,"SD":38,"TT":45,"HH":42,"CY":49]
@@ -314,7 +332,7 @@ extension StudioApp {
         if available(".venv-structure"){steps.append("structure")}
         if project.key.isEmpty{steps.append("key")}
         if available(".venv-words"){steps.append("lyrics")}
-        if available(".venv-chords"){steps.append("chords")}
+        steps.append("chords")
         return steps.filter{!project.analysisDone($0)}+(project.guideKey == project.desiredGuideKey() ? [] : ["guides"])
     }
     func calibrateImportedSong() throws {
@@ -343,7 +361,7 @@ extension StudioApp {
             if kind=="guides" {try self.withGuides(finish)}
             else if ["smartgrid","key"].contains(kind){try self.advancedTask(["kind":kind],completion:finish)}
             else{try self.runAnalysis(kind,model:args["model"] as? String ?? "htdemucs",language:args["language"] as? String ?? "auto",quality:args["quality"] as? String ?? "standard",completion:finish)}
-            if self.busy {self.jobName="Tout préparer · \(index+1)/\(steps.count) · "+self.jobName;self.sendState()}
+            if self.busy {self.jobPlan=steps;self.jobPlanIndex=index;self.jobName="Tout préparer · \(index+1)/\(steps.count) · "+self.jobName;self.sendState()}
         }
         try next(0)
     }

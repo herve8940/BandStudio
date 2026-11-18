@@ -64,6 +64,7 @@ struct StudioProject: Codable {
     var guideKey=""
     var lyrics:[TimedText]=[]
     var chords:[TimedText]=[]
+    var chordReference:ChordReference?=nil
     var drumHits:[DrumHit]=[]
     var key=""
     var capo=0
@@ -75,6 +76,7 @@ struct StudioProject: Codable {
     var duration: Double { max(sessionDuration,tracks.filter{!$0.role.hasPrefix("guide_")}.map { $0.duration + $0.offset }.max() ?? 0) }
 
     func analysisDone(_ kind:String)->Bool {
+        if kind == "chords" {return chordReference != nil || chords.contains{$0.manual} || preparation?.fingerprint != nil}
         if ["grid","smartgrid"].contains(kind) {return gridLocked || preparation?.fingerprint != nil || settings.gridMode=="fixed" || !beats.isEmpty || analysesCompleted.contains(where:{["grid","smartgrid"].contains($0)})}
         if ["structure","lyrics","chords","drums","key"].contains(kind),preparation?.fingerprint != nil || analysesCompleted.contains(kind) {return true}
         switch kind {
@@ -142,7 +144,9 @@ struct StudioProject: Codable {
     func save(_ root: URL) throws {
         try validate()
         let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted,.sortedKeys]
-        try enc.encode(self).write(to:root.appendingPathComponent("project.json"),options:.atomic)
+        let data=try enc.encode(self)
+        try StudioLearning.record(root,data)
+        try data.write(to:root.appendingPathComponent("project.json"),options:.atomic)
     }
     mutating func applySections(_ suggestions: [Section]) {
         let protected = sections.filter { $0.locked || $0.origin == "manual" }

@@ -65,10 +65,15 @@ def build(source, prepare=False):
     if prepare:
         prepare_runtime(source, engine)
     if engine.exists():
+        shutil.copy2(ROOT/'desktop/studio/chord-providers.json',engine/'chord-providers.json')
+        for name in ('rhythm-quality.json','rhythm-adapter.json'):
+            calibration=ROOT/'desktop/studio'/name
+            if calibration.is_file():shutil.copy2(calibration,engine/calibration.name)
         (engine/'BandStudio_Remote.lua').unlink(missing_ok=True)
-        for name in ('worker.py','services.py','analysis_cache.py','musical_timing.py','listening.py','diagnostics.py','compute.py','catalog.py','artwork.py','updater.py','preparation.py','batch_queue.py','batch_project.py','platform_tools.py','advanced.py','phone.py','creative.py'):
+        for name in ('worker.py','analysis_progress.py','services.py','analysis_cache.py','rhythm_quality.py','rhythm_adapter.py','cue_corrector.py','cue_corrector_runtime.py','cue_corrector_bundle.py','chord_provider_defaults.py','cue_feedback.py','chord_sources.py','chord_alignment.py','musical_timing.py','listening.py','diagnostics.py','compute.py','catalog.py','artwork.py','updater.py','preparation.py','batch_queue.py','batch_project.py','platform_tools.py','advanced.py','phone.py','creative.py'):
             shutil.copy2(ROOT/'desktop/studio'/name,engine/name)
-        shutil.copy2(ROOT/'reacue_structure.py',engine/'reacue_structure.py')
+        for name in ('reacue_structure.py','reacue_transcribe.py','reacue_chords.py','reacue_drums.py'):
+            shutil.copy2(ROOT/name,engine/name)
         (engine/'windows').mkdir(exist_ok=True)
         for name in ('__init__.py','project.py'):
             shutil.copy2(ROOT/'desktop/studio/windows'/name,engine/'windows'/name)
@@ -78,6 +83,7 @@ def build(source, prepare=False):
     contents=app / 'Contents'
     mac=contents / 'MacOS';mac.mkdir(parents=True,exist_ok=True)
     resources=contents / 'Resources';resources.mkdir(exist_ok=True)
+    shutil.copy2(ROOT/'desktop/studio/chord-providers.json',resources/'chord-providers.json')
     if (resources / 'web').exists():shutil.rmtree(resources / 'web')
     shutil.copytree(ROOT / 'desktop/studio/web', resources / 'web')
     shutil.copy2(ROOT/'desktop/studio/assets/BandStudio.icns',resources/'BandStudio.icns')
@@ -93,7 +99,7 @@ def build(source, prepare=False):
     (contents / 'Info.plist').write_bytes(plistlib.dumps(info))
     cache=BUILD / 'swift-module-cache';cache.mkdir(exist_ok=True)
     subprocess.run(['xcrun','swiftc','-O','-target',platform.machine()+'-apple-macosx12.0','-module-cache-path',str(cache),
-                    *[str(ROOT / 'desktop/studio' / f) for f in ['StudioDiagnostics.swift','StudioUpdates.swift','StudioSettings.swift','StudioCore.swift','StudioApp.swift','StudioWorkflows.swift','StudioQueue.swift','StudioAdvanced.swift','StudioPhone.swift','StudioRecording.swift','main.swift']],
+                    *[str(ROOT / 'desktop/studio' / f) for f in ['StudioDiagnostics.swift','StudioUpdates.swift','StudioSettings.swift','StudioCore.swift','StudioLearning.swift','StudioApp.swift','StudioWorkflows.swift','StudioQueue.swift','StudioAdvanced.swift','StudioPhone.swift','StudioRecording.swift','main.swift']],
                     '-o',str(mac / 'BandStudio'),'-framework','AppKit','-framework','WebKit','-framework','AVFoundation'],check=True)
     subprocess.run(['codesign','--force','--sign','-',str(app)],check=True)
     subprocess.run(['codesign','--verify','--deep','--strict',str(app)],check=True)

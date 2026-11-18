@@ -15,13 +15,13 @@ import time
 import uuid
 from collections import Counter
 from platform_tools import executable, creation_flags
-from musical_timing import count_plan
+from musical_timing import count_plan, pulse_bpm, pulse_scale
 
 
 def import_settings(settings):
     """Keep listening preferences, but never inherit another song's rhythm."""
     return {**settings, 'firstBeat': 0, 'gridMode': 'detected',
-            'manualBPM': 120, 'beatsPerBar': 4}
+            'manualBPM': 120, 'beatsPerBar': 4, 'pulseUnit': None, 'referenceBPM': None}
 
 
 def calibrate_grid(result):
@@ -30,30 +30,58 @@ def calibrate_grid(result):
     first, meter, agreement = (beats[0] if beats else 0), 4, 0.
     valid = len(beats) > 1 and all(math.isfinite(t) and t >= 0 and
              (not i or t > beats[i-1]) for i, t in enumerate(beats))
-    indices = []
+    evidence = {}
     downbeats = result.get('downbeats', [])
+    strengths = result.get('downbeatStrengths', [])
+    if len(strengths) != len(downbeats) or not all(math.isfinite(w) and w > 0 for w in strengths):
+        strengths = [1.] * len(downbeats)
     if valid:
-        for t in downbeats:
+        for t, weight in zip(downbeats, strengths):
             if not math.isfinite(t) or not beats[0] <= t <= beats[-1]:continue
             right = bisect.bisect_left(beats, t)
             i = min((i for i in (right-1, right) if 0 <= i < len(beats)), key=lambda i:abs(beats[i]-t))
             span = beats[min(i+1, len(beats)-1)]-beats[max(0, i-1)]
             if 0 < i < len(beats)-1:span /= 2
-            if abs(beats[i]-t) <= .2*span:indices.append(i)
-        indices = sorted(set(indices))
+            if abs(beats[i]-t) <= .2*span:evidence[i] = max(evidence.get(i, 0), weight)
+    indices = sorted(evidence)
+    phase_confidence = 0.
     if len(indices) >= 4:
         intervals = [b-a for a,b in zip(indices, indices[1:])]
         meters = Counter(n for n in intervals if 2 <= n <= 12)
         if meters:
             meter, count = meters.most_common(1)[0]
-            phase, votes = Counter(i % meter for i in indices).most_common(1)[0]
-            agreement = min(count/len(intervals), votes/len(indices), len(indices)/max(1,len(downbeats)))
-            if agreement >= .85:first = beats[phase]
-    automatic = agreement >= .85
+            phases = [sum(evidence[i] for i in indices if i % meter == phase) for phase in range(meter)]
+            phase = max(range(meter), key=lambda p:phases[p])
+            phase_confidence = phases[phase] / sum(evidence.values())
+            # Missing bar accents are not changes of meter. Off-phase detections
+            # still reduce confidence; several actual one-bar intervals must agree.
+            consistent = sum(n % meter == 0 and n <= 4*meter for n in intervals)/len(intervals)
+            agreement = min(consistent, phase_confidence, sum(evidence.values())/max(1.,sum(strengths)))
+            if count/len(intervals) < .6:agreement = min(agreement, .84)
+            if phase_confidence >= .75:first = beats[phase]
+    automatic = agreement >= .85 and not result.get('learnedReviewRequired', False)
+    proposal=result.get('learnedBarProposal')
+    proposal_applied=False
+    if isinstance(proposal,dict) and result.get('learnedReviewRequired'):
+        # Keep the learned proposal when worker/host calibrates the same result
+        # again. Invalidate it if anyone changed the underlying beat list.
+        from rhythm_adapter import fingerprint
+        if (proposal.get('meter') in range(2,13) and proposal.get('firstBeat') in beats
+                and proposal.get('beatsSHA256')==fingerprint(beats)):
+            meter,first=proposal['meter'],proposal['firstBeat']
+            automatic=False
+            proposal_applied=True
+    if proposal and not proposal_applied:
+        result={k:v for k,v in result.items() if k not in ('learnedBarProposal','barAdaptation')}
     status = '« 1 » calé automatiquement sur les mesures détectées' if automatic else '« 1 » à vérifier à l’écoute · mesures non confirmées'
+    if result.get('learnedReviewRequired'):
+        status = 'Temps et mesures à vérifier à l’écoute · calage incertain'
+        if proposal_applied:status='Premier temps et mesure proposés par apprentissage · à vérifier à l’écoute'
+    if result.get('tempoNote'):status += ' · ' + result['tempoNote']
     if beats and beats[0] > 2:status += f' · grille à partir de {beats[0]:.2f} s'
-    return {**result, 'firstBeat': first, 'beatsPerBar': meter if automatic else 4,
-            'agreement': agreement, 'gridReviewRequired': not automatic, 'gridStatus': status}
+    return {**result, 'firstBeat': first, 'beatsPerBar': meter,
+            'agreement': agreement, 'phaseConfidence': phase_confidence,
+            'gridReviewRequired': not automatic, 'gridStatus': status}
 
 
 def atomic(path,value):
@@ -100,7 +128,7 @@ def decode(source,target,engine,*,start=None,duration=None,channels=2):
 def beat_grid(project):
     settings=project['settings'];duration=max(t['offset']+t['duration'] for t in project['tracks'] if not t['role'].startswith('guide_'))
     beats=sorted({float(x) for x in project.get('beats',[]) if math.isfinite(x) and 0<=x<=duration})
-    bpm=settings['manualBPM'] if settings['gridMode']=='fixed' else project.get('bpm') or settings['manualBPM']
+    bpm=pulse_bpm(project)
     if settings['gridMode']=='fixed' or len(beats)<2:
         dt=60/bpm;first=settings['firstBeat']
         while first<0:first+=dt
@@ -108,14 +136,45 @@ def beat_grid(project):
     return beats,duration
 
 
+def local_pulse(beats,index,fallback=.5):
+    """Robust nearby pulse length, excluding an isolated detection gap."""
+    spans=[b-a for a,b in zip(beats[max(0,index-4):index+4],beats[max(0,index-4)+1:index+5]) if b>a]
+    spans.sort()
+    return spans[len(spans)//2] if spans else fallback
+
+
+def pulse_gap(beats,index):
+    return (0<=index<len(beats)-1 and
+            beats[index+1]-beats[index]>2.5*local_pulse(beats,index))
+
+
 def before_beat(target,amount,beats,bpm):
     if not amount:return target
     if len(beats)>1:
-        i=max(0,min(len(beats)-1,bisect.bisect_right(beats,target+0.02)-1))
-        frac=target-beats[i]
-        if i>=amount:return beats[i-amount]+frac
-        return beats[0]+frac-(amount-i)*(beats[1]-beats[0])
+        if target>beats[-1]+(beats[-1]-beats[-2])*.5:
+            # A cue in a free outro must not jump back to the final detected
+            # bar. Without a nearby pulse, retain its time-based anticipation.
+            return target-amount*60/max(20,bpm)
+        right=bisect.bisect_left(beats,target)
+        i=min((i for i in (right-1,right) if 0<=i<len(beats)),key=lambda i:(abs(beats[i]-target),i))
+        span=local_pulse(beats,i,60/max(20,bpm))
+        if (abs(beats[i]-target)>.6*span or
+                any(pulse_gap(beats,j) for j in range(max(0,i-amount),i))):
+            return target-amount*span
+        if i>=amount:return beats[i-amount]
+        return beats[0]-(amount-i)*(beats[1]-beats[0])
     return target-amount*60/max(20,bpm)
+
+
+def announcement_before(limit,beats,bpm):
+    """Move a long announcement earlier by whole pulses to clear a count-in."""
+    if len(beats)>1:
+        i=bisect.bisect_right(beats,limit+1e-7)-1
+        if i>=0:return beats[i]
+        span=beats[1]-beats[0]
+        return beats[0]+math.floor((limit-beats[0])/span+1e-7)*span
+    span=60/max(20,bpm)
+    return math.floor(limit/span+1e-7)*span
 
 
 def region_count_beats(target,amount,beats):
@@ -127,14 +186,57 @@ def region_count_beats(target,amount,beats):
     candidates=[i for i in (right-1,right) if 0<=i<len(beats)]
     stop=min(candidates,key=lambda i:(abs(beats[i]-target),i))
     if not stop:return []
+    if abs(beats[stop]-target)>.6*local_pulse(beats,stop):return []
     if target>beats[-1]:
         span=beats[-1]-beats[-2] if len(beats)>1 else 0
         # Do not invent a countdown in a tail where beat detection has stopped.
         if span<=0 or target-beats[-1]>span*1.25:return []
     first=max(0,stop-amount)
+    # Retain only the available beats after a silence, with their final count
+    # numbers (e.g. "three, four"). Never stretch a spoken beat across a gap.
+    for index in range(first,stop):
+        if pulse_gap(beats,index):first=index+1
     return [dict(number=amount-(stop-index)+1,time=beats[index],
-                 end=beats[index+1])
+                 end=min(target,beats[index+1]))
             for index in range(first,stop)]
+
+
+def plan_announcements(entries,count_plans,beats,bpm,settings):
+    """Keep complete announcements intelligible and in target order.
+
+    A spoken countdown owns its pulse windows. Anticipated calls move earlier
+    by whole beats to clear those windows and later announcements. Unavoidable
+    lack of room is reported, never hidden by mixing two speaking voices.
+    """
+    reserved=[(e['time'],e['end']) for plan in count_plans.values() for e in plan
+              if settings['regionCountEnabled'] and settings['countVoice']]
+    scheduled=[];warnings=[];next_start=math.inf
+    for entry in sorted(entries,key=lambda e:(e['target'],e['id']),reverse=True):
+        at=entry['requested'];length=entry['duration']
+        # The section containing the playback start is spoken by the native
+        # initial count-in. Its sound file is still kept in guideFiles.
+        initial_call=(entry['kind']=='section' and
+            (settings.get('countBars',0)>1 or (settings.get('countBars',0)>0 and not settings['countVoice'])) and
+            entry['target']<=settings.get('firstBeat',0)<entry.get('sectionEnd',math.inf))
+        if at<0 and (entry['target']<=0 or initial_call):continue
+        if at<0 and entry['target']>=length+.05:at=0.
+        limit=next_start-length-.05
+        if settings['leadBeats']>0:limit=min(limit,entry['target']-length-.05)
+        own_count=count_plans.get(entry['id'],[]) if entry['kind']=='section' else []
+        if own_count and settings['regionCountEnabled'] and settings['countVoice']:
+            limit=min(limit,own_count[0]['time']-length-.05)
+        if at>limit+1e-7:at=announcement_before(limit,beats,bpm)
+        while at>=0:
+            conflict=next(((a,b) for a,b in reserved if at<b-1e-7 and at+length+.05>a+1e-7),None)
+            if conflict is None:break
+            at=announcement_before(conflict[0]-length-.05,beats,bpm)
+        if at<0:
+            warnings.append(dict(id=entry['id'],target=entry['target'],reason='noRoomBeforeEntry',
+                message='Annonce sans place disponible avant l’entrée et son décompte.'))
+            continue
+        scheduled.append({**entry,'time':at,'end':at+length,'moved':abs(at-entry['requested'])>1e-6})
+        next_start=at
+    return sorted(scheduled,key=lambda e:(e['target'],e['id'])),warnings
 
 
 def voice_wav(text,folder,settings):
@@ -179,6 +281,7 @@ def announcement_text(item, language):
 
 
 def guides(project_file,output):
+    from analysis_progress import phase_items
     import numpy as np
     import soundfile as sf
     p=json.loads(Path(project_file).read_text());s=p['settings']
@@ -196,35 +299,43 @@ def guides(project_file,output):
         n=min(len(data),len(dest)-start)
         if n>0:dest[start:start+n]+=data[:n]
     first=min(range(len(beats)),key=lambda i:abs(beats[i]-s['firstBeat'])) if beats else 0
-    for i,beat in enumerate(beats):
-        span=beats[i+1]-beat if i+1<len(beats) else (beats[-1]-beats[-2] if len(beats)>1 else 60/s['manualBPM'])
-        for sub in range(s['subdivision']):
+    for i,beat in enumerate(phase_items(beats,0,5,"Création du click")):
+        span=beats[i+1]-beat if i+1<len(beats) else (beats[-1]-beats[-2] if len(beats)>1 else 60/pulse_bpm(p))
+        for sub in range(1 if pulse_gap(beats,i) else s['subdivision']):
             accented=sub==0 and (i-first)%s['beatsPerBar']==0
             n=int(sr*.035);t=np.arange(n)/sr
             sound=np.sin(2*np.pi*(1760 if accented else 1100)*t)*np.exp(-t*130)*(0.8 if sub==0 else 0.35)
             place(click,np.repeat(sound[:,None],2,axis=1),beat+sub*span/s['subdivision'])
-    file_map={};events=[];count_events=[]
+    file_map={};events=[];count_events=[];announcements=[]
     count_plans={item['id']:region_count_beats(item['start'],s['regionCountBeats'],beats)
-                 for item in p.get('sections',[])}
-    for item in p.get('sections',[])+p.get('cues',[]):
+                 for item in p.get('sections',[]) if item.get('announce') is not False}
+    previous_start=0.
+    # Close transitions may have fewer than four available beats. Do not count
+    # for the next section over the previous section's own entry/countdown.
+    for item in sorted(p.get('sections',[]),key=lambda x:(x['start'],x['id'])):
+        if item['id'] in count_plans:
+            count_plans[item['id']]=[e for e in count_plans[item['id']] if e['time']>=previous_start]
+        previous_start=max(previous_start,item['start'])
+    for item in phase_items(p.get('sections',[])+p.get('cues',[]),1,5,'Annonces des passages'):
         if item.get('announce') is False:continue
         text=announcement_text(item,s['language']);target=item.get('start',item.get('time',0))
         path=voice_wav(text,cache,s)
         if path:
             file_map['call:'+item['id']]=str(path)
             x,_=sf.read(path,dtype='float32',always_2d=True)
-            at=before_beat(target,s['leadBeats'],beats,p.get('bpm') or s['manualBPM'])
-            # Calls before time zero are played during the initial count-in by the native engine.
-            # Reserve the final spoken beats for the region count, avoiding two voices at once.
-            if 'start' in item and s['regionCountEnabled'] and s['countVoice']:
-                plan=count_plans[item['id']]
-                if plan:at=min(at,plan[0]['time']-len(x)/sr-.05)
-            if at>=0:place(calls if 'start' in item else cues,x,at);events.append(dict(time=at,target=target,text=text,file=str(path)))
+            at=before_beat(target,s['leadBeats'],beats,pulse_bpm(p))
+            announcements.append(dict(id=item['id'],kind='section' if 'start' in item else 'cue',
+                requested=at,target=target,sectionEnd=item.get('end'),duration=len(x)/sr,text=text,file=str(path)))
+    scheduled,warnings=plan_announcements(announcements,count_plans,beats,pulse_bpm(p),s)
+    for event in scheduled:
+        x,_=sf.read(event['file'],dtype='float32',always_2d=True)
+        place(calls if event['kind']=='section' else cues,x,event['time'])
+        events.append(event)
     words={'fr':['un','deux','trois','quatre','cinq','six','sept','huit','neuf','dix','onze','douze'],
            'en':['one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve']}
     if s['countVoice']:
-        for i,text in enumerate(words[s['language']][:max(s['beatsPerBar'],s['regionCountBeats'])]):file_map['number:'+str(i+1)]=str(voice_wav(text,cache,s))
-    for item in p.get('sections',[]):
+        for i,text in enumerate(phase_items(words[s['language']][:max(s['beatsPerBar'],s['regionCountBeats'])],2,5,'Voix du décompte')):file_map['number:'+str(i+1)]=str(voice_wav(text,cache,s))
+    for item in phase_items(p.get('sections',[]),3,5,'Placement des décomptes'):
         if item.get('announce') is False:continue
         for event in count_plans[item['id']]:
             number,at,end=event['number'],event['time'],event['end']
@@ -233,9 +344,12 @@ def guides(project_file,output):
                 x,_=sf.read(file_map['number:'+str(number)],dtype='float32',always_2d=True)
                 place(counts,x[:max(0,int((end-at)*sr*.92))],at)
             if s['countClick']:
-                t=np.arange(int(sr*.035))/sr;wave=.65*np.sin(2*np.pi*(1760 if number==1 else 1100)*t)*np.exp(-t*130)
+                # A pickup can start on any beat. Counting "one" must not
+                # introduce a competing bar accent over the main metronome.
+                accented=(bisect.bisect_left(beats,at)-first)%s['beatsPerBar']==0
+                t=np.arange(int(sr*.035))/sr;wave=.65*np.sin(2*np.pi*(1760 if accented else 1100)*t)*np.exp(-t*130)
                 place(counts,np.repeat(wave[:,None],2,axis=1),at)
-    for name,data in [('click',click),('calls',calls),('cues',cues),('counts',counts)]:
+    for name,data in phase_items([('click',click),('calls',calls),('cues',cues),('counts',counts)],4,5,'Enregistrement des guides'):
         path=root/(name+'.wav')
         with sf.SoundFile(path,'w',samplerate=sr,channels=2,subtype='FLOAT') as writer:
             for a in range(0,len(data),65536):writer.write(np.clip(data[a:a+65536],-1,1))
@@ -243,7 +357,8 @@ def guides(project_file,output):
     # The loop variable also holds the final mmap; release it before unlinking on Windows.
     del data,click,calls,cues,counts
     for name in ['click','calls','cues','counts']:(root/(name+'.raw')).unlink()
-    atomic(output,dict(files=file_map,events=events,countEvents=count_events,beats=beats,duration=duration))
+    atomic(output,dict(files=file_map,events=events,countEvents=count_events,guideWarnings=warnings,
+                       beats=beats,duration=duration,generatorVersion=5))
 
 
 def quote(value):
@@ -257,14 +372,15 @@ def export_reaper(project_file,output):
     root=Path(p.get('_root',root));s=p['settings'];target=Path(output).parent/'REAPER';target.mkdir(parents=True,exist_ok=True)
     media=target/'Audio';media.mkdir(exist_ok=True)
     beats,duration=beat_grid(p)
-    bpm=s['manualBPM'] if s['gridMode']=='fixed' else p.get('bpm') or s['manualBPM'];period=(beats[1]-beats[0]) if len(beats)>1 else 60/bpm
+    bpm=pulse_bpm(p);scale=pulse_scale(s);period=(beats[1]-beats[0]) if len(beats)>1 else 60/bpm
+    numerator,denominator=(s['beatsPerBar']*3,8) if scale==1.5 else (s['beatsPerBar'],4)
     plan=count_plan(p);preroll=plan['lead'] if s['exportCount'] else 0
-    lines=['<REAPER_PROJECT 0.1 7.0 1','  SAMPLERATE 44100','  TEMPO '+str(bpm)+' '+str(s['beatsPerBar'])+' 4', '  MASTER_VOLUME 0.85']
+    lines=['<REAPER_PROJECT 0.1 7.0 1','  SAMPLERATE 44100',f'  TEMPO {bpm*scale:g} {numerator} {denominator}', '  MASTER_VOLUME 0.85']
     if beats and s['gridMode']=='detected':
         lines+=['  <TEMPOENVEX','    ACT 1 -1','    VIS 1 0 0','    ARM 1','    DEFSHAPE 1 -1 -1']
         for i,b in enumerate(beats[:-1]):
             dt=beats[i+1]-b
-            if dt>0.1:lines.append(f'    PT {b+preroll:.9f} {60/dt:.9f} 1')
+            if dt>0.1:lines.append(f'    PT {b+preroll:.9f} {60*scale/dt:.9f} 1')
         lines+=['  >']
     for i,section in enumerate(p['sections'],1):
         lines += [f'  MARKER {i} {section["start"]+preroll:.9f} {quote(section["name"])} 1',f'  MARKER {i} {section["end"]+preroll:.9f} "" 1']
@@ -386,7 +502,7 @@ def import_reaper(path,output,engine,snapshot):
     if metadata.is_file():
         saved=json.loads(metadata.read_text())
         if saved.get('rppSHA256')==hashlib.sha256(source.read_bytes()).hexdigest():roles_by_file=saved.get('trackRoles',{})
-    p=json.loads(Path(snapshot).read_text());settings=p['settings'].copy();settings['countBars']=0
+    p=json.loads(Path(snapshot).read_text());settings=import_settings(p['settings']);settings['countBars']=0
     p=dict(version=1,id=str(uuid.uuid4()),name=source.stem,tracks=[],sections=[],cues=[],bpm=120,beats=[],notes='',settings=settings,guideFiles={},guideKey='',lyrics=[],chords=[],drumHits=[],key='',sourceURL='')
     warnings=[]
     def field(chunk,name,default):return next((r[1:] for r in chunk['lines'] if r[0]==name),default)
@@ -395,6 +511,9 @@ def import_reaper(path,output,engine,snapshot):
             value=float(values[index]);return value if math.isfinite(value) else default
         except (ValueError,IndexError,TypeError):return default
     tempo=field(tree,'TEMPO',['120','4']);p['bpm']=max(20,min(400,num(tempo,0,120)));settings['beatsPerBar']=max(1,min(12,int(num(tempo,1,4))));settings['manualBPM']=p['bpm']
+    compound=int(num(tempo,2,4))==8 and int(num(tempo,1,4)) in (6,9,12)
+    settings['pulseUnit']='dottedQuarter' if compound else 'quarter'
+    if compound:settings['beatsPerBar']=int(num(tempo,1,4))//3;p['bpm']/=1.5
     guide_names={'click','voice','cues','métronome','appels de régions','décompte des régions','décompte','annonce de départ'}
     for track in [c for c in tree['children'] if c['kind']=='TRACK']:
         name=' '.join(field(track,'NAME',['Piste']))
@@ -452,7 +571,7 @@ def import_reaper(path,output,engine,snapshot):
         for row in env['lines']:
             if row[0]=='PT' and len(row)>2:
                 at,bpm=float(row[1]),float(row[2])
-                if 0<=at<duration and 20<=bpm<=400:points.append((at,bpm))
+                if 0<=at<duration and 20<=bpm<=400:points.append((at,bpm/pulse_scale(settings)))
     points=sorted(dict(points).items())
     for i,(start,bpm) in enumerate(points):
         end=points[i+1][0] if i+1<len(points) else duration

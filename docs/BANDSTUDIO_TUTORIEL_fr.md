@@ -2,7 +2,7 @@
 
 [English](BANDSTUDIO_TUTORIAL_en.md) · [Installation et guide](BANDSTUDIO.md) · [Site](https://herve8940.github.io/BandStudio/)
 
-Mis à jour le 15 novembre 2026. Ce tutoriel concerne l’application autonome BandStudio sur macOS et Windows.
+Mis à jour le 19 novembre 2026. Ce tutoriel concerne l’application autonome BandStudio sur macOS et Windows.
 
 **Pour débuter : [ouvrir le tutoriel visuel en 8 étapes](https://herve8940.github.io/BandStudio/tutoriel.html)** — import, tempo, premier « 1 », régions, guides, validation et export REAPER. Utilise les boutons Précédent et Suivant pour avancer à ton rythme.
 
@@ -22,18 +22,24 @@ Le décompte suit la grille enregistrée, y compris ses variations. Il peut comm
 
 ## 3. Ajuster les sections et les cues
 
-Dans **Pistes & structure** :
+Dans **Pistes & structure**, choisis la vue **Pistes** pour le mix ou **Structure** pour parcourir les sections. La vue Structure affiche leur départ, leur fin, leur longueur et leur validation ; **Modifier** ouvre la section et **↻** la met en boucle. La vue d’ensemble colorée permet de rejoindre un passage.
 
-1. Utilise **＋**, **−** et **Tout** pour zoomer. Le curseur **Parcourir le morceau** déplace la fenêtre visible ; **Suivre la lecture** garde la lecture à l’écran.
+La recherche filtre la vue courante. Dans Pistes, filtre **Instruments**, **Original** ou **Guides** ; **Compact** réduit la hauteur des pistes et **Masquer l’inspecteur** libère la largeur. Ces commandes ne changent pas le mix.
+
+Pour affiner un repère :
+
+1. Utilise **＋**, **−** et **Tout** pour zoomer. **Sélection** (touche **F**) cadre la section choisie. **L** active la boucle et **Alt + ← / →** parcourt les repères hors des champs de saisie. Le curseur **Parcourir le morceau** déplace la fenêtre visible ; **Suivre la lecture** garde la lecture à l’écran.
 2. Choisis le calage **Mesure** ou **Temps**, puis fais glisser une frontière de section ou un cue. Tu peux aussi utiliser **−1 mesure**, **+1 mesure**, **−1 temps** et **+1 temps** dans le panneau **Un repère à la fois**.
 3. Clique sur **Écouter autour** pour vérifier l’annonce et l’entrée. Le nom du repère ouvre son édition.
 4. Clique sur **Valider et suivant** pour passer au repère suivant. Le compteur indique ce qui reste à écouter. Déplacer un repère annule sa validation.
 
 Une frontière commune conserve la continuité des deux sections. Les corrections sont enregistrées avec le morceau et peuvent être annulées/rétablies. Cette validation par repère ne remplace pas la validation finale avant l’export REAPER.
 
+Les nouvelles analyses SongFormer compatibles bénéficient d’un ajustement fin appris sur des morceaux annotés : déplacement maximal de 250 ms, abstention en cas de désaccord. Il ne renomme pas les sections et ne retrouve pas les transitions manquantes. Il conserve les corrections manuelles et les sections validées. Il s’active uniquement avec les poids vérifiés, une fenêtre d’analyse de 60 secondes et un morceau de 2 à 10 minutes ; les autres analyses conservent leurs propositions initiales. Ce correcteur concerne les frontières de sections, pas le tempo ni l’anticipation des annonces vocales. [Résultats et protocole](CUE_CORRECTOR_TRAINING.md#résultats-du-lot-réservé-et-distribution).
+
 ## 4. Doser les guides
 
-Les quatre niveaux **Métronome**, **Appels**, **Cues** et **Décompte** se règlent séparément. **Muet** coupe ou rétablit le niveau de chaque guide. Modifier un volume ou cocher la validation d’un repère ne relance pas une analyse IA ni la fabrication des guides. Modifier le placement d’un repère peut demander leur régénération.
+Dans **Pistes & structure**, ouvre **Mix des guides** pour afficher les réglages. Les quatre niveaux **Métronome**, **Appels**, **Cues** et **Décompte** se règlent séparément. **Muet** coupe ou rétablit le niveau de chaque guide. Modifier un volume ou cocher la validation d’un repère ne relance pas une analyse IA ni la fabrication des guides. Modifier le placement d’un repère peut demander leur régénération.
 
 ## 5. Corriger la fiche du morceau
 
@@ -45,7 +51,9 @@ Ouvre **Fiche morceau**. La fiche rassemble l’identité du morceau, la pochett
 - Utilise les champs **Mesure de début**, **Temps**, **Mesure de fin**, **Temps**, les boutons de déplacement ou **Placer au curseur**. Déplacer une ligne conserve les décalages de ses mots synchronisés.
 - **+ Accord** et **+ Paroles** ajoutent une annotation. Lorsqu’un accord en remplace d’autres sur une portion, les parties situées en dehors de cette portion restent conservées.
 - **Importer des paroles** permet d’utiliser ton fichier. **Annuler** et **Rétablir** permettent de revenir sur les corrections.
-- Les recherches d’accords/paroles ouvrent une recherche dans ton navigateur à partir du titre et de l’artiste. Compare la version et la tonalité, puis corrige toi-même : aucun contenu de ces sites n’est importé automatiquement.
+- Dans **Séparer & analyser** ou **Paroles & accords**, lance la recherche de grille Internet. Vérifie d’abord le titre et l’artiste. Les sources trouvées restent séparées : **Ouvrir la grille** affiche la page d’origine, **Utiliser cette grille** choisit celle à caler. La recherche nécessite Internet et certaines sources peuvent être indisponibles.
+- Les accords de la source sont proposés sur la grille rythmique du morceau. Écoute et corrige leur placement ; un calage proposé ne garantit ni la bonne version ni le bon accord. **Caler sur le temps / contretemps** aide au placement. Les corrections manuelles restent conservées.
+- **Autres sources sur Internet** et les recherches de paroles ouvrent le navigateur. Les paroles de ces sites ne sont pas importées automatiquement.
 
 La fiche modifie les annotations du morceau ouvert. Les accords estimés et la transcription demandent une vérification à l’écoute ; une ligne sans synchronisation mot par mot reste entière à sa position de départ.
 

@@ -33,8 +33,34 @@ func selfTest(_ directory:String) throws {
     guard editor.project.sections[0].end==0.4,editor.project.sections[1].start==0.4,editor.project.sections[1].reviewed==false else{throw StudioError("Déplacement de limite incorrect")}
     let edited=try StudioProject.load(root)
     guard edited.sections[1].start==0.4,edited.settings.cuesGain==0.25,edited.analysisDone("structure") else{throw StudioError("Correction ou cache de projet perdu")}
+    let journal=try FileManager.default.contentsOfDirectory(at:root.appendingPathComponent("Learning/events"),includingPropertiesForKeys:nil)
+    let learningEvents=try journal.map{try JSONSerialization.jsonObject(with:Data(contentsOf:$0)) as! [String:Any]}
+    let reviews=learningEvents.filter{event in
+        guard let after=event["after"] as? [String:Any],let rows=after["sections"] as? [[String:Any]] else{return false}
+        return rows.contains{($0["id"] as? String)==sectionID && ($0["reviewed"] as? Bool)==true}
+    }
+    guard reviews.count==1,journal.count==3 else{throw StudioError("Historique de corrections manquant ou pollué par le volume")}
+    print("PASS native correction journal, explicit review and revoked review after move")
     try editor.runAnalysis("structure",model:"htdemucs")
     guard !editor.busy else{throw StudioError("Structure existante réanalysée")}
+    editor.project.chords=[TimedText(start:0,end:0.5,text:"Am",manual:true),TimedText(start:0.5,end:2,text:"Ab")]
+    let chordResult=root.appendingPathComponent("web-chords.json")
+    let source="https://www.cifraclub.com/example/song/"
+    var chordData:[String:Any] = ["engine":"web-reference","reference":["query":"Example Song","status":"found","sources":[["title":"Song","publisher":"Cifra Club","url":source,"chords":["C","G"],"transitions":[["C","G"]]]],"checkedAt":1.0,"message":"Calage proposé","alignment":["status":"proposed","message":"À vérifier","subdivision":2]],"segments":[["start":0.25,"end":0.75,"label":"C","sourceURL":source,"confidence":0.9],["start":1.0,"end":1.5,"label":"G","sourceURL":source,"confidence":0.7]]]
+    var chordMetadata=chordData["reference"] as! [String:Any]
+    chordMetadata["catalogVersion"]=2;chordMetadata["selectedURL"]=source;chordMetadata["checks"]=[["id":"cifraclub","status":"found"]];chordData["reference"]=chordMetadata
+    try JSONSerialization.data(withJSONObject:chordData).write(to:chordResult)
+    try editor.applyTextAnalysis("chords",result:chordResult)
+    let webChords=try StudioProject.load(root)
+    guard webChords.chords.map({$0.text})==["Am","G"],webChords.chords[0].manual,
+          webChords.chords[1].sourceURL==source,webChords.chords[1].confidence==0.7,
+          webChords.chordReference?.alignment?.subdivision==2,
+          webChords.chordReference?.sources.first?.transitions==[["C","G"]],webChords.chordReference?.selectedURL==source,
+          webChords.chordReference?.catalogVersion==2,webChords.chordReference?.checks?.first?.status=="found" else{throw StudioError("Source, calage ou correction manuelle d’accords perdus")}
+    guard ChordProvider.all.count==13,ChordProvider.all.filter({$0.template != nil}).count==5 else{throw StudioError("Catalogues d’accords absents du paquet")}
+    let providerSearch=try ChordProvider.searchURL(query:"AC/DC Highway to Hell",kind:"chords",provider:"ultimate")
+    guard URLComponents(url:providerSearch,resolvingAgainstBaseURL:false)?.queryItems?.first?.value?.contains("site:ultimate-guitar.com")==true else{throw StudioError("Recherche ciblée invalide")}
+    print("PASS native web chord sources, grid placement, confidence and manual protection roundtrip")
     try loaded.save(root)
     print("PASS native manual boundary, validation, volumes, persistence and analysis reuse")
     var inherited=GuideSettings();inherited.firstBeat=2.635;inherited.gridMode="fixed";inherited.clickGain=1.28
@@ -48,6 +74,14 @@ func selfTest(_ directory:String) throws {
     var validated=loaded;validated.preparation=Preparation(fingerprint:"approved")
     validated.applyDetectedGrid(grid)
     guard validated.beats.isEmpty else{throw StudioError("Calage validé remplacé")}
+    validated.applyDetectedGrid(grid,reanalyze:true)
+    guard validated.beats.count==4 else{throw StudioError("Réanalyse explicite du calage validé bloquée")}
+    imported.analysisCompleted("smartgrid")
+    imported.applyDetectedGrid(["beats":[0.1,0.6],"firstBeat":0.1,"bpm":113.0],reanalyze:true)
+    guard imported.beats==[0.1,0.6],imported.bpm==113 else{throw StudioError("Réanalyse explicite bloquée par l’historique")}
+    imported.gridLocked=true
+    imported.applyDetectedGrid(grid,reanalyze:true)
+    guard imported.beats==[0.1,0.6] else{throw StudioError("Réanalyse remplaçant un calage verrouillé")}
     print("PASS native import defaults, automatic downbeat and protected grids")
     var intro=loaded;intro.settings.gridMode="detected";intro.settings.firstBeat=2.68;intro.settings.countBars=2
     intro.beats=(0..<24).map{2.68+Double($0)*0.64};intro.bpm=93.75
@@ -55,8 +89,20 @@ func selfTest(_ directory:String) throws {
     guard abs(count.lead-2.44)<1e-8,abs(count.end-5.12)<1e-8,count.events.map({$0.number})==[1,2,3,4,1,2,3,4],abs(count.end-count.lead-count.target)<1e-8 else{throw StudioError("Décompte détaché de l’entrée musicale")}
     intro.beats=(0..<24).map{0.56+Double($0)*0.62};intro.settings.firstBeat=1.18
     let pickup=intro.countPlan(at:0)
-    guard abs(pickup.target-1.18)<1e-8,pickup.events.last?.number==4 else{throw StudioError("Levée musicale perdue")}
-    print("PASS native count-in joins downbeat after leading silence and preserves pickups")
+    guard abs(pickup.target-1.18)<1e-8,pickup.events.map({$0.number})==[1,2,3,4,1,2,3,4],
+          abs(pickup.events.last!.time-pickup.lead-0.56)<1e-8 else{throw StudioError("Quatre absent du décompte en levée")}
+    print("PASS native count-in speaks four on the pickup and joins the downbeat")
+    var compound=loaded
+    compound.settings.pulseUnit="dottedQuarter";compound.settings.referenceBPM=113
+    compound.settings.gridMode="fixed";compound.settings.manualBPM=113;compound.settings.beatsPerBar=2
+    compound.settings.firstBeat=0.98;compound.settings.countBars=1
+    let compoundPeriod=90.0/113
+    guard abs(compound.period(at:0)-compoundPeriod)<1e-9,
+          abs(compound.countPlan(at:0).end-2*compoundPeriod)<1e-9 else{throw StudioError("Tempo ternaire mal converti")}
+    let compoundCopy=try JSONDecoder().decode(StudioProject.self,from:JSONEncoder().encode(compound))
+    guard compoundCopy.settings.referenceBPM==113,compoundCopy.settings.pulseUnit=="dottedQuarter",
+          compoundCopy.settings.forNewSong().referenceBPM==nil,compoundCopy.settings.forNewSong().pulseUnit==nil else{throw StudioError("Unité ou référence de tempo mal conservée")}
+    print("PASS native compound tempo, count-in, persistence and fresh import defaults")
     var bad=loaded;bad.tracks[0].file="../outside.wav"
     do{try bad.validate();throw StudioError("Traversée de chemin acceptée")}
     catch let error as StudioError {if error.message == "Traversée de chemin acceptée"{throw error}}

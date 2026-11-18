@@ -6,7 +6,7 @@
  function musicalGrid(project, duration) {
   const settings = {...guideDefaults, ...project.settings};
   const meter = settings.beatsPerBar;
-  const bpm = settings.gridMode === 'fixed' ? settings.manualBPM : project.bpm || settings.manualBPM;
+  const bpm = pulseTempo(project);
   const beats = [...new Set((project.beats || []).filter(t => Number.isFinite(t) && t >= 0 && t <= duration))].sort((a,b) => a-b);
   const detected = settings.gridMode !== 'fixed' && beats.length > 1;
   let anchor = 0;
@@ -35,7 +35,7 @@
    const start=Math.max(0,at(n*meter)), end=Math.min(duration,at((n+1)*meter));
    if(end>start+EPS)bars.push({number:n+1,start,end});
   }
-  return {at,coordinate,position,bars,meter,origin,bpm,detected};
+  return {at,coordinate,position,bars,meter,origin,bpm:tempoSummary(project).bpm,pulseBPM:bpm,timeSignature:pulseScale(project)===1.5?(meter*3)+'/8':meter+'/4',detected};
  }
  window.bandStudioSheetGrid = musicalGrid;
 
@@ -67,11 +67,17 @@
  const references=node('div','sheet-toolbar');
  const searches=[];
  for(const [kind,label] of [['chords','Accords sur Internet ↗'],['lyrics','Paroles sur Internet ↗']]) {
-  const search=button(label,()=>send('referenceSearch',{kind,query:[artist.textContent,songTitle.textContent].filter(Boolean).join(' ')}));
+  const search=button(label,()=>{
+   const source=selectedChordSource(state.project);
+   if(kind==='chords'&&source)send('chordSourceOpen',{url:source.url});
+   else send('referenceSearch',{kind,query:[artist.textContent,songTitle.textContent].filter(Boolean).join(' ')});
+  });
   search.id='sheetSearch-'+kind;search.title='Ouvrir une recherche dans ton navigateur pour comparer les propositions';
   searches.push(search);references.append(search);
  }
  references.append(node('small','','Compare la version et la tonalité, puis corrige la fiche.'));
+ references.append(button('Comparer les sources d’accords',()=>{view('prompter');$('chordReferencePrompter').scrollIntoView({block:'start'});}));
+ const chordLegend=node('small','');chordLegend.id='sheetChordSource';references.append(chordLegend);
  const content=node('div','song-sheet');content.id='songSheet';
  sheet.append(heading,stats,meta,toolbar,sheetHelp,references,content);document.querySelector('main').append(sheet);
  sections.onchange=()=>renderSheet();
@@ -120,12 +126,14 @@
   else if(item.words?.length)label=item.words.filter(w=>w.start>=start-EPS&&w.start<end-EPS).map(w=>w.text).join(' ');
   else if(continuation)return null;
   if(!label)return null;
-  const b=button('',()=>editEntry(kind,item),'sheet-entry sheet-'+kind+(item.manual?' manual':''));
+  const uncertain=kind==='chords'&&!item.manual&&item.sourceURL&&item.confidence<.5;
+  const b=button('',()=>editEntry(kind,item),'sheet-entry sheet-'+kind+(item.manual?' manual':'')+(uncertain?' uncertain':''));
   b.dataset.annotation=item.id;b.dataset.kind=kind;b.disabled=!!state.busy;
-  b.append(node('span','sheet-entry-text',label));
+  b.append(node('span','sheet-entry-text',label+(uncertain?' ?':'')));
   const pos=positionLabel(grid,Math.max(start,item.start));
-  b.append(node('small','',pos+' · '+(item.manual?'corrigé':'auto')));
+  b.append(node('small','',pos+' · '+(item.manual?'corrigé':item.sourceURL?'Internet · '+(uncertain?'calage incertain':'proposé'):'auto')));
   b.title='Modifier '+(kind==='chords'?'l’accord':'la ligne')+' : '+item.text+' ('+positionLabel(grid,item.start)+')';
+  if(item.sourceURL&&!item.manual)b.title+=' · '+(uncertain?'Calage incertain, à vérifier':'Calage proposé depuis une grille Internet');
   return b;
  }
  function groups(project,duration) {
@@ -140,6 +148,8 @@
  }
  function renderSheet() {
   const p=state.project, duration=state.duration||0, opened=state.loaded&&duration>0;
+  const chordSource=typeof selectedChordSource==='function'?selectedChordSource(p):p.chordReference?.sources?.[0];
+  chordLegend.textContent=chordSource?'Accords : '+chordSource.publisher+' · calage proposé sur ta grille. ? = accord ou placement à vérifier.':'';
   const disabled=!opened||!!state.busy;
   exportButton.disabled=importButton.disabled=sections.disabled=calibration.disabled=details.disabled=disabled;
   searches.forEach(b=>b.disabled=!opened);
@@ -150,7 +160,7 @@
   if(!opened){meta.textContent='';hint.textContent='Ouvre un morceau pour afficher sa fiche.';sections.replaceChildren();return;}
   const grid=musicalGrid(p,duration);
   stats.replaceChildren();
-  for(const [label,value] of [['TEMPO',Number(grid.bpm.toFixed(1))+' BPM'],['TONALITÉ',p.key?transposeChord(chordLabel(p.key),transport.pitch||0):'À préciser'],['MESURE',grid.meter+'/4'],['DURÉE',time(duration)]]) {
+  for(const [label,value] of [['TEMPO',Number(grid.bpm.toFixed(1))+' BPM'],['TONALITÉ',p.key?transposeChord(chordLabel(p.key),transport.pitch||0):'À préciser'],['MESURE',grid.timeSignature],['DURÉE',time(duration)]]) {
    const stat=node('div','sheet-stat');stat.append(node('small','',label),node('strong','',value));stats.append(stat);
   }
   const all=groups(p,duration), chosen=p.id===sheetProject?sections.value:'';
@@ -159,7 +169,7 @@
   for(const group of all){const o=node('option','',group.name);o.value=group.id;sections.append(o);}
   sections.value=all.some(s=>s.id===chosen)?chosen:'';
   const shift=(transport.pitch||0)-(p.capo||0);currentPitch=transport.pitch||0;
-  meta.textContent=[p.name,Number(grid.bpm.toFixed(1))+' BPM',grid.meter+'/4',p.key?'Tonalité : '+transposeChord(p.key,transport.pitch||0):'',p.capo?'Capo '+p.capo:''].filter(Boolean).join(' · ');
+  meta.textContent=[p.name,Number(grid.bpm.toFixed(1))+' BPM',grid.timeSignature,p.key?'Tonalité : '+transposeChord(p.key,transport.pitch||0):'',p.capo?'Capo '+p.capo:''].filter(Boolean).join(' · ');
   hint.textContent='Clique sur un accord ou des paroles pour les corriger. Les numéros repèrent les mesures.'+(shift?' Accords transposés ; l’éditeur montre les accords source.':'')+(!(p.lyrics||[]).length?' Aucune parole : utilise + Paroles ou importe un fichier LRC/SRT.':'');
   for(const group of all.filter(s=>!sections.value||s.id===sections.value)) {
    const article=node('article','sheet-section');article.dataset.section=group.id;

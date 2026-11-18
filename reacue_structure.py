@@ -15,18 +15,22 @@ Modèles : dans <ReaCue>/structure/SongFormer/src/SongFormer/ckpts et <ReaCue>/s
         # et cache Hugging Face par défaut (~/.cache/huggingface/hub, %USERPROFILE%/.cache/huggingface/hub).
         # Les sources ne sont jamais modifiées ni supprimées.
 
-Fenêtre globale : 420 s (réglage du modèle) si la mémoire vive est >= 15 Go, sinon 120 s (moins précis
-mais tient en ~4 Go). Calcul sur CUDA, Metal/MPS sur Mac compatible, sinon CPU.
+Fenêtre automatique : 30–60 s sur CPU, 60–120 s sur Metal, 120–420 s sur CUDA selon la mémoire.
+Les caractéristiques utiles sont extraites sans calculer les couches et sorties inutilisées.
+Une saturation CUDA relance une fois sur CPU avec une fenêtre courte.
+Calcul sur CUDA, Metal/MPS sur Mac compatible, sinon CPU.
 """
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import os
 import sys
 import time
 import traceback
 import types
+from contextlib import contextmanager, ExitStack
 from pathlib import Path
 
 import reacue_performance
@@ -67,8 +71,178 @@ def ram_gb() -> float:
 def choose_window(window: str | int | None = "auto", ram: float | None = None) -> int:
     if str(window).isdigit():
         return max(30, int(window))
+    probe_gpu = ram is None and os.environ.get("REACUE_DEVICE", "auto").lower() != "cpu"
     ram = ram_gb() if ram is None else ram
-    return 120 if reacue_performance.profile() == "fast" else (420 if ram >= 15 else 120)
+    # Attention cost is quadratic in time. Total host RAM alone must never select
+    # a whole-song CPU window: a 6-minute song can page tens of GB on a 16-GB Mac.
+    selected = 60 if ram >= 12 else 30
+    if reacue_performance.profile() == "fast":
+        return 30
+    if probe_gpu:
+        try:
+            import torch
+            if torch.cuda.is_available():
+                total = torch.cuda.get_device_properties(0).total_memory
+                free, _ = torch.cuda.mem_get_info()
+                selected = 420 if total > 8 * 2**30 and free >= 12 * 2**30 else 120
+            elif reacue_metal.device(torch) == "mps":
+                selected = 120 if ram >= 24 else 60
+        except (ImportError, RuntimeError, OSError):
+            pass
+    return selected
+
+
+def _sdpa_forward(attention, original):
+    """Same rotary attention, without materializing the quadratic score matrix."""
+    def forward(hidden_states, attention_mask=None, relative_position_embeddings=None,
+                output_attentions=False):
+        import torch.nn.functional as F
+        if attention.training or output_attentions or attention.position_embeddings_type != "rotary":
+            return original(hidden_states, attention_mask, relative_position_embeddings, output_attentions)
+        if relative_position_embeddings is None:
+            return original(hidden_states, attention_mask, relative_position_embeddings, output_attentions)
+        batch, _, _ = hidden_states.shape
+        rotated = attention._apply_rotary_embedding(hidden_states, relative_position_embeddings)
+        def heads(projection, values):
+            return projection(values).view(batch, -1, attention.num_heads, attention.head_size).transpose(1, 2)
+        result = F.scaled_dot_product_attention(
+            heads(attention.linear_q, rotated), heads(attention.linear_k, rotated),
+            heads(attention.linear_v, hidden_states), attn_mask=attention_mask, dropout_p=0.0)
+        result = result.transpose(1, 2).reshape(batch, -1, attention.num_heads * attention.head_size)
+        return attention.linear_out(result), None
+    return forward
+
+
+class _FeaturesReady(Exception):
+    def __init__(self, features):
+        self.features = features
+
+
+def _tiled_convolution(conv, values, block=512):
+    """Bound the pinned 4x subsampler's temporary activations to about 5 s.
+
+    Its receptive field is 19 mel frames. A 12-frame halo (aligned to stride
+    four) preserves every output, including the original end padding.
+    """
+    import torch
+    frames = values.shape[-1]
+    if frames <= block:
+        return conv(values)
+    pieces = []
+    for start in range(0, frames, block):
+        end = min(frames, start + block)
+        left, right = max(0, start - 12), min(frames, end + 12)
+        output = conv(values[..., left:right])
+        offset = (start - left) // 4
+        pieces.append(output[:, offset:offset + (end-start+3)//4])
+    return torch.cat(pieces, dim=1)
+
+
+class _ConvolutionReuse:
+    """Keep one context's small features, reusing the interior of local excerpts.
+
+    The mel boundary and convolution halo are recomputed from the local audio.
+    Reuse requires the same waveform storage AND matching interior mel values.
+    No attention context is reused between different excerpts.
+    """
+    def __init__(self, conv):
+        self.conv = conv
+        self.wave = self.base_wave = None
+        self.mel = self.output = None
+
+    def observe(self, original):
+        def predict(wave, *args, **kwargs):
+            previous, self.wave = self.wave, wave
+            try:
+                return original(wave, *args, **kwargs)
+            finally:
+                self.wave = previous
+        return predict
+
+    def __call__(self, values):
+        import torch
+        wave, base = self.wave, self.base_wave
+        if (wave is not None and base is not None and wave.ndim == base.ndim == 2
+                and wave.shape[0] == base.shape[0] == 1 and wave.stride(-1) == base.stride(-1) == 1
+                and wave.untyped_storage().data_ptr() == base.untyped_storage().data_ptr()):
+            samples = wave.storage_offset() - base.storage_offset()
+            offset = samples // 240
+            frames = values.shape[-1]
+            if (samples >= 0 and samples % 960 == 0
+                    and samples + wave.shape[-1] <= base.shape[-1]
+                    and offset + frames <= self.mel.shape[-1] and frames > 160
+                    and torch.allclose(values[..., 64:-64], self.mel[..., offset+64:offset+frames-64],
+                                       rtol=1e-6, atol=1e-7)):
+                length = (frames+3)//4
+                result = self.output[:, offset//4:offset//4+length].clone()
+                result[:, :16] = self.conv(values[..., :80])[:, :16]
+                start = (length-16)*4-12
+                result[:, -16:] = self.conv(values[..., start:])[:, 3:19]
+                return result
+        result = _tiled_convolution(self.conv, values)
+        self.base_wave, self.mel, self.output = wave, values, result
+        return result
+
+
+def _feature_encoder(model, original, muq, convolution=None):
+    """SongFormer consumes hidden_states[10], before layer 10 and final normalization.
+
+    Stop at that exact point, avoiding later layers, all intermediate copies and
+    the unused codebook projection. The hook is removed even on failure.
+    """
+    def encode(values, *args, **kwargs):
+        if args or kwargs.get("attention_mask") is not None or model.training:
+            return original(values, *args, **kwargs)
+        def ready(_module, inputs):
+            raise _FeaturesReady(inputs[0])
+        handle = model.conformer.layers[10].register_forward_pre_hook(ready)
+        try:
+            try:
+                model.conformer((convolution or model.conv)(values), output_hidden_states=False)
+            except _FeaturesReady as done:
+                features = done.features
+            else:
+                raise RuntimeError("SongFormer feature extraction did not reach layer 10")
+        finally:
+            handle.remove()
+        states = (None,) * 10 + (features,)
+        return (None, states, None) if muq else (None, states)
+    return encode
+
+
+@contextmanager
+def efficient_inference(app):
+    """Scoped optimizations for the pinned encoders; unknown architectures stay intact."""
+    from unittest.mock import patch
+    with ExitStack() as stack:
+        for model, muq in ((getattr(getattr(app, "muq_model", None), "model", None), True),
+                           (getattr(app, "musicfm_model", None), False)):
+            conformer = getattr(model, "conformer", None)
+            if (type(conformer).__name__ != "Wav2Vec2ConformerEncoder"
+                    or not type(conformer).__module__.startswith("transformers.models.wav2vec2_conformer.")
+                    or len(conformer.layers) <= 10 or model.training):
+                continue
+            # Only these pinned frontends have the stride/receptive field used below.
+            conv = model.conv
+            reuse = None
+            if (type(conv).__name__ == "Conv2dSubsampling"
+                    and type(conv).__module__ in ("muq.muq.modules.conv", "musicfm.modules.conv")
+                    and all(block.conv1.stride == (2, 2) and block.conv2.stride == (1, 1)
+                            and block.conv1.kernel_size == block.conv2.kernel_size == (3, 3)
+                            and block.conv1.padding == block.conv2.padding == (1, 1)
+                            for block in conv.conv)
+                    and len(conv.conv) == 2
+                    and model.preprocessor_melspec_2048.mel_stft.hop_length == 240
+                    and model.preprocessor_melspec_2048.mel_stft.n_fft == 2048):
+                reuse = _ConvolutionReuse(conv)
+                stack.enter_context(patch.object(model, "get_predictions", reuse.observe(model.get_predictions)))
+            stack.enter_context(patch.object(model, "encoder", _feature_encoder(model, model.encoder, muq, reuse)))
+            import torch.nn.functional as F
+            if hasattr(F, "scaled_dot_product_attention"):
+                for layer in conformer.layers[:10]:
+                    attention = layer.self_attn
+                    stack.enter_context(patch.object(attention, "forward", _sdpa_forward(attention, attention.forward)))
+        yield
 
 
 def _write_status(path: Path | None, state: str, **kw):
@@ -120,11 +294,55 @@ def load_app():
     return app
 
 
-def init_models(app):
-    app.download_all(use_mirror=False)
-    app.initialize_models(model_name="SongFormer", checkpoint="SongFormer.safetensors",
-                          config_path="SongFormer.yaml")
+def _initialize_models(app, force_cpu=False):
+    from contextlib import nullcontext
+    from unittest.mock import patch
     import torch
+    # The pinned upstream loader chooses CUDA internally. Scope the override to
+    # this isolated worker's initialization; restore torch before returning.
+    override = patch.object(torch.cuda, "is_available", return_value=False) if force_cpu else nullcontext()
+    with override:
+        app.initialize_models(model_name="SongFormer", checkpoint="SongFormer.safetensors",
+                              config_path="SongFormer.yaml")
+
+
+def _cuda_oom(error):
+    return isinstance(error, RuntimeError) and "out of memory" in str(error).lower()
+
+
+def _cpu_recovery(app, reason, notify, stage, *, discard=False):
+    import torch
+    if discard:
+        for name in ("muq_model", "musicfm_model", "msa_model"):
+            setattr(app, name, None)
+        app.device = "cpu"
+    else:
+        _move_models(app, "cpu")
+    gc.collect()
+    try:
+        torch.cuda.empty_cache()
+    except (RuntimeError, OSError):
+        pass
+    print("Mémoire CUDA insuffisante : reprise de l’analyse de structure sur le processeur.", flush=True)
+    notify(dict(stage=stage, device="cpu", fallback=reason))
+
+
+def init_models(app, notify=lambda info: None):
+    app.download_all(use_mirror=False)
+    import torch
+    force_cpu = os.environ.get("REACUE_DEVICE", "auto").lower() == "cpu"
+    reason = None
+    try:
+        _initialize_models(app, force_cpu=force_cpu)
+    except RuntimeError as error:
+        if force_cpu or not str(getattr(app, "device", "cpu")).startswith("cuda") or not _cuda_oom(error):
+            raise
+        reason = str(error)
+    if reason is not None:
+        # Run outside the exception handler: its traceback can retain GPU tensors.
+        _cpu_recovery(app, reason, notify, "structure-loading", discard=True)
+        _initialize_models(app, force_cpu=True)
+        return
     if reacue_metal.device(torch) == "mps":
         try:
             _move_models(app, "mps")
@@ -140,15 +358,51 @@ def _move_models(app, target):
     app.device = target
 
 
-def segments_from_app(app, audio: str, window: int) -> list[dict]:
+def segments_from_app(app, audio: str, window: int, notify=lambda info: None) -> list[dict]:
+    with efficient_inference(app):
+        return _segments_from_app(app, audio, window, notify)
+
+
+def _process_audio(app, audio, window):
+    """Avoid upstream's non-advancing `continue` on a final <=1024-sample tail."""
+    from contextlib import nullcontext
+    from unittest.mock import patch
+    loader = getattr(app, "librosa", None)
+    original = getattr(loader, "load", None)
+    def load(*args, **kwargs):
+        samples, rate = original(*args, **kwargs)
+        if len(samples) <= 1024:
+            raise ValueError("Audio trop court pour l’analyse de structure.")
+        remainder = len(samples) % (window * rate)
+        if 0 < remainder <= 1024:
+            samples = samples[:-remainder]  # At most 43 ms; the source file is untouched.
+        return samples, rate
+    with patch.object(loader, "load", load) if original else nullcontext():
+        return app.process_audio(audio, win_size=window, hop_size=window)
+
+
+def _segments_from_app(app, audio: str, window: int, notify) -> list[dict]:
+    recovery = None
     try:
-        _, msa = app.process_audio(audio, win_size=window, hop_size=window)
+        _, msa = _process_audio(app, audio, window)
     except (RuntimeError, NotImplementedError, TypeError) as error:
-        if str(getattr(app, "device", "cpu")) != "mps":
+        target = str(getattr(app, "device", "cpu"))
+        if target == "mps":
+            recovery = ("mps", str(error))
+        elif target.startswith("cuda") and _cuda_oom(error):
+            recovery = ("cuda", str(error))
+        else:
             raise
-        _move_models(app, "cpu")
-        reacue_metal.cpu_fallback(error)
-        _, msa = app.process_audio(audio, win_size=window, hop_size=window)
+    if recovery is not None:
+        if recovery[0] == "cuda":
+            _cpu_recovery(app, recovery[1], notify, "structure-analysis")
+        else:
+            _move_models(app, "cpu")
+            gc.collect()
+            reacue_metal.cpu_fallback(recovery[1])
+            notify(dict(stage="structure-analysis", device="cpu", fallback=recovery[1]))
+        retry_window = min(window, 60 if ram_gb() >= 12 else 30)
+        _, msa = _process_audio(app, audio, retry_window)
     msa = app.rule_post_processing(msa)
     return [{"start": float(s["start"]), "end": float(s["end"]), "label": str(s["label"])}
             for s in app.format_as_segments(msa)]

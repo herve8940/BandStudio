@@ -110,12 +110,12 @@ def probabilities(audio: str, ChordNet, status=None):
     """Moyenne des 5 réseaux : liste de 6 tableaux (triade, basse, 7e, 9e, 11e, 13e) par trame."""
     import numpy as np
     import torch
+    _write_status(status, 'running', step='Préparation harmonique')
     feat = cqt(audio)
     x = torch.tensor(feat, dtype=torch.float32)
     probs = []
     for i in range(N_MODELS):
-        if status:
-            _write_status(status, "running", step=f"réseau / network {i + 1}/{N_MODELS}")
+        _write_status(status, "running", step=f"Réseau {i + 1} sur {N_MODELS}", done=i, total=N_MODELS)
         net = ChordNet(None)
         net.use_gpu = False
         sd = torch.load(str(REPO / "cache_data" / (MODEL_NAME % i + ".sdict")), map_location="cpu")
@@ -123,6 +123,7 @@ def probabilities(audio: str, ChordNet, status=None):
         net.eval()
         with torch.no_grad():
             probs.append([np.asarray(p, dtype=np.float32) for p in net.inference(x)])
+        _write_status(status, "running", step=f"Réseau {i + 1} sur {N_MODELS}", done=i+1, total=N_MODELS)
     return [np.mean([p[k] for p in probs], axis=0) for k in range(len(probs[0]))]
 
 

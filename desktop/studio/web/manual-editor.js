@@ -5,7 +5,7 @@ function musicalGrid(project) {
  const s={...guideDefaults,...project.settings},meter=s.beatsPerBar;
  const beats=(project.beats||[]).filter(Number.isFinite);
  const detected=s.gridMode==='detected'&&beats.length>1&&beats.every((t,i)=>!i||t>beats[i-1]);
- const period=60/(s.gridMode==='fixed'?s.manualBPM:project.bpm||s.manualBPM);
+ const period=60/pulseTempo(project);
  const nearest=detected?beats.reduce((best,t,i)=>Math.abs(t-s.firstBeat)<Math.abs(beats[best]-s.firstBeat)?i:best,0):0;
  const anchor=nearest%meter;
  function at(value) {
@@ -26,8 +26,10 @@ function musicalGrid(project) {
 
 let editorSong='',editorFocus=null,editorPending=null,zoomStart=0,zoomSpan=0;
 const zoomBar=node('div','editor-zoom');
+zoomBar.title='Ctrl + molette (ou Cmd + molette) sur une piste : zoom autour du pointeur';
 zoomBar.innerHTML='<strong>ÉCOUTER & AJUSTER</strong><button id="zoomAll">Tout</button><button id="zoomOut" aria-label="Dézoomer">−</button><button id="zoomIn" aria-label="Zoomer">＋</button><span id="zoomLabel"></span><label class="editor-follow"><input id="zoomFollow" type="checkbox" checked>Suivre la lecture</label><label>Calage <select id="markerSnap"><option value="bar">Mesure</option><option value="beat">Temps</option></select></label><input id="zoomPosition" type="range" min="0" max="1000" value="0" aria-label="Parcourir le morceau">';
 document.querySelector('.workspace-grid').before(zoomBar);
+zoomBar.append(node('small','','Ctrl / Cmd + molette sur les pistes pour zoomer'));
 const gridSummary=node('p','grid-calibration');
 gridSummary.id='gridCalibration';zoomBar.after(gridSummary);
 const mixer=node('div','editor-mixer');
@@ -51,7 +53,7 @@ function reviewMarkers(){return [...state.project.sections.map(item=>({kind:'sec
 function focusMarker(){return reviewMarkers().find(m=>m.item.id===editorFocus?.id&&m.kind===editorFocus?.kind);}
 function chooseMarker(kind,id,seek=true){
  editorFocus={kind,id};const marker=focusMarker();if(!marker)return;
- if(kind==='section')selected=id;
+ if(kind==='section')displaySection(marker.item);
  if(zoomSpan<state.duration&&(marker.time<zoomStart||marker.time>zoomStart+zoomSpan))zoomStart=Math.max(0,Math.min(state.duration-zoomSpan,marker.time-zoomSpan/3));
  $('markerFeedback').textContent='';renderManualEditor();renderSections();drawWaves();
  if(seek)send('seek',{time:marker.time});
@@ -78,7 +80,24 @@ $('markerListen').onclick=()=>{
 $('markerValidate').onclick=()=>{const m=focusMarker();if(!m||editorPending)return;editorPending={kind:m.kind,id:m.item.id,review:true};send('reviewMarker',{kind:m.kind,id:m.item.id});renderManualEditor();};
 
 function viewport(){const total=Math.max(.001,state.duration);if(!zoomSpan)zoomSpan=total;zoomSpan=Math.min(total,zoomSpan);zoomStart=Math.max(0,Math.min(total-zoomSpan,zoomStart));return {start:zoomStart,end:zoomStart+zoomSpan,span:zoomSpan};}
-function setZoom(factor){const v=viewport(),center=Math.max(v.start,Math.min(v.end,focusMarker()?.time??transport.position??v.start)),span=Math.max(Math.min(2,state.duration),Math.min(state.duration,v.span*factor));zoomStart=center-span/2;zoomSpan=span;redrawTimeline();}
+let zoomFrame=0;
+function setZoom(factor,anchor=null){
+ const v=viewport(),center=anchor?.time??Math.max(v.start,Math.min(v.end,focusMarker()?.time??transport.position??v.start)),span=Math.max(Math.min(2,state.duration),Math.min(state.duration,v.span*factor));
+ zoomStart=center-span*(anchor?.ratio??.5);zoomSpan=span;viewport();
+ if(anchor){if(!zoomFrame)zoomFrame=requestAnimationFrame(()=>{zoomFrame=0;redrawTimeline();});}
+ else redrawTimeline();
+}
+document.querySelector('.arrangement').addEventListener('wheel',e=>{
+ if(!(e.ctrlKey||e.metaKey)||!state.loaded||state.busy||state.duration<=0||document.querySelector('dialog[open]'))return;
+ const lane=e.target.closest('.track-wave,.timeline');if(!lane)return;
+ const box=lane.getBoundingClientRect();if(box.width<=0)return;
+ const delta=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?box.height:1);
+ if(!Number.isFinite(delta)||delta===0)return;
+ e.preventDefault();
+ const v=viewport(),ratio=Math.max(0,Math.min(1,(e.clientX-box.left)/box.width));
+ $('zoomFollow').checked=false;
+ setZoom(Math.exp(Math.max(-1,Math.min(1,delta*.003))),{time:v.start+ratio*v.span,ratio});
+},{passive:false});
 $('zoomAll').onclick=()=>{zoomStart=0;zoomSpan=state.duration;redrawTimeline();};
 $('zoomIn').onclick=()=>setZoom(.5);$('zoomOut').onclick=()=>setZoom(2);
 $('zoomPosition').oninput=()=>{zoomStart=Number($('zoomPosition').value)/1000*Math.max(0,state.duration-zoomSpan);redrawTimeline();};
@@ -86,6 +105,7 @@ function redrawTimeline(){viewport();renderSections();drawWaves();renderTranspor
 
 function renderManualEditor(){
  gridSummary.textContent=state.project.gridLocked?'Calage manuel protégé':state.project.analysisNote||'';
+ gridSummary.classList.toggle('needs-review',!state.project.gridLocked&&/à vérifier|incertain|non confirmées/i.test(gridSummary.textContent));
  gridSummary.hidden=!state.loaded||!gridSummary.textContent;
  if(editorSong!==state.project.id){editorSong=state.project.id;editorFocus=null;editorPending=null;zoomStart=0;zoomSpan=state.duration;}
  const markers=reviewMarkers();if(!focusMarker()&&markers.length)editorFocus={kind:markers[0].kind,id:markers[0].item.id};

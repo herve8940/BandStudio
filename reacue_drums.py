@@ -128,7 +128,7 @@ def load_model():
     return M, net
 
 
-def activations(audio: str, M=None, net=None):
+def activations(audio: str, M=None, net=None, status=None):
     """Activations (T, 5) à 100 trames/s, calculées par passes de 60 s qui se recouvrent."""
     import numpy as np
     import torch
@@ -140,12 +140,14 @@ def activations(audio: str, M=None, net=None):
     with torch.no_grad():
         s = 0
         while s < T:
+            _write_status(status,"running",step="Transcription des frappes",done=s,total=T)
             a = max(0, s - OVERLAP)
             b = min(T, s + CHUNK + OVERLAP)
             y = reacue_metal.forward(net, x[:, a:b]).numpy()[0]
             e = min(T, s + CHUNK)
             out[s:e] = y[s - a:e - a]
             s = e
+            _write_status(status,"running",step="Transcription des frappes",done=s,total=T)
     return out
 
 
@@ -160,7 +162,7 @@ def analyze(audio: str, out: str, status: str | None = None) -> int:
         _write_status(st, "running", step="chargement du modèle / loading model")
         M, net = load_model()
         _write_status(st, "running", step="transcription / transcribing")
-        act = activations(audio, M, net)
+        act = activations(audio, M, net, status=st)
         res = {"engine": "adtof", "fps": FPS, "classes": list(CLASSES), "duration": round(len(act) / FPS, 2),
                "onsets": onsets_from_activations(act), "seconds": round(time.time() - t0, 1)}
         tmp = Path(str(out) + ".tmp")
