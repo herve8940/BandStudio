@@ -146,3 +146,24 @@ def test_multiple_sources_and_targeted_search_in_ui(manual_page,monkeypatch):
     assert panel.locator('.chord-provider').count()==13
     panel.get_by_role('button',name='Rechercher sur Ultimate Guitar',exact=True).click()
     assert page_ui.evaluate('sent.at(-1)')==dict(command='referenceSearch',projectID='manual',args=dict(kind='chords',provider='ultimate',query='Artist Song'))
+
+
+def test_downloaded_file_names_give_the_real_artist_and_title():
+    """Names from download tools used to be searched verbatim: "Full_Oasis" /
+    "Wonderwall (128kbit_AAC)" exists on no chord site, so every song failed."""
+    cases={'Full_Last Train - Between Wounds (128kbit_AAC)':('Between Wounds','Last Train'),
+        'Full_Oasis - Wonderwall (128kbit_AAC)':('Wonderwall','Oasis'),
+        '01_The_Cranberries_-_Zombie (Official Music Video)':('Zombie','The Cranberries'),
+        'Eagles - Hotel California (2013 Remaster) [HD]':('Hotel California','Eagles'),
+        'Queen - Bohemian Rhapsody (Official Video Remastered)':('Bohemian Rhapsody','Queen'),
+        'AC/DC - Highway to Hell (320 kbps)':('Highway to Hell','AC/DC'),
+        'The Beatles - Let It Be (Remastered 2009) (128kbit_AAC)':('Let It Be','The Beatles'),
+        'Oasis - Wonderwall [bx1Bh8ZvH84]':('Wonderwall','Oasis'),
+        'Muse - Uprising (Live)':('Uprising (Live)','Muse'),
+        '21 Pilots - Stressed Out':('Stressed Out','21 Pilots')}
+    for name,expected in cases.items():assert web.identity({'name':name})==expected,name
+
+
+def test_heading_without_apostrophes_still_matches():
+    assert web.matches_heading('Knockin On Heavens Door Chords by Bob Dylan | GuitarTabsExplorer',"Knockin' On Heaven's Door",'Bob Dylan')
+    assert not web.matches_heading('Knockin On Heavens Door Chords by Bob Dylan | GuitarTabsExplorer','Heavens','Bob Dylan')

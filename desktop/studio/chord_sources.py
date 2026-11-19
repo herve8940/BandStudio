@@ -30,9 +30,23 @@ def normalized(value):
     return ' '.join(''.join(c if c.isalnum() else ' ' for c in text if not unicodedata.combining(c)).split())
 
 
+# Download tools and rips decorate file names: "Full_Oasis - Wonderwall (128kbit_AAC)",
+# "01_The_Cranberries_-_Zombie (Official Music Video)". Sites only know "Oasis" / "Wonderwall".
+NAME_TAG = re.compile(r'\s*[\[(](?:'
+    r'official(?: (?:music|lyrics?|hd|4k))? (?:video|audio|clip)|(?:music |lyrics? )?video|lyrics?|visuali[sz]er|audio'
+    r'|clip officiel|audio officiel|vid[ée]o officielle|video oficial|paroles?'
+    r'|(?:\d{4} )?remaster(?:ed)?(?: (?:version|\d{4}))?|hd|hq|4k'
+    r'|[^\])\n]*\b(?:official|officiel(?:le)?|oficial|remaster(?:ed)?|kbit|kbps)\b[^\])\n]*'
+    r'|\d{2,3} ?k(?:bit|bps)?s?(?:[ _-]?(?:aac|mp3|opus|ogg|m4a|vorbis|webm))?|aac|mp3|opus|m4a'
+    r')[\])]', re.I)
+NAME_PREFIX = re.compile(r'^(?:(?:full|mix|master|stereo|original)_+|\d{1,3}(?:[_.]+|\s+-\s+))', re.I)
+
+
 def clean_name(value):
     text = re.sub(r'\s*\[[A-Za-z0-9_-]{11}\]\s*$', '', str(value))
-    text = re.sub(r'\s*[\[(](?:official (?:music )?(?:video|audio)|lyrics?|hd|hq)[\])]', '', text, flags=re.I)
+    text = NAME_PREFIX.sub('', text.strip()).replace('_', ' ')
+    previous = None
+    while previous != text:previous, text = text, NAME_TAG.sub('', text)
     return ' '.join(text.split())[:200]
 
 
@@ -104,8 +118,9 @@ def matches_heading(heading,title,artist):
         field=re.split(r':\s*(?:acordes|chords|cifras)\b',field,flags=re.I)[0]
         field=re.sub(r'\s+(?:chords|tabs|acordes|cifras)(?:\s+and\s+tabs)?\s*$','',field,flags=re.I)
         cleaned.append(clean_name(field))
+    def title_key(value):return normalized(re.sub(r"['’`′]",'',value))
     def artist_key(value):return normalized(value.replace('/','').replace('⧸','').replace('.',''))
-    return any(normalized(f)==normalized(title) for f in cleaned) and any(artist_key(f)==artist_key(artist) for f in cleaned)
+    return any(title_key(f)==title_key(title) for f in cleaned) and any(artist_key(f)==artist_key(artist) for f in cleaned)
 
 
 class Redirects(HTTPRedirectHandler):
