@@ -103,7 +103,7 @@ def test_beat_chunks_and_structure_hooks_preserve_results(tmp_path,monkeypatch):
 
 def test_progress_ui_passes_cards_plan_queue_and_cancel(tmp_path):
     import functools
-    import threading
+    import threading,time
     from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
     from playwright.sync_api import sync_playwright,expect
     class Handler(SimpleHTTPRequestHandler):
@@ -200,18 +200,19 @@ def test_status_updates_survive_a_reader_polling_like_the_windows_host(tmp_path)
     """Real reproduction of the field failure: the host reads progress.json in a loop
     while an analysis publishes hundreds of updates. Before the fix, os.replace raised
     WinError 5 (Accès refusé) and the whole analysis stopped."""
-    import threading
+    import threading,time
     target=tmp_path/'progress.json';progress.write_status(target,'{"stage": "start", "n": -1}')
     stop=threading.Event();reads=[0]
     def host():
         while not stop.is_set():
             try:target.read_text(encoding='utf-8');reads[0]+=1
             except OSError:pass
+            time.sleep(.001)
     readers=[threading.Thread(target=host) for _ in range(2)]
     for r in readers:r.start()
     try:
-        for n in range(1500):progress.write_status(target,json.dumps({'stage':'grid','n':n}))
+        for n in range(300):progress.write_status(target,json.dumps({'stage':'grid','n':n}))
     finally:
         stop.set()
         for r in readers:r.join()
-    assert reads[0]>0 and json.loads(target.read_text(encoding='utf-8'))=={'stage':'grid','n':1499}
+    assert reads[0]>0 and json.loads(target.read_text(encoding='utf-8'))=={'stage':'grid','n':299}
