@@ -170,3 +170,26 @@ def test_progress_ui_passes_cards_plan_queue_and_cancel(tmp_path):
             assert not errors
             browser.close()
     finally:server.shutdown();server.server_close()
+
+
+def test_busy_status_file_on_windows_is_retried_then_written_in_place(tmp_path,monkeypatch):
+    """WinError 5 while the host reads progress.json must not abort the analysis."""
+    target=tmp_path/'progress.json';calls=[]
+    def locked(source,destination):
+        calls.append(destination);raise PermissionError(13,'Accès refusé')
+    monkeypatch.setattr(progress,'WINDOWS',True);monkeypatch.setattr(progress.os,'replace',locked)
+    monkeypatch.setattr(progress.time,'sleep',lambda _:None)
+    progress.write_status(target,'{"stage": "grid"}')
+    assert len(calls)>1 and json.loads(target.read_text())=={'stage':'grid'}
+    assert not (tmp_path/'progress.json.tmp').exists()
+
+
+def test_transient_windows_lock_is_retried(tmp_path,monkeypatch):
+    real=os.replace;failures=[PermissionError(13,'Accès refusé')]*3
+    def flaky(source,destination):
+        if failures:raise failures.pop()
+        real(source,destination)
+    monkeypatch.setattr(progress,'WINDOWS',True);monkeypatch.setattr(progress.os,'replace',flaky)
+    monkeypatch.setattr(progress.time,'sleep',lambda _:None)
+    source=tmp_path/'a.tmp';source.write_text('x');progress.replace_file(source,tmp_path/'a')
+    assert (tmp_path/'a').read_text()=='x' and not failures

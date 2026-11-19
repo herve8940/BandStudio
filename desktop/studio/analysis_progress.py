@@ -4,7 +4,10 @@ import json
 import math
 import os
 from pathlib import Path
+import time
 from types import SimpleNamespace
+
+WINDOWS = os.name == 'nt'
 
 
 class Reporter:
@@ -33,10 +36,46 @@ class Reporter:
         self._write()
 
     def _write(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix('.json.tmp')
-        tmp.write_text(json.dumps(self.state, ensure_ascii=False, allow_nan=False), encoding='utf-8')
-        os.replace(tmp, self.path)
+        write_status(self.path, json.dumps(self.state, ensure_ascii=False, allow_nan=False))
+
+
+def replace_file(source, target, attempts=40, delay=.025):
+    """os.replace, tolerant of Windows readers.
+
+    On Windows, replacing a file fails with PermissionError (WinError 5) while
+    another process holds it open — the studio host polls progress.json several
+    times per second, and antivirus or sync tools briefly open new files too.
+    Those locks last milliseconds, so retry instead of failing the whole job.
+    """
+    for attempt in range(attempts):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if not WINDOWS or attempt == attempts - 1:
+                raise
+            time.sleep(delay)
+
+
+def write_status(path, text):
+    """Publish a UI status file. A busy status file must never abort an analysis."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + '.tmp')
+    tmp.write_text(text, encoding='utf-8')
+    try:
+        replace_file(tmp, path)
+    except PermissionError:
+        # Readers open with shared write access on Windows: an in-place write still
+        # succeeds. A reader catching a half-written file already treats it as empty.
+        try:
+            path.write_text(text, encoding='utf-8')
+        except OSError:
+            pass
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
 
 
 _active = None

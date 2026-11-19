@@ -9,18 +9,20 @@ import uuid
 
 
 def write(path, value):
+    from analysis_progress import replace_file
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + '.tmp')
     tmp.write_text(json.dumps(value, ensure_ascii=False, allow_nan=False))
-    os.replace(tmp, path)
+    replace_file(tmp, path)
 
 
 def progress(output, stage, **values):
     """UI status is separate from diagnostic stdout/stderr (including warnings)."""
-    from analysis_progress import emit, _active
+    from analysis_progress import emit, _active, write_status
     if _active is not None:emit(stage=stage, **values)
-    else:write(Path(output).parent / 'progress.json', dict(stage=stage, **values))
+    else:write_status(Path(output).parent / 'progress.json',
+                      json.dumps(dict(stage=stage, **values), ensure_ascii=False, allow_nan=False))
 
 
 def sections(raw, duration):

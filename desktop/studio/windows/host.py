@@ -461,8 +461,12 @@ class Api:
         if cmd=='newSession':recording.command(self,dict(action='new',name=args.get('name','Répétition')));return
         if cmd=='captureSettings':recording.command(self,dict(action='configure',settings=args));return
         if cmd=='setlist':
-            name=args.get('name','').strip();paths=args.get('paths',[])
-            if not name or any(x not in [s['path'] for s in self._list()] for x in paths):raise ValueError('Nom ou morceaux de setlist invalides.')
+            name=str(args.get('name') or '').strip();paths=args.get('paths') or []
+            if not name:raise ValueError('Donne un nom à la setlist avant de l’enregistrer.')
+            if not isinstance(paths,list):raise ValueError('Morceaux de setlist invalides.')
+            # A song deleted from the library stays listed as « Fichier déplacé »; drop it instead
+            # of rejecting every later edit (rename, reorder, add) of that setlist.
+            known={s['path'] for s in self._list()};paths=[x for x in paths if x in known]
             ident=args.get('id') or model.ident();item=dict(id=ident,name=name[:120],paths=paths)
             self._setlists=[x for x in self._setlists if x['id']!=ident]+[item];atomic(self._library/'setlists.json',self._setlists);return
         if self._root is None:raise ValueError('Importe ou ouvre d’abord un morceau.')
@@ -687,6 +691,9 @@ class Api:
     def _closing(self):
         if self._record or self._busy:
             if not self._window.create_confirmation_dialog('BandStudio','Un traitement ou un enregistrement est en cours. L’arrêter et quitter ?'):return False
+        # Stop UI updates first: WebView2 is disposed while the shutdown below runs, and
+        # evaluate_js on it logs ObjectDisposedException in webview.log.
+        self._stop.set()
         if self._record:self._stop_record()
         if self._bridge:self._bridge.close();self._bridge=None
         if self._job:

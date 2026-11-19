@@ -180,3 +180,15 @@ def test_windows_announcements_use_requested_language_or_explain_missing_voice(t
             assert ('['+language+'-') in log,log
             # A valid installed OneCore voice must not silently fail into SAPI.
             assert 'OneCore unavailable:' not in log,log
+
+
+def test_setlist_keeps_working_after_a_listed_song_is_deleted(tmp_path):
+    root=tmp_path/'Songs';root.mkdir();kept=root/'kept.bandstudio';gone=root/'gone.bandstudio'
+    p=fixture(kept);fixture(gone);api=Api(ENGINE,root)
+    paths=[x['path'] for x in api._list()];assert len(paths)==2
+    assert api.command(dict(command='setlist',args={'name':'Concert','paths':paths},projectID=api._project['id']))['ok']
+    assert api.command(dict(command='deleteProject',args={'path':str(gone)}))['ok']
+    item=api._setlists[0]
+    assert api.command(dict(command='setlist',args={**item,'name':'Concert samedi'},projectID=api._project['id']))['ok']
+    assert api._setlists==[dict(id=item['id'],name='Concert samedi',paths=[str(kept.resolve())])]
+    assert not api.command(dict(command='setlist',args={**item,'name':' '},projectID=api._project['id']))['ok']

@@ -39,6 +39,7 @@ def main():
     api._window=window
     if not args.gui_smoke:window.events.loaded+=api._loaded
     window.events.closing+=api._closing
+    window.events.closed+=lambda:api._stop.set()
     threading.Thread(target=api._pulse,daemon=True).start()
     if args.gui_smoke:
         def check():
