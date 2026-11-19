@@ -28,7 +28,7 @@ jobs:
         shell: pwsh
         run: |
           $env:BANDSTUDIO_TEST_ENGINE = "$pwd/dist/bandstudio/stage/BandStudio-DEV/engine"
-          python -m pytest -q tests/test_studio_artwork.py tests/test_studio_windows.py tests/test_studio_windows_startup.py tests/test_studio_compute.py tests/test_studio_services.py tests/test_studio_preparation.py tests/test_studio_support.py
+          python -m pytest -q tests/test_studio_progress.py tests/test_studio_artwork.py tests/test_studio_windows.py tests/test_studio_windows_startup.py tests/test_studio_compute.py tests/test_studio_services.py tests/test_studio_preparation.py tests/test_studio_support.py
           python -m pytest -q tests/test_studio_queue.py -k "not queue_ui"
           python -m pytest -q tests/test_studio_analysis_cache.py tests/test_studio_grid_calibration.py tests/test_studio_grid_pdf.py tests/test_studio_musical_timing.py
       - name: Verify portable correction and protected cues
