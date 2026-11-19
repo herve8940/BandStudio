@@ -1,0 +1,19 @@
+name: diag chords (temporary)
+on:
+  push:
+    branches: [claude/diag-chords]
+jobs:
+  diag:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Same Python as the Windows package (uv-managed 3.12)
+        shell: bash
+        run: |
+          uv python install 3.12
+          uv run --no-project --python 3.12 python -I .github/diag/chords.py || true
