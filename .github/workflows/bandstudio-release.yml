@@ -98,7 +98,17 @@ jobs:
       options: --ipc=host
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - run: python -m pip install pytest playwright==1.64.1 numpy scipy soundfile
+      - run: python -m pip install pytest playwright==1.64.1 numpy scipy soundfile imageio-ffmpeg==0.6.0
+      - name: Prepare FFmpeg for interface export tests
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import imageio_ffmpeg
+          import shutil
+          target = Path('desktop-build/standalone/Engine/import-tools')
+          target.mkdir(parents=True, exist_ok=True)
+          shutil.copy2(imageio_ffmpeg.get_ffmpeg_exe(), target / 'ffmpeg')
+          PY
       - run: python -m pytest -q tests/test_standalone_studio.py tests/test_studio_support.py tests/test_studio_queue.py tests/test_studio_manual_editor.py tests/test_studio_song_sheet.py tests/test_studio_workspace.py tests/test_studio_progress.py tests/test_studio_web_chords.py tests/test_studio_chord_providers.py tests/test_studio_structure_review.py tests/test_studio_structure_sources.py tests/test_studio_song_memory.py
   publish:
     needs: [windows, mac, interface]
