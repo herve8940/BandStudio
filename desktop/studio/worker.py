@@ -177,7 +177,7 @@ def analyze(audio, output, mode, engine, project_file=None, *, reanalyze=False):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument('command', choices=['validate','generate','vocalsplit','grid', 'structure', 'separate','drumsep','guides','decode','reaper','rpp','lyrics','chords','drums','midi','smartgrid','key','lyricsimport','lyricsexport','stemsexport','master','report','portable','sheet'])
+    p.add_argument('command', choices=['structureMemory','structureReview','structureExport','validate','generate','vocalsplit','grid', 'structure', 'separate','drumsep','guides','decode','reaper','rpp','lyrics','chords','drums','midi','smartgrid','key','lyricsimport','lyricsexport','stemsexport','master','report','portable','sheet'])
     p.add_argument('--options',default='{}')
     p.add_argument('--options-file')
     p.add_argument('--input', default='')
@@ -226,12 +226,22 @@ def execute(a):
             from services import calibrate_grid
             write(a.output,calibrate_grid(json.loads(Path(a.output).read_text())))
         return
+    if a.command in ('structureMemory','structureReview','structureExport'):
+        from structure_review import propose, export_proposal,memory_proposal
+        if a.command=='structureMemory':write(a.output,dict(proposal=memory_proposal(json.loads(Path(a.project).read_text()))));return
+        if a.command=='structureReview':write(a.output,propose(json.loads(Path(a.project).read_text())))
+        else:export_proposal(a.project,a.output,engine)
+        return
     if a.command=='guides':guides(a.project,a.output);return
     if a.command=='decode':
         target=Path(a.output).parent/'import.wav';decode(a.input,target,engine);write(a.output,dict(audio=str(target)));return
     if a.command in ('validate','reaper'):
         from preparation import validate_project, export_validated
-        if a.command=='validate':validate_project(a.project,a.output)
+        if a.command=='validate':
+            validate_project(a.project,a.output)
+            from song_memory import remember
+            try:remember(json.loads(Path(a.project).read_text()),accepted=True)
+            except (OSError,ValueError):pass
         else:export_validated(a.project,a.output,engine)
         return
     if a.command=='rpp':import_reaper(a.input,a.output,engine,a.project);return

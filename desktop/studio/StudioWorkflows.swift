@@ -2,9 +2,57 @@ import AppKit
 import AVFoundation
 
 extension StudioApp {
+    func reviewStructure(_ args:[String:Any]) throws {
+        try requireIdle();audio.pause()
+        let checkedRevision=revision
+        try startJob("structureMemory") {result in
+            guard self.revision==checkedRevision else {throw StudioError("Le morceau a changé. Relance la vérification.")}
+            let recalled=try JSONDecoder().decode(StructureMemoryResult.self,from:Data(contentsOf:result))
+            if recalled.proposal != nil {
+                try self.prepareAll(args,only:["separate"]) {
+                    let preparedRevision=self.revision
+                    try self.startJob("structureMemory") {fresh in
+                        guard self.revision==preparedRevision else {throw StudioError("Le morceau a changé. Relance la vérification.")}
+                        guard let proposal=try JSONDecoder().decode(StructureMemoryResult.self,from:Data(contentsOf:fresh)).proposal else {throw StudioError("Le morceau a changé pendant la préparation. Relance la vérification.")}
+                        self.project.structureProposal=proposal;try self.changed(invalidate:false)
+                        self.notice="Préparation du même enregistrement retrouvée. Valide la proposition pour la réutiliser."
+                    }
+                }
+                return
+            }
+            try self.prepareAll(args,only:["separate","grid","smartgrid","structure","chords"]) {
+                let checkedRevision=self.revision
+                try self.startJob("structureReview") {result in
+                    guard self.revision==checkedRevision else {throw StudioError("Le morceau a changé. Relance Vérifier et compléter.")}
+                    self.project.structureProposal=try JSONDecoder().decode(StructureProposal.self,from:Data(contentsOf:result))
+                    try self.changed(invalidate:false)
+                    self.notice=self.project.structureProposal!.reviewNotice
+                }
+            }
+        }
+    }
+    func exportStructure(_ args:[String:Any]) throws {
+        try requireIdle()
+        guard let proposal=project.structureProposal,args["reviewed"] as? Bool == true,
+              args["proposalID"] as? String == proposal.id else {throw StudioError("Valide la proposition affichée dans Pistes & structure.")}
+        audio.pause();let checkedRevision=revision
+        try startJob("structureExport") {result in
+            guard self.revision==checkedRevision else {throw StudioError("Le morceau a changé pendant l’export. Relance la vérification.")}
+            let object=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
+            guard let path=object["path"] as? String,let value=object["project"] else {throw StudioError("L’export de la proposition n’est pas complet.")}
+            var prepared=try JSONDecoder().decode(StudioProject.self,from:JSONSerialization.data(withJSONObject:value))
+            guard prepared.id==self.project.id else {throw StudioError("L’export appartient à un autre morceau.")}
+            try prepared.validate()
+            if prepared.settings.exportGuides {prepared.guideKey=prepared.desiredGuideKey()}
+            self.remember();self.project=prepared
+            try self.reloadAudio();try self.changed(invalidate:false)
+            self.lastExport=path;self.notice="Proposition appliquée et projet REAPER exporté. Afficher l’export permet de le retrouver."
+        }
+    }
     func snapshot(at url:URL) throws {
         var object=try JSONSerialization.jsonObject(with:JSONEncoder().encode(project)) as! [String:Any]
         object["_root"]=root?.path
+        object["_library"]=library.path
         object["_mode"]=audio.mode;object["_rate"]=Double(audio.rate);object["_pitch"]=Double(audio.pitch)
         try JSONSerialization.data(withJSONObject:object,options:[.sortedKeys]).write(to:url,options:.atomic)
     }
@@ -47,7 +95,7 @@ extension StudioApp {
             }
         }
         StudioDiagnostics.shared.event("job.start",["kind":kind]);try p.run();job=p;busy=true;jobLog=log;jobStarted=ProcessInfo.processInfo.systemUptime;lastBroadcast=0
-        let titles=["validate":"Vérification du morceau et des médias","generate":"Création musicale locale","vocalsplit":"Séparation chant principal et chœurs","smartgrid":"Détection des temps et débuts de mesure","drumsep":"Séparation des éléments de batterie","key":"Estimation de la tonalité","lyricsimport":"Import des paroles synchronisées","lyricsexport":"Export des paroles","stemsexport":"Export des stems","master":"Normalisation du mix","report":"Analyse des niveaux audio","portable":"Création du projet portable","sheet":"Création de la fiche PDF","guides":"Préparation du click, des appels et du décompte","separate":"Séparation des instruments","structure":"Analyse de la structure","grid":"Détection du tempo et des temps","reaper":"Création du projet REAPER","lyrics":"Transcription des paroles","chords":"Recherche de grille Internet","drums":"Transcription de la batterie","midi":"Export MIDI","decode":"Conversion du fichier audio"]
+        let titles=["structureMemory":"Recherche d’une préparation mémorisée","structureReview":"Comparaison de la structure","structureExport":"Validation et export REAPER","validate":"Vérification du morceau et des médias","generate":"Création musicale locale","vocalsplit":"Séparation chant principal et chœurs","smartgrid":"Détection des temps et débuts de mesure","drumsep":"Séparation des éléments de batterie","key":"Estimation de la tonalité","lyricsimport":"Import des paroles synchronisées","lyricsexport":"Export des paroles","stemsexport":"Export des stems","master":"Normalisation du mix","report":"Analyse des niveaux audio","portable":"Création du projet portable","sheet":"Création de la fiche PDF","guides":"Préparation du click, des appels et du décompte","separate":"Séparation des instruments","structure":"Analyse de la structure","grid":"Détection du tempo et des temps","reaper":"Création du projet REAPER","lyrics":"Transcription des paroles","chords":"Recherche de grille Internet","drums":"Transcription de la batterie","midi":"Export MIDI","decode":"Conversion du fichier audio"]
         jobName=kind == "rpp" ? "Import des pistes et régions REAPER" : (titles[kind] ?? kind);notice="";sendState()
     }
     // Stop revokes a queued transport action while guides are still rendering.
@@ -177,7 +225,8 @@ extension StudioApp {
                 guard a>=0,b>a,!manual.contains(where:{$0.start<b && $0.end>a}) else{return nil}
                 return TimedText(start:a,end:b,text:label,sourceURL:row["sourceURL"] as? String,confidence:row["confidence"] as? Double)
             }
-            remember();project.chordReference=value;project.chords=(manual+entries).sorted{$0.start<$1.start}
+            remember();project.chordReference=value
+            if !(obj["segments"] as? [[String:Any]] ?? []).isEmpty {project.chords=(manual+entries).sorted{$0.start<$1.start}}
             project.analysisCompleted(kind);try changed();notice=value.message;return
         }
         remember()
@@ -348,14 +397,14 @@ extension StudioApp {
         if analysisPlan().contains("smartgrid") {try advancedTask(["kind":"smartgrid"],completion:finish)}
         else {try runAnalysis("grid",model:"htdemucs",completion:finish)}
     }
-    func prepareAll(_ args:[String:Any]) throws {
+    func prepareAll(_ args:[String:Any],only:Set<String>?=nil,completion:(()throws->Void)?=nil) throws {
         try requireIdle()
         guard root != nil,project.tracks.contains(where:{$0.role=="source"}) else {throw StudioError("Importe le morceau original avant de lancer la préparation complète.")}
         audio.pause()
-        let steps=analysisPlan(),identity=project.id,generation=transportGeneration
+        let steps=analysisPlan().filter{only?.contains($0) ?? true},identity=project.id,generation=transportGeneration
         func next(_ index:Int) throws {
             guard self.project.id==identity,self.transportGeneration==generation else{return}
-            if index==steps.count {self.notice="Préparation terminée. Écoute le résultat, ajuste les propositions, puis valide le morceau.";self.sendState();return}
+            if index==steps.count {if let completion=completion {try completion();return};self.notice="Préparation terminée. Écoute le résultat, ajuste les propositions, puis valide le morceau.";self.sendState();return}
             let kind=steps[index]
             let finish:()throws->Void = {try next(index+1)}
             if kind=="guides" {try self.withGuides(finish)}

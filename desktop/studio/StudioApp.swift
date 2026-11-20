@@ -145,7 +145,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         sendTransport()
     }
     func changed(invalidate:Bool=true) throws {
-        if invalidate {project.preparation?.fingerprint=nil;project.preparation?.validatedAt=nil}
+        if invalidate {project.preparation?.fingerprint=nil;project.preparation?.validatedAt=nil;project.structureProposal=nil}
         revision += 1;try save();sendState()
     }
     func savePlayback() throws {
@@ -470,6 +470,13 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             case "validateProject":
                 guard args["reviewed"] as? Bool == true else {throw StudioError("Confirme l’écoute et les repères dans Valider & envoyer.")}
                 try validatePreparation()
+            case "reviewStructure":try reviewStructure(args)
+            case "dismissStructure":
+                try requireIdle()
+                guard let proposal=project.structureProposal,args["proposalID"] as? String == proposal.id else {throw StudioError("Cette proposition n’est plus disponible.")}
+                if let root=root {try StudioLearning.keepStructure(root,proposal)}
+                project.structureProposal=nil;try changed(invalidate:false);notice="Parcours actuel conservé."
+            case "exportStructure":try exportStructure(args)
             case "reaper":try exportRPP(open:args["open"] as? Bool ?? false)
             case "showExport":if !lastExport.isEmpty{NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath:lastExport)])}
             case "annotation":try annotation(args)

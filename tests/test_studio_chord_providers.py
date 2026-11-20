@@ -13,7 +13,7 @@ import pytest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'desktop/studio'))
 import chord_sources as web
 import chord_alignment
-from test_studio_web_chords import song
+from test_studio_web_chords import song, no_live_discovery
 from test_studio_manual_editor import manual_page
 
 MARKUP={
@@ -96,6 +96,44 @@ def test_real_heading_conventions_and_apostrophe_slugs():
     explorer=next(p for p in web.PROVIDERS if p['id']=='explorer')
     assert web.provider_url(explorer,'Roman Holiday','Fontaines D.C.').endswith('/fontaines-d.c./roman-holiday-chords')
     assert web.matches_heading('Roman Holiday Chords - Fontaines DC | E-CHORDS','Roman Holiday','Fontaines D.C.')
+
+
+@pytest.mark.parametrize('artist', ['The Wallflowers','The Smiths','The Cranberries'])
+def test_missing_artist_article_is_resolved_before_search_engine(monkeypatch,artist):
+    from urllib.error import HTTPError
+    provider=next(p for p in web.PROVIDERS if p['id']=='explorer');calls=[]
+    direct=web.provider_url(provider,'Song',artist)
+    alternate=web.provider_url(provider,'Song',artist[4:])
+    def fetch(url):
+        calls.append(url)
+        if url==direct:raise HTTPError(url,404,'missing',{},None)
+        assert url==alternate
+        return page('explorer',artist=artist[4:]),url
+    monkeypatch.setattr(web,'fetch',fetch)
+    monkeypatch.setattr(web,'fetch_discovery',lambda *a:pytest.fail('Known article variant should resolve directly'))
+    _,status,source=web._read_provider(provider,'Song',artist)
+    assert status=='found' and source['url']==alternate and calls==[direct,alternate]
+    assert not web.matches_heading('Song Chords - Another '+artist+' | E-CHORDS','Song',artist)
+
+
+def test_partial_cache_retries_failures_without_refetching_or_losing_good_charts(monkeypatch):
+    monkeypatch.setattr(web,'fetch',fake_fetch);p=song()
+    previous=web.lookup(p)['reference'];previous['sources']=previous['sources'][:1]
+    previous['selectedURL']=previous['sources'][0]['url']
+    previous['checkedAt']=time.time()-web.CACHE_RETRY_SECONDS-1
+    for check in previous['checks'][1:]:check['status']='unavailable'
+    p['chordReference']=copy.deepcopy(previous);calls=[]
+    def fetch(url):
+        calls.append(url)
+        assert 'cifraclub' not in url
+        return fake_fetch(url)
+    monkeypatch.setattr(web,'fetch',fetch)
+    result=web.lookup(p)
+    assert len(calls)==4 and len(result['reference']['sources'])==5
+    assert result['reference']['sources'][0]==previous['sources'][0]
+    assert result['reference']['selectedURL']==previous['selectedURL']
+    p['chordReference']=result['reference']
+    assert web.lookup(p)['cacheHit'] and len(calls)==4
 
 def test_browser_search_catalog_and_query_encoding():
     assert len(web.public_catalog())==13

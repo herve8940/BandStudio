@@ -29,6 +29,8 @@ La qualité dépend du morceau et des modèles installés. Une estimation d’IA
 
 ## Nouveautés · 19 novembre 2026
 
+- **Aide facultative dans Pistes & structure** : « Vérifier et compléter » propose les sections manquantes et le calage des accords, puis « Valider et exporter vers REAPER » applique la proposition. Le parcours habituel reste disponible. [Fonctionnement et limites](docs/STRUCTURE_REVIEW.md).
+
 - **Atelier Pistes / Structure** : recherche, filtres, vue compacte, vue d’ensemble colorée et cadrage de la section choisie.
 - **Correcteur de transitions** : ajustement conservateur des nouvelles analyses SongFormer compatibles. Sur 24 morceaux réservés au test, F1 à ±0,5 s : 46,84 → 52,06 / 100. [Périmètre et résultats](docs/CUE_CORRECTOR_TRAINING.md#résultats-du-lot-réservé-et-distribution).
 - **Grilles d’accords Internet** : sources distinctes, choix de la grille et placement proposé sur les temps, à vérifier à l’écoute.

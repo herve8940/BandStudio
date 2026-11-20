@@ -2,6 +2,19 @@ import Foundation
 
 // Keep this schema aligned with cue_feedback.py. Files stay inside the project.
 enum StudioLearning {
+    static func keepStructure(_ root:URL,_ proposal:StructureProposal) throws {
+        guard UUID(uuidString:proposal.id) != nil else {throw StudioError("Identifiant de proposition invalide.")}
+        let data=try JSONEncoder().encode(proposal)
+        let value=try JSONSerialization.jsonObject(with:data) as! [String:Any]
+        let id=UUID().uuidString
+        let event:[String:Any]=["schema":1,"id":id,"proposalID":proposal.id,"action":"kept_current",
+            "beforeFingerprint":proposal.fingerprint,"afterFingerprint":NSNull(),
+            "changes":value["changes"] ?? [],"sources":value["sources"] ?? [],"createdAt":Date().timeIntervalSince1970,
+            "labelPolicy":"Batch decision only; no marker, beat or chord ground truth."]
+        let folder=root.appendingPathComponent("Learning/structure-reviews",isDirectory:true)
+        try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
+        try JSONSerialization.data(withJSONObject:event,options:[.sortedKeys]).write(to:folder.appendingPathComponent(id+".json"),options:.atomic)
+    }
     static func pick(_ value:[String:Any],_ keys:[String])->[String:Any] {
         value.filter{keys.contains($0.key)}
     }

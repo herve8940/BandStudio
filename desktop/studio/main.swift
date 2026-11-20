@@ -3,6 +3,14 @@ import AppKit
 import AVFoundation
 
 func selfTest(_ directory:String) throws {
+    var review=StructureProposal(schema:1,id:"test",fingerprint:"test",createdAt:0,status:"proposed",message:"Prête",
+                                sources:[],anchors:0,changes:[],warnings:[],sections:[],chords:[],chordReference:nil,chordUpdate:false)
+    guard !review.hasChanges,review.reviewNotice=="Aucune amélioration proposée — préparation actuelle conservée." else{throw StudioError("Proposition vide annoncée comme disponible")}
+    review.chordUpdate=true
+    guard review.hasChanges,review.reviewNotice.hasPrefix("Proposition disponible") else{throw StudioError("Proposition d’accords masquée")}
+    review.chordUpdate=false;review.memory=StructureMemory(name:"Même enregistrement",scope:"library",sections:2,chords:0)
+    guard review.hasChanges else{throw StudioError("Préparation mémorisée masquée")}
+    print("PASS native empty review notice and real chord/memory proposals")
     let root=URL(fileURLWithPath:directory)
     try FileManager.default.createDirectory(at:root.appendingPathComponent("Audio"),withIntermediateDirectories:true)
     let fmt=AVAudioFormat(standardFormatWithSampleRate:44100,channels:2)!
@@ -263,6 +271,45 @@ func handoffSelfTest(_ directory:String,_ engine:String) throws {
 }
 if CommandLine.arguments.count >= 4 && CommandLine.arguments[1] == "--handoff-test" {
     do{try handoffSelfTest(CommandLine.arguments[2],CommandLine.arguments[3]);exit(0)}catch{fputs("FAIL: \(error.localizedDescription)\n",stderr);exit(1)}
+}
+func structureHandoffSelfTest(_ directory:String,_ engine:String) throws {
+    try selfTest(directory)
+    let root=URL(fileURLWithPath:directory),app=StudioApp()
+    app.root=root;app.library=root.deletingLastPathComponent();app.runtime=URL(fileURLWithPath:engine)
+    app.project=try StudioProject.load(root)
+    app.project.settings.gridMode="fixed";app.project.settings.manualBPM=120
+    app.project.settings.exportGuides=false;app.project.settings.exportCount=false
+    app.project.chords=[TimedText(start:0,end:1,text:"Am",manual:true)]
+    try app.audio.load(app.project,root:root);try app.changed()
+    func finish() throws {
+        let end=Date().addingTimeInterval(90)
+        while app.busy && Date()<end {RunLoop.current.run(until:Date().addingTimeInterval(0.05))}
+        if app.busy {app.job?.terminate();throw StudioError("Délai de vérification dépassé")}
+    }
+    let original=try JSONEncoder().encode(app.project.sections)
+    try app.startJob("structureReview") {result in
+        app.project.structureProposal=try JSONDecoder().decode(StructureProposal.self,from:Data(contentsOf:result))
+        try app.changed(invalidate:false)
+    }
+    try finish()
+    guard let proposal=app.project.structureProposal else {throw StudioError("Proposition native absente : "+app.notice)}
+    try app.exportStructure(["proposalID":proposal.id,"reviewed":true]);try finish()
+    guard !app.lastExport.isEmpty,app.project.structureProposal==nil,app.project.preparation?.fingerprint != nil else {
+        throw StudioError("Validation/export natifs échoués : "+app.notice)
+    }
+    let sections=try JSONDecoder().decode([Section].self,from:original)
+    guard app.project.sections.map(\.start)==sections.map(\.start),app.project.sections.map(\.name)==sections.map(\.name) else {
+        throw StudioError("Les sections protégées ont changé")
+    }
+    let path=app.lastExport,text=try String(contentsOfFile:path)
+    guard text.contains("NAME \"Accords\"") else {throw StudioError("Piste d’accords absente")}
+    // The ordinary, pre-existing export must still accept the returned document.
+    try app.exportRPP();try finish()
+    guard app.lastExport != path else {throw StudioError("Export habituel après validation échoué : "+app.notice)}
+    print("PASS optional native structure review, single-action export and ordinary export: "+path)
+}
+if CommandLine.arguments.count >= 4 && CommandLine.arguments[1] == "--structure-review-test" {
+    do{try structureHandoffSelfTest(CommandLine.arguments[2],CommandLine.arguments[3]);exit(0)}catch{fputs("FAIL: \(error.localizedDescription)\n",stderr);exit(1)}
 }
 if CommandLine.arguments.count >= 3 && CommandLine.arguments[1] == "--transport-test" {
     do {

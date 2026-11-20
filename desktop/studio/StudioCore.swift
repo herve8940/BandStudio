@@ -65,6 +65,7 @@ struct StudioProject: Codable {
     var lyrics:[TimedText]=[]
     var chords:[TimedText]=[]
     var chordReference:ChordReference?=nil
+    var structureProposal:StructureProposal?=nil
     var drumHits:[DrumHit]=[]
     var key=""
     var capo=0

@@ -1,6 +1,6 @@
 'use strict';
 // Percentages describe completed work; the full preparation counts equally weighted steps.
-const analysisLabels={separate:'Séparation des instruments',drumsep:'Éléments de batterie',grid:'Tempo',smartgrid:'Temps et mesures',structure:'Structure',key:'Tonalité',lyrics:'Paroles',chords:'Grille Internet',drums:'Transcription batterie',guides:'Click et annonces',vocalsplit:'Chant et chœurs',generate:'Création musicale',stemsexport:'Export des pistes',report:'Niveaux audio',sheet:'Fiche PDF',master:'Normalisation',portable:'Projet portable',reaper:'Projet REAPER',validate:'Vérification',decode:'Import audio'};
+const analysisLabels={structureReview:"Comparaison de la structure",structureExport:"Validation et export REAPER",separate:'Séparation des instruments',drumsep:'Éléments de batterie',grid:'Tempo',smartgrid:'Temps et mesures',structure:'Structure',key:'Tonalité',lyrics:'Paroles',chords:'Grille Internet',drums:'Transcription batterie',guides:'Click et annonces',vocalsplit:'Chant et chœurs',generate:'Création musicale',stemsexport:'Export des pistes',report:'Niveaux audio',sheet:'Fiche PDF',master:'Normalisation',portable:'Projet portable',reaper:'Projet REAPER',validate:'Vérification',decode:'Import audio'};
 let analysisProject='',analysisJob='',analysisCurrent=null,analysisHistory={},analysisPlan=[],analysisPlanIndex=0;
 const analysisMeters=new Map();
 function progressMeter(label){

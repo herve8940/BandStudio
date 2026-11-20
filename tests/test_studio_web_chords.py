@@ -17,6 +17,11 @@ from test_studio_manual_editor import manual_page
 PAGE='<title>Song - Artist - Cifra Club</title><b>G</b><pre><b>C</b> words <b>G</b> <b>Am</b> <b>C</b><b>Refrain</b></pre>'
 URL='https://www.cifraclub.com/artist/song/'
 
+@pytest.fixture(autouse=True)
+def no_live_discovery(monkeypatch):
+    monkeypatch.setattr(web,'fetch_discovery',lambda query:'<div class="no-results"></div>')
+    monkeypatch.setattr(web,'catalog_urls',lambda *args:[])
+
 def song():
     p=model.fresh('Artist - Song (Official Video) [abcdefghijk]')
     p['sessionDuration']=5
@@ -42,6 +47,48 @@ def test_matching_page_extracts_only_chord_facts_and_cache(monkeypatch):
 def test_artwork_identity_strips_duplicate_artist(tmp_path):
     (tmp_path/'Artwork.json').write_text(json.dumps(dict(title='AC/DC - Highway to Hell (Official Video)',artist='AC/DC')))
     assert web.identity(dict(_root=str(tmp_path),name='fallback'))==('Highway to Hell','AC/DC')
+
+
+@pytest.mark.parametrize('artist,title,uploader',[
+    ('Muse','Plug In Baby','MrMuseLyrics'),('Oasis','Wonderwall','MusicVideos'),
+    ('AC/DC','Highway to Hell','RockChannel')])
+def test_video_uploader_does_not_override_matching_filename_identity(tmp_path,artist,title,uploader):
+    full=f'{artist} - {title} [HD]'
+    (tmp_path/'Artwork.json').write_text(json.dumps(dict(title=full,artist=uploader)))
+    p=dict(_root=str(tmp_path),name=full+' [5rf1Sj6EIFE]')
+    assert web.identity(p)==(title,artist)
+
+
+@pytest.mark.parametrize('metadata,name,expected',[
+    (dict(title='Song - Part II',artist='Performer'),'Performer - Song - Part II',('Song - Part II','Performer')),
+    (dict(title='Original - Song',artist='Cover Artist',source='https://musicbrainz.org/release-group/verified'),
+     'Original - Song',('Original - Song','Cover Artist')),
+    (dict(title='Song',artist='Cover Artist'),'Original - Song',('Song','Cover Artist')),
+])
+def test_curated_identities_covers_and_titles_with_dashes_are_preserved(tmp_path,metadata,name,expected):
+    (tmp_path/'Artwork.json').write_text(json.dumps(metadata))
+    assert web.identity(dict(_root=str(tmp_path),name=name))==expected
+
+
+@pytest.mark.parametrize('name', ['The Wallflowers | Heroes (HD Video)', 'The Wallflowers — Heroes (4K Video)', 'The Wallflowers - Heroes [HQ Audio]'])
+def test_video_filename_separators_and_quality_tags(name):
+    assert web.identity(dict(name=name))==('Heroes','The Wallflowers')
+
+
+def test_old_uploader_failure_retries_with_correct_provider_urls(tmp_path,monkeypatch):
+    (tmp_path/'Artwork.json').write_text(json.dumps(dict(title='Muse - Plug In Baby [HD]',artist='MrMuseLyrics')))
+    p=song();p.update(_root=str(tmp_path),name='Muse - Plug In Baby [HD] [5rf1Sj6EIFE]',
+        chordReference=dict(query='MrMuseLyrics Muse - Plug In Baby',status='unavailable',sources=[]))
+    calls=[]
+    def fetch(url):
+        calls.append(url)
+        return PAGE.replace('Song - Artist','Plug In Baby - Muse'),url
+    monkeypatch.setattr(web,'fetch',fetch)
+    result=web.lookup(p)
+    assert result['reference']['query']=='Muse Plug In Baby'
+    assert result['reference']['status']=='found'
+    assert sorted(calls)==sorted(web.provider_url(provider,'Plug In Baby','Muse')
+                                 for provider in web.PROVIDERS if provider.get('template'))
 
 @pytest.mark.parametrize('page',[PAGE.replace('Song - Artist','Other Song - Elsewhere'),'<title>Song - Artist</title><b>C</b>',PAGE.replace('Song - Artist','Songbook - Artist')])
 def test_wrong_identity_and_non_chart_markup_do_not_produce_chords(monkeypatch,page):

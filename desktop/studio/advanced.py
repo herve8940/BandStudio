@@ -124,6 +124,49 @@ def musical_grid(beats, downbeats, duration):
                 tempoNote='Subdivisions regroupées pour garder une pulsation cohérente · à vérifier à l’écoute' if corrected else '')
 
 
+def repair_opening_pulses(beats, beat_logits, fps):
+    """Repair isolated weak intro detections, leaving the established pulse intact.
+
+    A free/fast intro or an actual tempo change is not a malformed grid. Require
+    three regular bars shortly after the opening, weak model evidence at each
+    repaired pulse, and regular neighbours on both sides of a doubled pulse.
+    """
+    import numpy as np
+    if len(beats)<26:return beats,False
+    delta=np.diff(beats)
+    anchor=None
+    for i in range(min(len(delta)-11,32)):
+        window=delta[i:i+12];period=float(np.median(window))
+        if beats[i]-beats[0]>12:break
+        if period>.15 and np.max(abs(window/period-1))<=.10:
+            anchor=i;break
+    if not anchor:return beats,False
+    period=float(np.median(delta[anchor:anchor+12]))
+    positive=beat_logits[beat_logits>0]
+    strong=max(2.,float(np.median(positive))*.5) if len(positive) else 2.
+    def weak(t):return beat_logits[min(len(beat_logits)-1,round(t*fps))]<strong
+    rows=list(beats[:anchor+1]);tail=beats[anchor+1:];changed=False
+    i=1
+    while i<len(rows)-1:
+        a,b=rows[i]-rows[i-1],rows[i+1]-rows[i]
+        if (weak(rows[i]) and max(a,b)<.75*period and .8*period<a+b<1.2*period
+                and i>=2 and i+2<len(rows)
+                and .8*period<rows[i-1]-rows[i-2]<1.2*period
+                and .8*period<rows[i+2]-rows[i+1]<1.2*period):
+            del rows[i];changed=True;continue
+        i+=1
+    # Only an isolated displaced detection is centred between its neighbours.
+    # This preserves real tempo drift instead of flattening the whole intro.
+    original=rows[:]
+    for i in range(1,len(rows)-1):
+        a,b=original[i]-original[i-1],original[i+1]-original[i]
+        local=float(np.median(np.diff(original[max(0,i-4):i+5])))
+        if (weak(original[i]) and min(a,b)<.85*local and max(a,b)>1.05*local
+                and 1.6*local<a+b<2.4*local and abs(a-b)<=.4*local):
+            rows[i]=round((original[i-1]+original[i+1])/2,6);changed=True
+    return (np.r_[rows,tail],True) if changed else (beats,False)
+
+
 def grid_from_frames(beat_logits, downbeat_logits, duration, fps=50, *, quality=True):
     """Decode pulse continuity before voting for a bar phase.
 
@@ -214,6 +257,8 @@ def grid_from_frames(beat_logits, downbeat_logits, duration, fps=50, *, quality=
         if covered and decoded[0] <= beats[0]+periods[0]:
             continuity_changed = not np.array_equal(beats, decoded)
             beats = decoded
+    beats,intro_corrected=repair_opening_pulses(beats,beat_logits,fps)
+    continuity_changed=continuity_changed or intro_corrected
     # Keep the strength of each downbeat: a weak pickup must not outvote the
     # sustained bar accents just because it was the first model peak.
     strengths = np.asarray([max(0., float(np.max(downbeat_logits[
@@ -239,10 +284,11 @@ def grid_from_frames(beat_logits, downbeat_logits, duration, fps=50, *, quality=
                   and result['beatsPerBar'] in (2,3,4) and triplets>=8
                   and triplets>=.2*max(1,len(beats)-1))
     result.update(pulseUnit='dottedQuarter' if compound else 'quarter',
-                  pulseUnitConfidence=triplets/max(1,len(beats)-1),decoderVersion=4,
-                  continuityCorrected=continuity_changed)
+                  pulseUnitConfidence=triplets/max(1,len(beats)-1),decoderVersion=5,
+                  continuityCorrected=continuity_changed,introCorrected=intro_corrected)
     if continuity_changed and not result['tempoNote']:
-        result['tempoNote']='Continuité des pulsations corrigée dans les passages syncopés'
+        result['tempoNote']=('Pulsations irrégulières de l’introduction régularisées · à vérifier à l’écoute' if intro_corrected
+                             else 'Continuité des pulsations corrigée dans les passages syncopés')
         result=calibrate_grid(result)
     if compound:
         result['tempoNote']='Pulsations ternaires proposées (noires pointées) · tempo affiché à la noire · à vérifier à l’écoute'
