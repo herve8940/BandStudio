@@ -73,10 +73,29 @@ struct TimedText:Codable {
     var confidence:Double?=nil
 }
 struct TimedWord:Codable {var start:Double;var end:Double;var text:String}
-struct ChordSource:Codable {var title:String;var publisher:String;var url:String;var chords:[String];var transitions:[[String]]?=nil;var sections:[String:[String]]?=nil;var note:String?=nil}
-struct ChordAlignment:Codable {var status:String;var message:String;var subdivision:Int?=nil;var tuningCents:Double?=nil;var uncertainCells:Int?=nil}
+struct ChordSequence:Codable {var kind:String;var chords:[String];var `repeat`:Int}
+struct ChordSource:Codable {var title:String;var publisher:String;var url:String;var chords:[String];var transitions:[[String]]?=nil;var sections:[String:[String]]?=nil;var sectionSequences:[ChordSequence]?=nil;var sectionOrder:[String]?=nil;var chordSequence:[String]?=nil;var note:String?=nil}
+struct ChordAlignment:Codable {var status:String;var message:String;var subdivision:Int?=nil;var tuningCents:Double?=nil;var uncertainCells:Int?=nil;var orderedSections:Int?=nil;var orderedChart:Bool?=nil;var bassEvidence:Bool?=nil}
 struct ChordCheck:Codable {var id:String;var status:String}
 struct ChordReference:Codable {var query:String;var status:String;var sources:[ChordSource];var checkedAt:Double;var message:String;var alignment:ChordAlignment?=nil;var selectedURL:String?=nil;var catalogVersion:Int?=nil;var checks:[ChordCheck]?=nil}
+struct StructureSource:Codable {var title:String;var publisher:String;var url:String;var format:String?=nil;var sectionNames:[String]?=nil}
+struct StructureSourceCheck:Codable {var publisher:String;var status:String;var format:String;var url:String?=nil}
+struct StructureChange:Codable {var id:String;var kind:String;var time:Double;var before:String;var after:String;var reason:String}
+struct StructureMemory:Codable {var name:String;var scope:String;var sections:Int;var chords:Int}
+struct StructureMemoryResult:Codable {var proposal:StructureProposal?}
+struct StructureGrid:Codable {var bpm:Double;var beats:[Double];var downbeats:[Double];var gridLocked:Bool;var gridMode:String;var manualBPM:Double;var firstBeat:Double;var beatsPerBar:Int;var pulseUnit:String?}
+struct ReviewPassage:Codable {var id:String;var start:Double;var end:Double;var reason:String}
+struct StructureProposal:Codable {
+    var schema:Int;var id:String;var fingerprint:String;var createdAt:Double
+    var status:String;var message:String;var sources:[StructureSource];var anchors:Int
+    var changes:[StructureChange];var warnings:[String];var sections:[Section]
+    var chords:[TimedText];var chordReference:ChordReference?;var chordUpdate:Bool
+    var sourceChecks:[StructureSourceCheck]?=nil;var confirmedSections:Int?=nil
+    var memory:StructureMemory?=nil;var restoredGrid:StructureGrid?=nil
+    var reviewPassages:[ReviewPassage]?=nil;var repeatedGroups:Int?=nil;var transferredPhrases:Int?=nil
+    var hasChanges:Bool {!changes.isEmpty || chordUpdate || memory != nil || restoredGrid != nil}
+    var reviewNotice:String {hasChanges ? "Proposition disponible dans Pistes & structure. Les sections actuelles sont conservées jusqu’à ta validation." : "Aucune amélioration proposée — préparation actuelle conservée."}
+}
 struct ChordProvider:Codable {
     var id:String;var publisher:String;var domain:String;var template:String?=nil
     static let all:[ChordProvider] = {
@@ -140,10 +159,11 @@ extension StudioProject {
     }
 
     enum CodingKeys:String,CodingKey {
-        case preparation,sessionDuration,capture,version,id,name,tracks,sections,cues,bpm,beats,notes,settings,guideFiles,guideKey,lyrics,chords,chordReference,drumHits,key,sourceURL,capo,analysesCompleted,gridLocked,downbeats,analysisNote
+        case structureProposal,preparation,sessionDuration,capture,version,id,name,tracks,sections,cues,bpm,beats,notes,settings,guideFiles,guideKey,lyrics,chords,chordReference,drumHits,key,sourceURL,capo,analysesCompleted,gridLocked,downbeats,analysisNote
     }
     init(from decoder:Decoder) throws {
         let d=try decoder.container(keyedBy:CodingKeys.self)
+        structureProposal=try d.decodeIfPresent(StructureProposal.self,forKey:.structureProposal)
         preparation=try d.decodeIfPresent(Preparation.self,forKey:.preparation)
         sessionDuration=try d.decodeIfPresent(Double.self,forKey:.sessionDuration) ?? 0
         capture=try d.decodeIfPresent(CaptureSettings.self,forKey:.capture) ?? CaptureSettings()

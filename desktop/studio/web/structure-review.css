@@ -1,0 +1,10 @@
+.structure-review{margin:0 0 16px;padding:14px 16px;border:1px solid var(--border);border-radius:12px;background:var(--panel);min-width:0}
+.structure-review-heading,.structure-review-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.structure-review-heading>div{flex:1;min-width:190px}.structure-review-heading strong{font-size:12px}.structure-review-heading small{font-size:11px;margin-top:4px}.structure-review button{font-size:11px}
+.structure-review-result{margin-top:12px;border-top:1px solid var(--border);padding-top:12px}.structure-review-result>p{font-size:12px;margin:0 0 9px}
+.structure-review-warnings{margin:8px 0 12px;padding-left:18px;font-size:11px;color:var(--muted);line-height:1.65}
+.structure-review summary{font-size:11px;padding:7px 0}.structure-review-changes{display:grid;gap:9px;margin:8px 0 12px}
+.structure-review-change{display:grid;grid-template-columns:65px 1fr;gap:3px 9px;font-size:12px}.structure-review-change small{grid-column:2;font-size:10px;overflow-wrap:anywhere}.structure-review-time{font-variant-numeric:tabular-nums;color:var(--muted)}
+.structure-review-source,.structure-review-draft{font-size:10px;line-height:1.6}.structure-review-draft:empty{display:none}.structure-review-actions{margin-top:12px}.structure-review-actions .primary{margin-left:auto}
+#structureReviewExport{margin-top:10px}.structure-review [hidden]{display:none!important}
+@media(max-width:1050px){.structure-review-actions .primary{margin-left:0}.structure-review-heading>div{flex-basis:100%}}

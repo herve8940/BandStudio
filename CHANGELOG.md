@@ -1,3 +1,23 @@
+## BandStudio · 2026-11-20 — rythme, accords et préparation
+
+- Corrige les pulsations isolées faibles ou doublées au début d’une analyse lorsque la suite confirme un rythme régulier ; conserve les vrais changements de tempo, les levées et les grilles protégées. La correction s’applique à tous les titres compatibles, sans règle propre à un morceau.
+- Recherche les accords avec l’identité musicale plutôt que le nom de la chaîne vidéo, nettoie les indications HD et accepte les variantes de classement des artistes avec « The ». Réessaie les sources indisponibles d’un résultat partiel après cinq minutes, en conservant les grilles déjà trouvées.
+- Affiche explicitement l’absence d’amélioration ; distingue grilles d’accords, sections sans horaires et repères minutés. Une source minutée manquante n’est plus présentée comme une absence de tout résultat Internet.
+- Étend les vérifications Windows aux régressions de rythme, recherche, mémoire, structure, interface et export REAPER, en plus des essais du ZIP et des installateurs.
+
+### Aide facultative dans Pistes & structure
+
+- Ajout de « Vérifier et compléter » dans l’atelier existant, avec comparaison des sections sur une référence publiée et les mesures locales. Hysteria sert de test de régression ; ses horaires ne sont pas intégrés au moteur.
+- Récapitulatif, écoute facultative des passages, puis validation et export REAPER en une action. Les autres parcours restent disponibles.
+- Conservation des sections protégées, refus des propositions périmées, historique d’annulation et décisions locales distinctes des annotations d’apprentissage vérifiées.
+- Conservation de l’ordre écrit des accords par section lorsque l’audio le confirme, piste Accords lisible dans le nouvel export et conservation des accords existants lorsqu’une recherche échoue.
+
+### Recherche des grilles d’accords
+
+- Corrige l’adresse Cifra Club de Noir Désir, notamment « L’Homme pressé », sans modifier le nom de l’artiste.
+- Lorsqu’une adresse ne fournit aucune grille, résout le nom d’artiste dans le catalogue public de Cifra Club, puis recherche les adresses réelles via DuckDuckGo si nécessaire. Seuls le titre, l’artiste et le domaine du site sont envoyés au moteur de recherche ; chaque page est ensuite contrôlée avant d’en lire les accords.
+- Limite la recherche à trois connexions simultanées et huit secondes au total, conserve les sources trouvées en cache et signale les sources inaccessibles sans contourner leurs restrictions.
+
 ## BandStudio · 2026-11-15 — édition musicale et fiche morceau
 
 - Éditeur manuel : zoom, calage en mesures/temps, déplacement continu des frontières, écoute autour et validation repère par repère, avec annuler/rétablir.

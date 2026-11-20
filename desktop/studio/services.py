@@ -426,8 +426,19 @@ def export_reaper(project_file,output):
                 available=next((e['time'] for e in plan['events'] if e['spoken']),plan['end']) if s['countVoice'] else plan['end']
                 length=min(sf.info(initial).duration,max(0,available-.05))
                 lines+=['  <TRACK','    NAME "Annonce de départ"',f'    VOLPAN {s["callsGain"]} {s["callsPan"]}','    <ITEM','      POSITION 0',f'      LENGTH {length:.9f}','      <SOURCE WAVE','        FILE "Audio/initial-call.wav"','      >','    >','  >']
+    if p.get('_exportChordTrack') and p.get('chords'):
+        # Empty, muted items make the reviewed harmony readable in REAPER.
+        # The original annotation metadata remains available for round trips.
+        lines+=['  <TRACK','    NAME "Accords"','    MUTESOLO 1 0 0']
+        for chord in p['chords']:
+            caption=chord['text']+(' · à vérifier' if not chord.get('manual') and chord.get('confidence',0)<.5 else '')
+            lines+=['    <ITEM',f'      POSITION {chord["start"]+preroll:.9f}',
+                    f'      LENGTH {chord["end"]-chord["start"]:.9f}',
+                    '      NAME '+quote(caption),'      IMGRESOURCEFLAGS 2',
+                    '      <NOTES','        |'+caption.replace('\r',' ').replace('\n',' '),'      >','    >']
+        lines+=['  >']
     lines+=['>'];rpp=target/(safe_name(p['name'])+'.rpp');rpp.write_text('\n'.join(lines)+'\n')
-    # Annotations have no native RPP representation. Bind their timing to this exact export.
+    # Bind detailed annotations to this exact export, including optional chord items.
     metadata={key:p.get(key) for key in ['settings','notes','lyrics','chords','drumHits','key','sourceURL','capo','downbeats','gridLocked','analysisNote']}
     metadata.update(exportPreroll=preroll,rppSHA256=hashlib.sha256(rpp.read_bytes()).hexdigest(),trackRoles={str(uuid.uuid5(uuid.NAMESPACE_OID,t['id']))+'.wav':t['role'] for t in p['tracks']})
     atomic(target/'bandstudio-project.json',metadata)

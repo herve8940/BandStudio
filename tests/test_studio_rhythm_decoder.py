@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'desktop/studio'))
-from advanced import grid_from_frames
+from advanced import grid_from_frames, repair_opening_pulses
 from services import calibrate_grid
 
 
@@ -77,6 +77,34 @@ def test_attack_at_audio_start_is_kept():
     result=grid_from_frames(*frames(beats,beats[::4],32),32)
     np.testing.assert_allclose(result['beats'],beats)
     assert result['firstBeat']==0 and not result['gridReviewRequired']
+
+
+def test_weak_opening_double_click_and_displaced_pulses_preserve_every_later_beat():
+    opening=[.6,1.04,1.44,1.86,2.3,2.76,3.1,3.52,3.7,3.94,4.36,4.78,5.2,5.66]
+    stable=np.round(5.96+np.arange(80)*.44,2)
+    beats=np.r_[opening,stable]
+    raw,down=frames(beats,stable[1::4],42)
+    for t in opening:raw[round(t*50)]=1.
+    corrected,changed=repair_opening_pulses(beats,raw,50)
+    assert changed
+    assert corrected[:13]==pytest.approx([.6,1.04,1.44,1.86,2.3,2.7,3.1,3.52,3.94,4.36,4.78,5.2,5.58])
+    np.testing.assert_array_equal(corrected[13:],stable)
+    result=grid_from_frames(raw,down,42)
+    assert result['introCorrected']
+    np.testing.assert_array_equal(np.array(result['beats'])[13:],stable)
+    assert min(np.diff(result['beats'])[:14])>=.37
+
+
+@pytest.mark.parametrize('opening',[
+    np.arange(24)*.22+.1,  # genuinely faster opening, not isolated doubles
+    np.array([.1,.6,1.1,1.6,1.9,2.1,2.6,3.1]),  # strong expressive subdivision
+])
+def test_confirmed_opening_pulses_and_real_tempo_changes_are_not_smoothed(opening):
+    beats=np.r_[opening,opening[-1]+.44+np.arange(80)*.44]
+    raw,_=frames(beats,beats[::4],50)
+    corrected,changed=repair_opening_pulses(beats,raw,50)
+    np.testing.assert_array_equal(corrected,beats)
+    assert not changed
 
 
 def test_weak_beats_and_stronger_offbeats_do_not_shift_subsequent_bars():

@@ -144,7 +144,7 @@ class Api:
         if kind in ENVIRONMENTS and self._components:raise ValueError('Termine l’installation des composants et ferme sa fenêtre avant de lancer une analyse.')
         if kind in ENVIRONMENTS and not python_for(self._engine,ENVIRONMENTS[kind]).is_file():raise ValueError('Installe le composant '+COMPONENTS[kind]+' dans Réglages → Analyses locales, puis relance ce traitement.')
         folder=(self._root or self._library/'.Imports')/'Analyses'/model.ident();folder.mkdir(parents=True)
-        snapshot=folder/'project.json';atomic(snapshot,{**self._project,'_root':str(self._root or folder),'_mode':self._audio.mode,'_rate':self._audio.rate,'_pitch':self._audio.pitch})
+        snapshot=folder/'project.json';atomic(snapshot,{**self._project,'_root':str(self._root or folder),'_library':str(self._library),'_mode':self._audio.mode,'_rate':self._audio.rate,'_pitch':self._audio.pitch})
         result=folder/'result.json';python=python_for(self._engine,ENVIRONMENTS.get(kind,'.venv'))
         arguments=list(arguments)
         if '--options' in arguments:
@@ -173,6 +173,7 @@ class Api:
         return result,json.loads(result.read_text(encoding='utf-8'))
     def _remember(self):self._history.append(copy.deepcopy(self._project));self._history=self._history[-80:];self._future=[]
     def _save(self,invalidate=True):
+        if invalidate:self._project.pop('structureProposal',None)
         if invalidate and self._project.get('preparation'):
             self._project['preparation'].pop('fingerprint',None);self._project['preparation'].pop('validatedAt',None)
         if self._root:model.save(self._project,self._root)
@@ -283,9 +284,9 @@ class Api:
     def _set_rate(self,rate,pitch,resume=False):
         self._audio.pause();self._audio.rate=model.number(rate,.5,1.5);self._audio.pitch=model.number(pitch,-12,12);self._audio.prepare()
         if resume:self._audio.play()
-    def _prepare_all(self,args):
+    def _prepare_all(self,args,only=None):
         from windows.advanced_host import advanced_task
-        steps=self._plan();self._job_plan=steps
+        steps=[kind for kind in self._plan() if only is None or kind in only];self._job_plan=steps
         for index,kind in enumerate(steps,1):
             self._job_plan_index=index-1
             before=copy.deepcopy(self._project)
@@ -566,6 +567,39 @@ class Api:
             kind=args.get('kind')
             if kind not in ('grid','structure','separate','drumsep','lyrics','chords','drums'):raise ValueError('Analyse inconnue.')
             self._op('Analyse locale : '+kind,lambda:self._analysis(kind,args));return
+        if cmd=='reviewStructure':
+            if not self._root or not any(t['role']=='source' for t in p['tracks']):raise ValueError('Importe le morceau original avant la vérification.')
+            def review_structure():
+                _,memory=self._work('structureMemory')
+                if memory.get('proposal'):
+                    self._prepare_all(args,only={'separate'})
+                    _,memory=self._work('structureMemory')
+                    if not memory.get('proposal'):raise ValueError('Le morceau a changé pendant la préparation. Relance la vérification.')
+                    self._project['structureProposal']=memory['proposal'];self._save(invalidate=False)
+                    self._notice='Préparation du même enregistrement retrouvée. Valide la proposition pour la réutiliser.'
+                    return
+                self._prepare_all(args,only={'separate','grid','smartgrid','structure','chords'})
+                _,proposal=self._work('structureReview')
+                self._project['structureProposal']=proposal;self._save(invalidate=False)
+                changed=proposal.get('changes') or proposal.get('chordUpdate') or proposal.get('memory') or proposal.get('restoredGrid')
+                self._notice=('Proposition disponible dans Pistes & structure. Les sections actuelles sont conservées jusqu’à ta validation.'
+                              if changed else 'Aucune amélioration proposée — préparation actuelle conservée.')
+            a.pause();self._op('Vérification de la structure',review_structure,rollback=False);return
+        if cmd=='dismissStructure':
+            if not args.get('proposalID') or args.get('proposalID')!=(p.get('structureProposal') or {}).get('id'):raise ValueError('Cette proposition n’est plus disponible.')
+            from structure_review import record_decision
+            record_decision(self._root,p['structureProposal'],'kept_current')
+            p.pop('structureProposal',None);self._save(invalidate=False);self._notice='Parcours actuel conservé.';return
+        if cmd=='exportStructure':
+            if args.get('reviewed') is not True or not args.get('proposalID') or args['proposalID']!=(p.get('structureProposal') or {}).get('id'):
+                raise ValueError('Valide la proposition affichée dans Pistes & structure.')
+            def export_structure():
+                _,result=self._work('structureExport')
+                self._remember();self._project=result['project']
+                for key in ('_root','_library','_mode','_rate','_pitch'):self._project.pop(key,None)
+                self._reload();self._save(invalidate=False);self._last_export=result['path']
+                self._notice='Proposition appliquée et projet REAPER exporté. Afficher l’export permet de le retrouver.'
+            a.pause();self._op('Validation et export REAPER',export_structure);return
         if cmd=='prepareAll':
             if not any(t['role']=='source' for t in p['tracks']):raise ValueError('Importe le morceau original avant de lancer la préparation complète.')
             a.pause();self._op('Préparation complète',lambda:self._prepare_all(args),rollback=False);return

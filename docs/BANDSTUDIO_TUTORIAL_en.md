@@ -2,7 +2,7 @@
 
 [Français](BANDSTUDIO_TUTORIEL_fr.md) · [Installation guide](BANDSTUDIO.md) · [Website](https://herve8940.github.io/BandStudio/en.html)
 
-Updated 19 November 2026. This tutorial covers the standalone BandStudio app on macOS and Windows. Button names below match the French labels currently displayed in the app.
+Updated 20 November 2026. This tutorial covers the standalone BandStudio app on macOS and Windows. Button names below match the French labels currently displayed in the app.
 
 ## 1. Import and prepare
 
@@ -18,6 +18,8 @@ Open **Click & cues** and listen to the beginning with the metronome. Check the 
 
 The count-in follows the saved grid, including tempo changes. It can overlap the initial silence and accompany a pickup without cutting the song’s audio. Also check a restart in the middle of the song. If an automatic intro has been aligned, listen to its entrance; manually edited or reviewed sections remain protected.
 
+New analyses repair isolated weak or doubled opening detections when a stable rhythm follows. This applies across compatible songs. Listen at the beginning, middle and end: a constant offset suggests checking the first downbeat; growing drift suggests checking tempo or the grid. Avoid imposing a fixed tempo on a recording that varies. Once the grid sounds right, enable **Protéger le calage contre une nouvelle analyse**. An update does not overwrite a protected grid.
+
 ## 3. Adjust sections and cues
 
 In **Pistes & structure**, choose **Pistes** for mixing or **Structure** for the section list. Structure shows start/end positions, length and review status; **Modifier** opens a section and **↻** loops it. Use the coloured overview to jump to a passage.
@@ -32,6 +34,16 @@ To refine a marker:
 4. Click **Valider et suivant** to review the next marker. The counter shows progress. Moving a marker clears its reviewed status.
 
 Shared boundaries keep adjoining sections continuous. Changes are saved with the song and support undo/redo. Reviewing individual markers does not replace the final review before REAPER export.
+
+### Use “Vérifier et compléter”
+
+In the same **Pistes & structure** screen, click **Vérifier et compléter** to compare available references with the audio and existing markers. Missing preparation steps may take time. Suggested sections and chords replace the current preparation only after approval.
+
+1. Read the summary and expand **Sources consultées**. A chord chart may be available even when timed DRUMY markers cannot be retrieved. An untimed section list does not locate those sections in your recording.
+2. Click **Écouter les passages** when excerpts are available. Check chords, timing and suggested entrances. “0 passages à écouter” does not certify the whole song; also listen to the mix, grid and guides.
+3. Choose **Garder le parcours actuel** to keep your preparation. Once the proposal and final listening check are satisfactory, **Valider et exporter vers REAPER** applies the proposal and creates the project in one action. Use **Afficher l’export** to locate the `.rpp` file.
+
+**Aucune amélioration proposée — préparation actuelle conservée** means no change was proposed. The button becomes **Exporter la préparation actuelle vers REAPER**. Recalled preparations for the same recording also require approval before export. This assistance does not mark every individual marker as listened to; the classic workflow remains available.
 
 Compatible new SongFormer analyses receive a learned fine timing adjustment: at most 250 ms, with abstention when the learned proposals disagree. It does not rename sections or insert missing transitions. Manual and reviewed sections remain protected. Activation requires verified weights, a 60-second analysis window and a 2–10-minute recording; other configurations keep the original proposals. This corrects section boundaries, not tempo or spoken-cue anticipation. [Evaluation and protocol (FR)](CUE_CORRECTOR_TRAINING.md#résultats-du-lot-réservé-et-distribution).
 
@@ -53,16 +65,20 @@ Open **Fiche morceau**. The sheet brings together song identity, available artwo
 - Chords from the chosen source are proposed on the song’s beat grid. Listen and correct their placement; proposals do not guarantee the right arrangement or chord. **Caler sur le temps / contretemps** helps place a change. Manual edits remain protected.
 - **Autres sources sur Internet** and lyric searches open the browser. Lyrics from those websites are not imported automatically.
 
+If no chart is found, check that the artist is the musician or band, rather than a video uploader, then retry. BandStudio removes labels such as “HD Video” and recognizes several artist/title separators. For partial results, a new search after five minutes retries missing sources while retaining available charts. **Référence non récupérée** means that particular source could not be accessed; it does not mean there are no chords anywhere online. Always check that the chart matches your recording’s version.
+
 The sheet edits the open song’s existing annotations. Estimated chords and transcription still need listening checks. A lyric line without word timing remains whole at its starting position.
 
 ## 6. Export the PDF and project
 
 Click **Exporter la fiche PDF**. The printable chart includes sections, bars, chords, lyrics, cues and notes. It follows the saved grid, transposition and capo for displayed chords. Choose a filename and destination for the copy; the PDF then opens in your system viewer. Cancelling the copy keeps the generated PDF in the song’s **Exports** folder. **Afficher l’export** helps locate it if automatic opening fails.
 
-Finally, in **Valider & envoyer**, listen and confirm the mix, grid and guides, then export to REAPER. Export again to apply the corrected count-in to an older REAPER export.
+For the classic workflow, use **Valider & envoyer** to listen and confirm the mix, grid and guides, then export to REAPER. If you used **Valider et exporter vers REAPER** in the structure assistant, the export already exists: find it with **Afficher l’export**. Keep the `.rpp` and its **Audio** folder together. Export again to apply corrections to an older REAPER project.
 
 ## Update or get help
 
 Use **Vérifier maintenant** in **Réglages**. With automatic updates enabled, the verified package is applied after exit. Windows packages and macOS updates are published only after the GitHub checks pass.
+
+On **Windows x64**, extract the entire ZIP before opening `BandStudio.exe`; WebView2 is required. On **macOS Intel or Apple Silicon**, update archives are for prepared installations; new users should follow the [installation guide](BANDSTUDIO.md#macos). After updating, retry chord searches in older projects with missing sources. Manual edits and protected grids are preserved.
 
 Still hearing a timing issue? In **Aide & Discord**, describe the passage, tempo and expected behavior. Review the report before posting it in the bug channel. [Join the community](https://discord.gg/5UnQPdMUpR).
