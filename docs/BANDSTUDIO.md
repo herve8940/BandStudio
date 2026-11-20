@@ -6,9 +6,9 @@
 4. **Click & cues** : vérifier le premier temps, la mesure et le tempo. Régler click, annonces et décompte. **Paroles & accords** permet de corriger le texte, les horaires, la tonalité et le capo.
 5. **Valider & envoyer** : écouter les passages importants, confirmer les trois points de validation, puis exporter/ouvrir le projet dans REAPER. Changer le mix, la vitesse, la hauteur ou les repères annule la validation précédente.
 
-## Nouveautés du 15 novembre 2026
+## Nouveautés du 20 novembre 2026
 
-Édition des sections et cues avec zoom, calage en mesures/temps et validation repère par repère ; niveaux séparés des quatre guides ; fiche morceau éditable et export PDF par mesures ; calage et décompte améliorés ; réutilisation des analyses et conservation des corrections.
+Recherche des accords améliorée, correction des pulsations isolées faibles au départ et bandeau explicite lorsqu’aucune amélioration n’est proposée. Dans **Pistes & structure**, **Vérifier et compléter** compare les sources et tes repères ; **Écouter les passages** aide à vérifier les propositions, puis **Valider et exporter vers REAPER** les applique et crée l’export. **Garder le parcours actuel** conserve ta préparation. Les grilles d’accords disponibles restent distinctes des repères minutés manquants, et les corrections protégées sont préservées.
 
 Suivre le [tutoriel BandStudio en français](BANDSTUDIO_TUTORIEL_fr.md) ou le [tutoriel en anglais](BANDSTUDIO_TUTORIAL_en.md) pour les boutons et les étapes de vérification.
 

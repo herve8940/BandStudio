@@ -99,13 +99,19 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: python -m pip install pytest playwright==1.64.1 numpy scipy soundfile imageio-ffmpeg==0.6.0
-      - name: Prepare FFmpeg for interface export tests
+      - name: Prepare audio worker for interface and export tests
         run: |
           python - <<'PY'
           from pathlib import Path
           import imageio_ffmpeg
           import shutil
-          target = Path('desktop-build/standalone/Engine/import-tools')
+          import sys
+          engine = Path('desktop-build/standalone/Engine')
+          shutil.copytree('desktop/studio', engine, ignore=shutil.ignore_patterns('__pycache__', '*.swift'), dirs_exist_ok=True)
+          python = engine / '.venv/bin/python'
+          python.parent.mkdir(parents=True, exist_ok=True)
+          python.symlink_to(sys.executable)
+          target = engine / 'import-tools'
           target.mkdir(parents=True, exist_ok=True)
           shutil.copy2(imageio_ffmpeg.get_ffmpeg_exe(), target / 'ffmpeg')
           PY

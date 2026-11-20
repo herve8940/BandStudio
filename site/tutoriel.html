@@ -12,7 +12,7 @@
 
 </head>
 <body>
-<nav aria-label="Navigation du tutoriel" style="max-width:736px;margin:0 auto 1rem;font:14px system-ui;display:flex;flex-wrap:wrap;gap:1rem"><a style="color:inherit" href="./">← BandStudio</a><a style="color:inherit" href="fiche-morceau.html">Tuto fiche morceau → PDF</a><a style="color:inherit" href="https://github.com/herve8940/BandStudio/blob/main/docs/BANDSTUDIO_TUTORIEL_fr.md">Guide écrit</a></nav>
+<nav aria-label="Navigation du tutoriel" style="max-width:736px;margin:0 auto 1rem;font:14px system-ui;display:flex;flex-wrap:wrap;gap:1rem"><a style="color:inherit" href="./">← BandStudio</a><a style="color:inherit" href="fiche-morceau.html">Tuto fiche morceau → PDF</a><a style="color:inherit" href="https://github.com/herve8940/BandStudio/blob/main/docs/BANDSTUDIO_TUTORIEL_fr.md">Guide écrit FR</a><a style="color:inherit" href="https://github.com/herve8940/BandStudio/blob/main/docs/BANDSTUDIO_TUTORIAL_en.md" lang="en">English guide</a></nav>
 <noscript><p>Active JavaScript pour parcourir le tuto visuel, ou ouvre le guide écrit ci-dessus.</p></noscript>
 <iframe id="codex-visualization" sandbox="allow-scripts" referrerpolicy="no-referrer" title="BandStudio — tutoriel visuel, de l’import à REAPER" data-srcdoc="&lt;!doctype html&gt;
 &lt;html lang=&quot;fr&quot; data-visualize-standalone&gt;
@@ -1873,7 +1873,7 @@ html&gt;body{padding:0}&lt;/style&gt;
 &lt;div id=&quot;bs-tuto&quot;&gt;
   &lt;div class=&quot;bs-heading&quot;&gt;
     &lt;h2&gt;Ton morceau → REAPER&lt;/h2&gt;
-    &lt;p class=&quot;text-small text-muted&quot;&gt;8 étapes · schémas simplifiés de BandStudio&lt;/p&gt;
+    &lt;p class=&quot;text-small text-muted&quot;&gt;8 étapes · mis à jour le 20 novembre 2026 · schémas simplifiés&lt;/p&gt;
   &lt;/div&gt;
   &lt;div class=&quot;bs-meta&quot;&gt;&lt;span id=&quot;bs-count&quot; class=&quot;tabular-nums&quot;&gt;&lt;/span&gt;&lt;span id=&quot;bs-phase&quot; class=&quot;text-small text-muted&quot;&gt;&lt;/span&gt;&lt;/div&gt;
   &lt;div id=&quot;bs-progress&quot; class=&quot;progress&quot; role=&quot;progressbar&quot; aria-label=&quot;Étape du tutoriel&quot; aria-valuemin=&quot;1&quot; aria-valuemax=&quot;8&quot;&gt;&lt;div id=&quot;bs-progress-fill&quot; class=&quot;progress-bar&quot;&gt;&lt;/div&gt;&lt;/div&gt;
@@ -1913,7 +1913,7 @@ html&gt;body{padding:0}&lt;/style&gt;
         &#x27;Active &lt;strong&gt;Métronome pendant le morceau&lt;/strong&gt;. Vérifie &lt;strong&gt;Temps par mesure&lt;/strong&gt; : 4 pour un morceau en 4/4.&#x27;,
         &#x27;Dans &lt;strong&gt;Grille rythmique&lt;/strong&gt;, garde &lt;strong&gt;Temps détectés dans le morceau&lt;/strong&gt;. Pour un morceau quantisé dont tu connais le BPM, choisis &lt;strong&gt;Tempo fixe manuel&lt;/strong&gt; et saisis ce BPM.&#x27;,
         &#x27;Clique sur &lt;strong&gt;Appliquer au morceau&lt;/strong&gt;. Écoute au début, au milieu et vers la fin : le click doit rester sur la pulsation.&#x27;
-      ], note:&#x27;Ne déplace pas encore les régions : une grille correcte facilite tout le calage.&#x27;
+      ], note:&quot;Les nouvelles analyses corrigent les pulsations isolées faibles ou doublées du début quand la suite confirme le rythme. Écoute toujours au début, au milieu et à la fin. Le mode détecté conserve les vrais changements de tempo.&quot;
     },
     {
       title:&#x27;Placer le premier « 1 »&#x27;, location:&#x27;Pistes &amp; structure → puis Click &amp; cues&#x27;, phase:&#x27;Calage de la grille&#x27;, visual:&#x27;downbeat&#x27;,
@@ -1924,13 +1924,13 @@ html&gt;body{padding:0}&lt;/style&gt;
       ], note:&#x27;Le premier son peut être une levée, avant le « 1 ». Décalage constant : vérifie le « 1 » ; décalage qui grandit : revois le tempo ou la grille.&#x27;
     },
     {
-      title:&#x27;Caler les régions une par une&#x27;, location:&#x27;Menu gauche → Pistes &amp; structure&#x27;, phase:&#x27;Régions&#x27;, visual:&#x27;regions&#x27;,
+      title:&quot;Vérifier et compléter les régions&quot;, location:&#x27;Menu gauche → Pistes &amp; structure&#x27;, phase:&#x27;Régions&#x27;, visual:&#x27;regions&#x27;,
       actions:[
-        &#x27;Ouvre la vue &lt;strong&gt;Structure&lt;/strong&gt;, sélectionne une section puis &lt;strong&gt;Sélection&lt;/strong&gt; (touche F) pour la cadrer. La liste affiche ses horaires et sa validation. Choisis &lt;strong&gt;Calage : Mesure&lt;/strong&gt; ou &lt;strong&gt;Temps&lt;/strong&gt; pour affiner.&#x27;,
-        &#x27;Fais glisser la &lt;strong&gt;frontière&lt;/strong&gt; sur le vrai changement musical. Dans &lt;strong&gt;Un repère à la fois&lt;/strong&gt;, les boutons &lt;strong&gt;−1 mesure / +1 mesure&lt;/strong&gt; et &lt;strong&gt;−1 temps / +1 temps&lt;/strong&gt; permettent aussi de la déplacer.&#x27;,
-        &#x27;Clique sur &lt;strong&gt;Écouter autour&lt;/strong&gt;. Si l’entrée est bonne, clique sur &lt;strong&gt;Valider et suivant&lt;/strong&gt;. Recommence pour chaque frontière.&#x27;,
-        &#x27;Pour corriger un nom, clique sur le &lt;strong&gt;nom du repère&lt;/strong&gt;, modifie-le puis &lt;strong&gt;Enregistrer&lt;/strong&gt;.&#x27;
-      ], note:&#x27;Le correcteur ajuste au plus 250 ms sur les nouvelles analyses compatibles, sans remplacer cette écoute. Les repères manuels ou validés restent protégés. Les sections deviennent les régions dans REAPER.&#x27;
+        &quot;Pour une aide facultative, clique sur &lt;strong&gt;Vérifier et compléter&lt;/strong&gt; dans &lt;strong&gt;Pistes &amp;amp; structure&lt;/strong&gt;. Lis le récapitulatif et ouvre &lt;strong&gt;Sources consultées&lt;/strong&gt; ; tes sections actuelles restent conservées jusqu’à la validation.&quot;,
+        &quot;Clique sur &lt;strong&gt;Écouter les passages&lt;/strong&gt; pour vérifier les changements proposés. Une grille d’accords peut être trouvée même si aucun repère minuté n’est disponible.&quot;,
+        &quot;Pour corriger toi-même, ouvre la vue &lt;strong&gt;Structure&lt;/strong&gt;, sélectionne une section, puis &lt;strong&gt;Sélection&lt;/strong&gt; (F). Choisis le calage &lt;strong&gt;Mesure&lt;/strong&gt; ou &lt;strong&gt;Temps&lt;/strong&gt; et déplace la frontière.&quot;,
+        &quot;Utilise &lt;strong&gt;Écouter autour&lt;/strong&gt;, puis &lt;strong&gt;Valider et suivant&lt;/strong&gt; quand le repère est juste. Clique sur son nom pour le renommer.&quot;
+      ], note:&quot;« Aucune amélioration proposée » signifie que la préparation actuelle est conservée. « 0 passages à écouter » ne valide pas tout le morceau. Les repères manuels ou validés restent protégés. Si tu modifies le morceau, relance la vérification avant d’appliquer une proposition.&quot;
     },
     {
       title:&#x27;Régler le mix et les guides&#x27;, location:&#x27;Pistes &amp; structure → puis Click &amp; cues&#x27;, phase:&#x27;Écoute finale&#x27;, visual:&#x27;guides&#x27;,
@@ -1941,20 +1941,20 @@ html&gt;body{padding:0}&lt;/style&gt;
       ], note:&#x27;Réécoute le départ et une transition corrigée. La vitesse, la transposition et le mix choisis sont repris dans le projet REAPER.&#x27;
     },
     {
-      title:&#x27;Valider le morceau&#x27;, location:&#x27;Menu gauche → Valider &amp; envoyer&#x27;, phase:&#x27;Validation&#x27;, visual:&#x27;validation&#x27;,
+      title:&quot;Choisir ta validation&quot;, location:&#x27;Pistes &amp; structure ou Valider &amp; envoyer&#x27;, phase:&#x27;Validation&#x27;, visual:&#x27;validation&#x27;,
       actions:[
-        &#x27;Après l’écoute, coche les &lt;strong&gt;trois confirmations&lt;/strong&gt; ci-dessus.&#x27;,
-        &#x27;Clique sur &lt;strong&gt;Valider ce morceau&lt;/strong&gt;.&#x27;,
-        &#x27;Vérifie que le statut devient &lt;strong&gt;Validé pour REAPER&lt;/strong&gt;.&#x27;
-      ], note:&#x27;« Valider et suivant » vérifie chaque repère. Cette validation finale est aussi nécessaire. Toute nouvelle correction demande de revalider.&#x27;
+        &quot;Après l’écoute du mix, de la grille et des guides, choisis le parcours correspondant à ton travail.&quot;,
+        &quot;Avec une proposition dans &lt;strong&gt;Pistes &amp;amp; structure&lt;/strong&gt; : clique sur &lt;strong&gt;Valider et exporter vers REAPER&lt;/strong&gt;. Pour la refuser, choisis &lt;strong&gt;Garder le parcours actuel&lt;/strong&gt;. Sans amélioration, le bouton propose &lt;strong&gt;Exporter la préparation actuelle vers REAPER&lt;/strong&gt;.&quot;,
+        &quot;Parcours classique : dans &lt;strong&gt;Valider &amp;amp; envoyer&lt;/strong&gt;, coche les &lt;strong&gt;trois confirmations&lt;/strong&gt;, puis &lt;strong&gt;Valider ce morceau&lt;/strong&gt;. Vérifie le statut &lt;strong&gt;Validé pour REAPER&lt;/strong&gt;.&quot;
+      ], note:&quot;Le schéma illustre le parcours classique. Le bouton de l’aide de structure valide et exporte en une action, sans marquer chaque repère comme écouté. Une préparation retrouvée pour le même enregistrement reste à confirmer.&quot;
     },
     {
-      title:&#x27;Exporter et ouvrir dans REAPER&#x27;, location:&#x27;Toujours dans Valider &amp; envoyer&#x27;, phase:&#x27;Export&#x27;, visual:&#x27;export&#x27;,
+      title:&#x27;Exporter et ouvrir dans REAPER&#x27;, location:&#x27;Afficher l’export ou Valider &amp; envoyer&#x27;, phase:&#x27;Export&#x27;, visual:&#x27;export&#x27;,
       actions:[
-        &#x27;Clique sur &lt;strong&gt;Ouvrir dans REAPER ↗&lt;/strong&gt; pour créer le projet et l’ouvrir. Pour seulement créer les fichiers : &lt;strong&gt;Exporter le projet REAPER&lt;/strong&gt;.&#x27;,
-        &#x27;Utilise &lt;strong&gt;Afficher le dernier export&lt;/strong&gt; pour retrouver le dossier. Garde le &lt;strong&gt;.rpp&lt;/strong&gt; et le dossier &lt;strong&gt;Audio&lt;/strong&gt; ensemble.&#x27;,
-        &#x27;Dans REAPER, écoute le départ et une transition : vérifie les pistes, le click et les régions, puis enregistre le projet.&#x27;
-      ], note:&#x27;Chaque export crée un nouveau dossier. Les changements faits ensuite dans REAPER ne reviennent pas automatiquement dans BandStudio.&#x27;
+        &quot;Si tu viens de cliquer sur &lt;strong&gt;Valider et exporter vers REAPER&lt;/strong&gt;, le projet est déjà créé : utilise &lt;strong&gt;Afficher l’export&lt;/strong&gt;, puis ouvre le fichier &lt;strong&gt;.rpp&lt;/strong&gt;.&quot;,
+        &quot;Sinon, dans &lt;strong&gt;Valider &amp;amp; envoyer&lt;/strong&gt;, clique sur &lt;strong&gt;Ouvrir dans REAPER ↗&lt;/strong&gt;, ou sur &lt;strong&gt;Exporter le projet REAPER&lt;/strong&gt; pour créer les fichiers sans ouvrir REAPER.&quot;,
+        &quot;Garde le &lt;strong&gt;.rpp&lt;/strong&gt; et le dossier &lt;strong&gt;Audio&lt;/strong&gt; ensemble. Dans REAPER, écoute le départ, une transition et la fin, puis enregistre.&quot;
+      ], note:&quot;Après une correction, refais l’export. Windows : extraire tout le ZIP avant de lancer BandStudio.exe, WebView2 requis. Mac Intel/Apple Silicon : les mises à jour sont pour les installations préparées. Dans Réglages → Vérifier maintenant, la mise à jour s’applique à la fermeture si l’option automatique est activée.&quot;
     }
   ];
   let step = 0;
