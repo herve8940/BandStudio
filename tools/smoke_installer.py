@@ -24,6 +24,12 @@ def smoke(archive: Path):
                    REACUE_DRUMS="no", REACUE_WORDS="no", PYTHONUTF8="1",
                    UV_CACHE_DIR=str(work / "uv cache"))
 
+        if sys.platform == "win32":
+            # Python inherits PS7 module paths from the Actions shell. Windows PS5.1
+            # must build its own paths, especially for Microsoft.PowerShell.Archive.
+            # https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_psmodulepath
+            env = {key: value for key, value in env.items() if key.casefold() != "psmodulepath"}
+
         def run(command, cwd=None):
             subprocess.run(command, cwd=cwd, env=env, check=True, timeout=600,
                            stdin=subprocess.DEVNULL)
@@ -33,7 +39,7 @@ def smoke(archive: Path):
         else:
             env.update(REACUE_TEST_ARCHIVE=str(archive), REACUE_TEST_DEST=str(work))
             run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
-                 "Expand-Archive -LiteralPath $env:REACUE_TEST_ARCHIVE -DestinationPath $env:REACUE_TEST_DEST"])
+                 "$ErrorActionPreference = 'Stop'; Expand-Archive -LiteralPath $env:REACUE_TEST_ARCHIVE -DestinationPath $env:REACUE_TEST_DEST"])
         app = work / "ReaCue"
         if sys.platform == "darwin":
             assert os.access(app / "Install ReaCue.command", os.X_OK), "Launcher lost its executable bit"
@@ -44,7 +50,7 @@ def smoke(archive: Path):
         else:
             env["REACUE_TEST_APP"] = str(app)
             run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
-                 "$bad = $false; Get-ChildItem -LiteralPath $env:REACUE_TEST_APP -Recurse -Filter *.ps1 | "
+                 "$ErrorActionPreference = 'Stop'; $bad = $false; Get-ChildItem -LiteralPath $env:REACUE_TEST_APP -Recurse -Filter *.ps1 | "
                  "ForEach-Object { $e = $null; "
                  "[void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$e); "
                  "if ($e.Count) { $bad = $true; $e | ForEach-Object { Write-Output $_ } } }; "
