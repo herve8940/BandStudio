@@ -1,14 +1,22 @@
-# Compléter le parcours dans Pistes & structure
+# Préparation complète et comparaison des sections
 
-Cette aide est facultative. La navigation, « Tout préparer », l’éditeur musical,
-les validations individuelles et « Valider & envoyer » restent disponibles.
-L’import ne lance pas ce nouveau parcours sans action du musicien.
+## Un clic : Tout préparer
+
+Dans **Pistes & structure**, **Tout préparer** lance les traitements manquants avec les moteurs installés : séparation des instruments, quatre sous-pistes de batterie, chant principal/chœurs, grille, sections, tonalité et paroles. La recherche et le calage des accords sont effectués dans la révision finale, après les sections. Les améliorations sont appliquées avant de régénérer les guides. La file **Préparer une série** utilise le même ordre. Une interruption conserve les étapes terminées.
+
+Le résultat garde les sections d’origine dans une frise **Avant** et les sections enregistrées dans une frise **Préparée**, à la même échelle. Cliquer sur une modification ouvre son détail et une écoute autour du départ. Le zoom cadre les deux frises ensemble ; une section courte n’est pas agrandie artificiellement. Le bouton **Réduire le menu** libère de l’espace.
+
+Les sections et accords manuels restent protégés. Les décisions automatiques restent non validées et modifiables ; elles ne deviennent pas des exemples d’entraînement humain. La validation finale avant l’export REAPER demeure explicite. Les références indisponibles et passages incertains sont signalés sans inventer de résultat.
+
+## Comparer avant d’appliquer
+
+**Vérifier et compléter** reste une aide facultative distincte. L’import ne lance pas cette comparaison sans action du musicien. La navigation, l’éditeur et les validations individuelles restent disponibles.
 
 1. Dans **Pistes & structure**, choisir **Vérifier et compléter**. Le logiciel
    cherche d’abord une préparation mémorisée du même enregistrement. Les pistes
    séparées manquantes suivent la préparation habituelle. Sans mémoire compatible,
    les autres analyses manquantes puis la comparaison musicale sont effectuées.
-2. Lire le récapitulatif. **Voir les changements** et **Écouter les passages**
+2. Comparer les frises **Actuelle / Proposée**. **Voir les changements** et **Écouter les passages**
    sont facultatifs. Une seule action lance la file des changements et des accords
    incertains, même si aucun nom de section ne change. Sa durée est affichée.
    L’écoute ne marque aucun repère comme validé.
@@ -141,7 +149,7 @@ Une grille sans en-têtes conserve aussi sa suite complète d’accords ; les
 représentations en tablature ne sont pas prises pour une deuxième exécution.
 L’alignement de cette suite n’est accepté que dans les sections dont le signal
 reste concordant. Une version abrégée ne force donc pas tous ses accords sur le
-morceau. Les anciens caches de sources sont actualisés au catalogue 6.
+morceau. Les anciens caches de sources sont actualisés au catalogue 8.
 
 Les scores du décodage et l’ordre écrit ne servent pas de confiance affichée.
 La confiance compare les familles harmoniques, puis vérifie séparément la basse
@@ -198,3 +206,11 @@ Le nombre d’accords, leur couverture et leur incertitude ne constituent pas un
 taux de justesse. Les tests sur signaux synthétiques possèdent, eux, des notes
 exactement connues et couvrent des transpositions, renversements et changements
 rapides. Aucun titre ou horaire des trois morceaux n’entre dans le moteur.
+
+## Paroles, fonction des sections et choix des accords
+
+Les références de paroles gratuites sont recherchées sans compte auprès de LRCLIB et lyrics.ovh. La correction conserve l’ordre des phrases et exige une compatibilité suffisante avec la transcription. Le recalage vocal local est disponible pour le français et l’anglais avec les ressources installées. Une version différente, une correction manuelle ou un alignement non confirmé conserve le texte précédent ; les horaires peuvent aussi être corrigés et enregistrés à la main.
+
+Les en-têtes de grilles conservent des empreintes de mots pour aider à reconnaître la fonction des sections. Les répétitions vocales, l’harmonie et les ruptures sur les pistes disponibles complètent ces indices. Une simple liste non minutée ne suffit pas à inventer des départs. Les repères protégés demeurent prioritaires.
+
+Le choix automatique des accords compare le vocabulaire de chaque grille à l’harmonie de l’enregistrement. Une évaluation publique JSON-LD n’est prise en compte que si elle concerne ce titre et indique un nombre de votes valide ; elle pèse peu devant la concordance audio. Aucun classement universel de « grille la plus utilisée » n’est inventé. Une grille explicitement choisie reste conservée.

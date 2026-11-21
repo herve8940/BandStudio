@@ -87,12 +87,41 @@ def test_weak_opening_double_click_and_displaced_pulses_preserve_every_later_bea
     for t in opening:raw[round(t*50)]=1.
     corrected,changed=repair_opening_pulses(beats,raw,50)
     assert changed
-    assert corrected[:13]==pytest.approx([.6,1.04,1.44,1.86,2.3,2.7,3.1,3.52,3.94,4.36,4.78,5.2,5.58])
-    np.testing.assert_array_equal(corrected[13:],stable)
+    start=int(np.searchsorted(corrected,stable[0]))
+    np.testing.assert_allclose(np.diff(corrected[:start+1]),.44,atol=1e-10)
+    np.testing.assert_array_equal(corrected[start:],stable)
+    again,changed_again=repair_opening_pulses(corrected,raw,50)
+    np.testing.assert_array_equal(again,corrected)
+    assert not changed_again
     result=grid_from_frames(raw,down,42)
     assert result['introCorrected']
-    np.testing.assert_array_equal(np.array(result['beats'])[13:],stable)
-    assert min(np.diff(result['beats'])[:14])>=.37
+    decoded=np.array(result['beats']);start=np.searchsorted(decoded,stable[0])
+    np.testing.assert_array_equal(decoded[start:],stable)
+    np.testing.assert_allclose(np.diff(decoded[:start+1]),.44,atol=1e-10)
+
+
+@pytest.mark.parametrize('opening',[
+    np.r_[.1,.1+np.cumsum(np.linspace(.39,.44,16))],  # quiet accelerando
+    np.r_[np.arange(14)*.54+.22,8.02,8.56,9.1,9.64],  # a real gap/phase change
+])
+def test_weak_drifting_or_discontinuous_intro_is_not_extrapolated(opening):
+    beats=np.r_[opening,opening[-1]+.44+np.arange(80)*.44]
+    raw,_=frames(beats,beats[::4],60)
+    for t in opening:raw[round(t*50)]=.5
+    corrected,changed=repair_opening_pulses(beats,raw,50)
+    np.testing.assert_array_equal(corrected,beats)
+    assert not changed
+
+
+def test_precision_benchmark_does_not_hide_the_first_five_seconds():
+    sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tools'))
+    from rhythm_benchmark import score,precision_metrics
+    reference=np.arange(40)*.5
+    wrong=reference.copy();wrong[:10]+=.06
+    assert score(reference,wrong)==1
+    result=precision_metrics(reference,wrong)
+    assert result['introF1_20ms']==pytest.approx(.5)
+    assert result['nearestP95Ms']==pytest.approx(60)
 
 
 @pytest.mark.parametrize('opening',[

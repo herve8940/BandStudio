@@ -8,10 +8,12 @@ from services import atomic, import_settings, calibrate_grid
 from windows import project as model
 
 ENVIRONMENTS = {'separate': '.venv-demucs', 'smartgrid': '.venv-demucs',
-                'structure': '.venv-structure', 'lyrics': '.venv-words', 'chords': '.venv'}
+                'structure': '.venv-structure', 'lyrics': '.venv-words', 'chords': '.venv',
+                'drumsep': '.venv-demucs','vocalsplit': '.venv-creative'}
 LABELS = {'import': 'Import', 'separate': 'Séparation des instruments', 'grid': 'Tempo',
           'smartgrid': 'Temps et mesures', 'structure': 'Structure', 'key': 'Tonalité',
-          'lyrics': 'Paroles', 'chords': 'Accords', 'guides': 'Click et annonces'}
+          'lyrics': 'Paroles', 'chords': 'Accords', 'guides': 'Click et annonces',
+          'drumsep':'Éléments de batterie','vocalsplit':'Chant et chœurs','prepareReview':'Vérification finale des sections et accords'}
 
 
 def plan(engine):
@@ -19,9 +21,12 @@ def plan(engine):
     if not python_for(engine, '.venv-demucs').is_file():
         raise ValueError('Installe Séparer les stems dans Réglages → Analyses locales, puis réessaie.')
     smart = any((engine / '.venv-demucs').glob('**/site-packages/beat_this'))
-    return ['import', 'separate', 'smartgrid' if smart else 'grid'] + [
-        k for k in ('structure', 'key', 'lyrics', 'chords')
-        if k in ('key','chords') or python_for(engine, ENVIRONMENTS[k]).is_file()] + ['guides']
+    extra=[]
+    if (engine/'drumsep/49469ca8.th').is_file():extra.append('drumsep')
+    if python_for(engine,'.venv-creative').is_file() and (engine/'creative/UVR_MDXNET_KARA_2.onnx').is_file():extra.append('vocalsplit')
+    return ['import', 'separate', *extra, 'smartgrid' if smart else 'grid'] + [
+        k for k in ('structure', 'key', 'lyrics')
+        if k=='key' or python_for(engine, ENVIRONMENTS[k]).is_file()] + ['prepareReview','guides']
 
 
 def snapshot(root, library, title):
@@ -51,8 +56,8 @@ def request(item, stage, root, folder, engine, library):
         source = item['source']
         if item.get('kind') != 'file' or not Path(source).is_file():
             raise ValueError('Fichier source introuvable. Remets-le à son emplacement puis réessaie.')
-    elif stage != 'guides':
-        role = 'vocals' if stage == 'lyrics' else 'source'
+    elif stage not in ('guides','prepareReview'):
+        role = ('vocal_lead' if any(t['role']=='vocal_lead' for t in p['tracks']) else 'vocals') if stage=='lyrics' else 'vocals' if stage=='vocalsplit' else 'drums' if stage=='drumsep' else 'source'
         track = next((t for t in p['tracks'] if t['role'] == role), None)
         if not track:
             raise ValueError('Piste nécessaire absente : ' + role)
@@ -107,6 +112,24 @@ def apply(item, stage, root, folder, library):
             raise ValueError('La séparation n’a produit aucune piste.')
         p['tracks'] = [t for t in p['tracks'] if t['role'] == 'source'] + tracks
         p['preparation'] = dict(rate=1, pitch=0, mode='mix')
+    elif stage in ('drumsep','vocalsplit'):
+        names={'drum_kick':'Grosse caisse','drum_snare':'Caisse claire','drum_toms':'Toms','drum_cymbals':'Cymbales / charleston'} if stage=='drumsep' else {'vocal_lead':'Chant principal','vocal_backing':'Chœurs'}
+        parent=next(t for t in p['tracks'] if t['role']==('drums' if stage=='drumsep' else 'vocals'))
+        tracks=[]
+        for row in result['tracks']:
+            role=row['role']
+            if role not in names:raise ValueError('Sous-piste inconnue.')
+            target=copy_media(row['path'],'Audio',role+'.wav')
+            track=model.track(target,root,names[role],role,parent['offset']);track.update({k:parent[k] for k in ('gain','pan','muted')})
+            previous=next((t for t in p['tracks'] if t['role']==role),None)
+            if previous:track.update({k:previous[k] for k in ('id','gain','pan','muted','solo')})
+            tracks.append(track)
+        if {t['role'] for t in tracks}!=set(names):raise ValueError('Séparation incomplète.')
+        p['tracks']=[t for t in p['tracks'] if t['role'] not in names]+tracks
+    elif stage=='prepareReview':
+        prepared=result['project']
+        if prepared['id']!=p['id']:raise ValueError('Préparation d’un autre morceau.')
+        model.validate(prepared,root);p=prepared
     elif stage in ('grid', 'smartgrid'):
         if not model.analysis_done(p, stage):
             model.apply_grid(p, calibrate_grid(result))
@@ -118,19 +141,21 @@ def apply(item, stage, root, folder, library):
         from chord_sources import apply as apply_chord_reference
         apply_chord_reference(p,result)
     elif stage=='lyrics':
+        p['lyricsReference']=result.get('lyricsReference')
         entries = []
         for row in result['segments']:
             start, end = row.get('start', row.get('t', 0)), min(model.duration(p), row['end'])
             if end <= start:
                 continue
             entry = dict(id=model.ident(), start=start, end=end,
-                         text=row.get('text', row.get('label', '')), manual=False)
+                         text=row.get('text', row.get('label', '')), manual=False, sourceURL=row.get('sourceURL'),confidence=row.get('confidence'))
             if stage == 'lyrics':
                 entry['words'] = [dict(start=w['t'], end=w['end'], text=w['w'])
                                   for w in row.get('words', []) if start <= w['t'] < w['end'] <= end + .1]
             entries.append(entry)
         p[stage] = sorted(entries, key=lambda x: x['start'])
     elif stage == 'guides':
+        previous_guides = p['tracks']
         p['tracks'] = [t for t in p['tracks'] if not t['role'].startswith('guide_')]
         # Count-ins also need the individual spoken numbers and section-call assets.
         p['guideFiles'] = {
@@ -142,9 +167,9 @@ def apply(item, stage, root, folder, library):
                                 ('counts', 'Décomptes', 'guide_count')]:
             if key not in p['guideFiles']:continue
             target = root / p['guideFiles'][key]
-            p['tracks'].append(model.track(target, root, name, role))
+            p['tracks'].append(model.guide_track(target, root, name, role, previous_guides))
         p['guideKey'] = model.guide_key(p) if 'cues' in p['guideFiles'] else ''
-    if stage in ('grid','smartgrid','structure','lyrics','chords','drums','key','separate','drumsep'):model.analysis_completed(p,stage)
+    if stage in ('grid','smartgrid','structure','lyrics','chords','drums','key','separate','drumsep','vocalsplit','prepareReview'):model.analysis_completed(p,stage)
     p['_queueID'] = item['id']
     p['_queueCompleted'] = list(dict.fromkeys([*p.get('_queueCompleted', []), stage]))
     model.save(p, root)

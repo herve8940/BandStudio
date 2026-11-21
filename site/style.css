@@ -5,3 +5,7 @@
 /* Keep the language choice available on mobile as well as desktop. */
 .languages{display:flex;justify-content:center;flex-wrap:wrap;gap:24px;padding:12px 20px;border-bottom:1px solid #273149;font-size:13px}
 .languages [aria-current="page"]{color:white;text-decoration:underline;text-underline-offset:5px}
+
+.release-preview{margin:30px 0}.release-preview img{display:block;width:100%;height:auto;border:1px solid #41536c;border-radius:15px}.release-preview figcaption{font-size:12px;line-height:1.7;color:#9aadc7;margin-top:10px}
+
+@media(max-width:780px){header{height:auto;flex-wrap:wrap;padding-block:18px;gap:16px}header nav{display:flex;order:3;width:100%;flex-wrap:wrap;gap:12px 22px}}

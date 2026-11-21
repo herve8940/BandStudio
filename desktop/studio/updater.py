@@ -82,6 +82,8 @@ def extract(archive,destination):
         if not (destination/'engine/build.json').is_file():raise ValueError('Version absente du paquet.')
 
 def check(engine,app=None):
+    if (engine/'local-overlay.json').is_file():
+        return {'state':'local','message':'Version locale en cours de test ; mises à jour en attente pour conserver les corrections.'}
     folder=data_dir();folder.mkdir(parents=True,exist_ok=True)
     # mkdir is an interprocess lock, removed in finally; ignore stale locks after a crash.
     lock=folder/'checking'
@@ -117,6 +119,7 @@ def check(engine,app=None):
 def apply_pending():
     folder=data_dir();pending=read_json(folder/'pending.json')
     if not pending:return False
+    if (Path(pending['engine'])/'local-overlay.json').is_file():return False
     stage=Path(pending['stage']).resolve()
     if stage.parent!=folder.resolve() or not stage.name.startswith('stage-'):raise ValueError('Zone de mise à jour invalide.')
     archive=stage/'verified.zip'

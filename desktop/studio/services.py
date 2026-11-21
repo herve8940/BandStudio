@@ -1,6 +1,6 @@
 """Portable project services: audible guides, media decoding and REAPER exchange."""
 from __future__ import annotations
-from listening import included
+from listening import included, guide_audible
 import bisect
 import hashlib
 import json
@@ -59,7 +59,7 @@ def calibrate_grid(result):
             agreement = min(consistent, phase_confidence, sum(evidence.values())/max(1.,sum(strengths)))
             if count/len(intervals) < .6:agreement = min(agreement, .84)
             if phase_confidence >= .75:first = beats[phase]
-    automatic = agreement >= .85 and not result.get('learnedReviewRequired', False)
+    automatic = agreement >= .85 and not result.get('learnedReviewRequired', False) and not result.get('timingReviewRequired',False)
     proposal=result.get('learnedBarProposal')
     proposal_applied=False
     if isinstance(proposal,dict) and result.get('learnedReviewRequired'):
@@ -245,7 +245,7 @@ def voice_wav(text,folder,settings):
     import scipy.signal
     text=str(text).strip()[:240]
     if not text:return None
-    digest=hashlib.sha256(('speech-v3:'+str(os.name)+settings['language']+settings['voice']+str(settings['speechRate'])+text).encode()).hexdigest()[:24]
+    digest=hashlib.sha256(('speech-v4:'+str(os.name)+settings['language']+settings['voice']+str(settings['speechRate'])+text).encode()).hexdigest()[:24]
     target=folder/(digest+'.wav')
     if target.exists():return target
     raw=folder/(digest+('.speech.wav' if os.name=='nt' else '.aiff'))
@@ -258,8 +258,10 @@ def voice_wav(text,folder,settings):
     else:run(['/usr/bin/say','-v',settings['voice'],'-r',str(settings['speechRate']),'-o',raw,'--',text],timeout=60)
     x,sr=sf.read(raw,dtype='float32',always_2d=True)
     if not len(x) or float(np.max(np.abs(x)))<1e-6:raise RuntimeError('La voix choisie ne produit aucun son. Choisis une voix installée.')
-    active=np.flatnonzero(np.max(np.abs(x),axis=1)>np.max(np.abs(x))*0.018)
-    x=x[max(0,int(active[0]) - int(sr*.003)):min(len(x),int(active[-1])+int(sr*.03))]
+    # Preserve quiet consonants/nasal onsets; only trim actual synthesis silence.
+    # A 3 ms margin at 1.8% of peak clipped the beginning of ‘Introduction’.
+    active=np.flatnonzero(np.max(np.abs(x),axis=1)>np.max(np.abs(x))*.001)
+    x=x[max(0,int(active[0])-round(sr*.03)):min(len(x),int(active[-1])+1+round(sr*.06))]
     g=math.gcd(sr,44100);x=scipy.signal.resample_poly(x,44100//g,sr//g,axis=0)
     if x.shape[1]==1:x=np.repeat(x,2,axis=1)
     x=x[:,:2];x*=.9/max(float(np.max(np.abs(x))),1e-6)
@@ -358,7 +360,7 @@ def guides(project_file,output):
     del data,click,calls,cues,counts
     for name in ['click','calls','cues','counts']:(root/(name+'.raw')).unlink()
     atomic(output,dict(files=file_map,events=events,countEvents=count_events,guideWarnings=warnings,
-                       beats=beats,duration=duration,generatorVersion=5))
+                       beats=beats,duration=duration,generatorVersion=6))
 
 
 def quote(value):
@@ -387,7 +389,8 @@ def export_reaper(project_file,output):
     for i,cue in enumerate(p['cues'],len(p['sections'])+1):lines.append(f'  MARKER {i} {cue["time"]+preroll:.9f} {quote(cue["name"])} 0')
     has_stems=any(t['role'] not in ('source','take') and not t['role'].startswith('guide_') for t in p['tracks'])
     mode=p.get('_mode','mix')
-    has_solo=any(t['solo'] for t in p['tracks'] if t['role']!='source' and not t['role'].startswith('guide_'))
+    has_solo=any(t['solo'] for t in p['tracks'] if t['role']!='source')
+    guide_solo=any(t['solo'] for t in p['tracks'] if t['role'].startswith('guide_'))
     for t in p['tracks']:
         if t['role'].startswith('guide_') and not s['exportGuides']:continue
         original=(root/t['file']).resolve()
@@ -397,17 +400,17 @@ def export_reaper(project_file,output):
             if original.suffix.lower()=='.wav':shutil.copy2(original,dest)
             else:decode(original,dest,Path(__file__).resolve().parent)
         audible=not t['muted'] and (not has_solo or t['solo'])
-        if mode=='original':audible=t['role']=='source' and not t['muted']
+        if mode=='original':audible=t['role']=='source' and not t['muted'] and not guide_solo
         elif t['role']=='source':audible=mode=='mix' and not has_stems and not t['muted'] and not has_solo
         else:audible=audible and included(t['role'],mode)
         if t['role']=='vocals' and any(x['role'].startswith('vocal_') for x in p['tracks']) and not t['solo']:audible=False
         if t['role']=='drums' and any(x['role'].startswith('drum_') for x in p['tracks']) and not t['solo']:audible=False
         muted=not audible
         gain=t['gain'];pan=t['pan']
-        if t['role']=='guide_click':muted=not s['clickEnabled'];gain=s['clickGain'];pan=s['clickPan']
-        if t['role']=='guide_voice':muted=not s['callsEnabled'];gain=s['callsGain'];pan=s['callsPan']
-        if t['role']=='guide_cue':muted=not s['speakCues'];gain=s.get('cuesGain',s['callsGain']);pan=s['callsPan']
-        if t['role']=='guide_count':muted=not s['regionCountEnabled'];gain=s['countGain'];pan=s['countPan']
+        if t['role']=='guide_click':muted=not (s['clickEnabled'] and guide_audible(p,t['role']));gain=s['clickGain'];pan=s['clickPan']
+        if t['role']=='guide_voice':muted=not (s['callsEnabled'] and guide_audible(p,t['role']));gain=s['callsGain'];pan=s['callsPan']
+        if t['role']=='guide_cue':muted=not (s['speakCues'] and guide_audible(p,t['role']));gain=s.get('cuesGain',s['callsGain']);pan=s['callsPan']
+        if t['role']=='guide_count':muted=not (s['regionCountEnabled'] and guide_audible(p,t['role']));gain=s['countGain'];pan=s['countPan']
         offset=t['offset']+preroll;skip=max(0,-offset)
         if s['exportCount'] and plan['events'] and (t['role']=='guide_count' or (t['role']=='guide_click' and s['countClick'])):
             skip=max(skip,plan['target']-t['offset']);offset=t['offset']+skip+preroll
@@ -416,7 +419,7 @@ def export_reaper(project_file,output):
                   '      VOLPAN 1 0 1 -1','      NAME '+quote(t['name']),'      <SOURCE WAVE','        FILE '+quote('Audio/'+name),'      >','    >','  >']
     if s['exportCount'] and plan['events']:
         render_count(p,root,plan,media/'count-in.wav')
-        lines+=['  <TRACK','    NAME "Décompte"',f'    VOLPAN {s["countGain"]} {s["countPan"]}','    <ITEM','      POSITION 0',f'      LENGTH {plan["end"]:.9f}','      <SOURCE WAVE','        FILE "Audio/count-in.wav"','      >','    >','  >']
+        lines+=['  <TRACK','    NAME "Décompte"',f'    MUTESOLO {int(not guide_audible(p,"guide_count"))} 0 0',f'    VOLPAN {s["countGain"]} {s["countPan"]}','    <ITEM','      POSITION 0',f'      LENGTH {plan["end"]:.9f}','      <SOURCE WAVE','        FILE "Audio/count-in.wav"','      >','    >','  >']
         if s['exportGuides'] and s['callsEnabled'] and (s['countBars']>1 or not s['countVoice']):
             first=next((x for x in p['sections'] if x['start']<=plan['target']+.1 and x['end']>plan['target'] and x.get('announce') is not False),None)
             relative=p.get('guideFiles',{}).get('call:'+first['id']) if first else None
@@ -425,7 +428,7 @@ def export_reaper(project_file,output):
                 initial=media/'initial-call.wav';shutil.copy2(root/relative,initial)
                 available=next((e['time'] for e in plan['events'] if e['spoken']),plan['end']) if s['countVoice'] else plan['end']
                 length=min(sf.info(initial).duration,max(0,available-.05))
-                lines+=['  <TRACK','    NAME "Annonce de départ"',f'    VOLPAN {s["callsGain"]} {s["callsPan"]}','    <ITEM','      POSITION 0',f'      LENGTH {length:.9f}','      <SOURCE WAVE','        FILE "Audio/initial-call.wav"','      >','    >','  >']
+                lines+=['  <TRACK','    NAME "Annonce de départ"',f'    MUTESOLO {int(not guide_audible(p,"guide_voice"))} 0 0',f'    VOLPAN {s["callsGain"]} {s["callsPan"]}','    <ITEM','      POSITION 0',f'      LENGTH {length:.9f}','      <SOURCE WAVE','        FILE "Audio/initial-call.wav"','      >','    >','  >']
     if p.get('_exportChordTrack') and p.get('chords'):
         # Empty, muted items make the reviewed harmony readable in REAPER.
         # The original annotation metadata remains available for round trips.
@@ -439,7 +442,7 @@ def export_reaper(project_file,output):
         lines+=['  >']
     lines+=['>'];rpp=target/(safe_name(p['name'])+'.rpp');rpp.write_text('\n'.join(lines)+'\n')
     # Bind detailed annotations to this exact export, including optional chord items.
-    metadata={key:p.get(key) for key in ['settings','notes','lyrics','chords','drumHits','key','sourceURL','capo','downbeats','gridLocked','analysisNote']}
+    metadata={key:p.get(key) for key in ['settings','notes','lyrics','lyricsReference','chords','drumHits','key','sourceURL','capo','downbeats','gridLocked','analysisNote']}
     metadata.update(exportPreroll=preroll,rppSHA256=hashlib.sha256(rpp.read_bytes()).hexdigest(),trackRoles={str(uuid.uuid5(uuid.NAMESPACE_OID,t['id']))+'.wav':t['role'] for t in p['tracks']})
     atomic(target/'bandstudio-project.json',metadata)
     atomic(output,dict(path=str(rpp),folder=str(target),preroll=preroll))
@@ -599,7 +602,7 @@ def import_reaper(path,output,engine,snapshot):
                     p[kind].append(entry)
             p['drumHits']=[{**h,'time':h['time']+shift} for h in saved.get('drumHits') or []]
             p['key']=saved.get('key') or '';p['sourceURL']=saved.get('sourceURL') or ''
-            p['capo']=saved.get('capo') or 0;p['gridLocked']=saved.get('gridLocked',True);p['analysisNote']=saved.get('analysisNote') or ''
+            p['lyricsReference']=saved.get('lyricsReference');p['capo']=saved.get('capo') or 0;p['gridLocked']=saved.get('gridLocked',True);p['analysisNote']=saved.get('analysisNote') or ''
             p['downbeats']=[t+shift for t in saved.get('downbeats') or []]
             if saved.get('settings'):p['settings']={**saved['settings'],'countBars':0}
         else:warnings.append('Le RPP a été modifié : les anciennes annotations de paroles et d’accords doivent être resynchronisées.')

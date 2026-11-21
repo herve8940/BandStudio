@@ -10,3 +10,13 @@ body.workspace-open header{padding:12px 28px}body.workspace-open header .eyebrow
 @media(max-width:1250px){.rail{width:178px;padding-left:9px;padding-right:9px}.rail .nav{font-size:11px;gap:8px}.brand{font-size:18px}.brand img{width:38px;height:38px}.brand small{font-size:6px}.workspace-metrics{gap:18px}#workspace .workspace-grid{grid-template-columns:minmax(0,1fr) 214px}.structure-row{grid-template-columns:minmax(90px,1fr) minmax(110px,1.2fr) 68px 70px;gap:7px}.structure-actions{grid-column:1/-1;justify-content:flex-end}.structure-header>span:last-child{display:none}#workspace .track-controls,#workspace .track-label{width:155px;flex-basis:155px}.workspace-controls #workspaceFocus{margin-left:auto}}
 @media(max-width:1000px){.rail{width:156px}.rail .nav{font-size:10px;gap:6px}.brand img{width:32px;height:32px}.brand{font-size:16px}.workspace-heading{gap:14px}.workspace-heading h2{font-size:22px}.workspace-metrics{gap:12px}.workspace-metrics strong{font-size:17px}#workspace .workspace-grid{grid-template-columns:minmax(0,1fr) 200px}.structure-row{grid-template-columns:minmax(95px,1fr) minmax(100px,1fr)}.structure-header{display:none}.structure-length,.structure-status{grid-row:2}.workspace-controls{padding:8px}.workspace-controls select{max-width:130px}#workspace .track-controls,#workspace .track-label{width:135px;flex-basis:135px}.editor-zoom{gap:5px}.editor-zoom>button{padding:6px 8px}.editor-zoom label{font-size:10px}}
 @media(max-width:760px){.workspace-heading{align-items:flex-start;flex-direction:column}.workspace-metrics{gap:25px}#workspace .workspace-grid{grid-template-columns:minmax(0,1fr)}.workspace-controls #workspaceFocus{display:none}}
+
+/* Persistent navigation control, outside the collapsible sidebar. */
+.header-start{display:flex;align-items:center;gap:14px;min-width:0;flex:1}
+.header-start>div{min-width:0}
+.sidebar-toggle{display:inline-flex;align-items:center;gap:7px;flex-shrink:0;padding:8px 10px;font-size:11px}
+.sidebar-toggle svg{display:block}
+.sidebar-toggle[aria-expanded=false]{background:#26354b;border-color:#627793}
+
+.rail .sidebar-collapse{display:flex;align-items:center;justify-content:center;flex-shrink:0;min-height:36px;padding:8px 6px;margin-bottom:4px;background:#33486b;border-color:#7495c4;color:#f4f7ff;font-size:11px;font-weight:600;letter-spacing:0}
+.rail .sidebar-collapse:hover{background:#405c83;border-color:#9cbbe7}

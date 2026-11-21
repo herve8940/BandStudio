@@ -260,3 +260,22 @@ def test_voice_cache_separates_languages_and_normalizes(tmp_path,monkeypatch):
     assert first!=second and first.is_file() and second.is_file()
     data,sr=sf.read(first);assert sr==44100 and data.shape[1]==2 and np.max(abs(data))==pytest.approx(.9,abs=.001)
     assert np.max(abs(data[[0,-1]]))==0
+
+
+def test_voice_keeps_quiet_initial_syllable_and_tail(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(services,'os',SimpleNamespace(name='posix'))
+    sr=44100
+    # A quiet nasal onset preceding a louder vowel reproduced the clipped intro.
+    quiet=.004*np.sin(np.arange(round(.06*sr))*2*np.pi*220/sr)
+    loud=.5*np.sin(np.arange(round(.3*sr))*2*np.pi*440/sr)
+    raw=np.concatenate([np.zeros(round(.1*sr)),quiet,loud,quiet,np.zeros(round(.1*sr))])
+    def synth(argv,**kwargs):
+        sf.write(Path(argv[argv.index('-o')+1]),raw,sr,format='AIFF',subtype='PCM_24')
+    monkeypatch.setattr(services,'run',synth)
+    result=services.voice_wav('Introduction',tmp_path,dict(voice='Test',speechRate=180,language='fr'))
+    data,rate=sf.read(result)
+    assert rate==sr and len(data)>round(.49*sr)
+    # Both low-level phonemes survive, instead of beginning on the loud vowel.
+    assert .005<np.max(abs(data[round(.04*sr):round(.07*sr),0]))<.01
+    assert .005<np.max(abs(data[round(.40*sr):round(.43*sr),0]))<.01

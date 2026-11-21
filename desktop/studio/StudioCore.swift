@@ -46,6 +46,15 @@ struct Preparation: Codable {
     var fingerprint:String? = nil
     var validatedAt:String? = nil
 }
+struct LyricsReference: Codable {
+    var status:String
+    var message:String
+    var sources:[String]
+    var corrected:Int
+    var review:Int
+    var timingReview:Int?
+    var language:String?
+}
 struct StudioProject: Codable {
     var preparation:Preparation? = nil
     var sessionDuration=0.0
@@ -63,6 +72,7 @@ struct StudioProject: Codable {
     var guideFiles:[String:String]=[:]
     var guideKey=""
     var lyrics:[TimedText]=[]
+    var lyricsReference:LyricsReference?=nil
     var chords:[TimedText]=[]
     var chordReference:ChordReference?=nil
     var structureProposal:StructureProposal?=nil
@@ -87,7 +97,9 @@ struct StudioProject: Codable {
         case "drums":return !drumHits.isEmpty
         case "key":return !key.isEmpty
         case "separate":return tracks.contains{["drums","bass","vocals","other","guitar","piano"].contains($0.role)}
-        case "drumsep":return tracks.contains{$0.role.hasPrefix("drum_")}
+        case "drumsep":return ["drum_kick","drum_snare","drum_toms","drum_cymbals"].allSatisfy{role in tracks.contains{$0.role==role}}
+        case "vocalsplit":return ["vocal_lead","vocal_backing"].allSatisfy{role in tracks.contains{$0.role==role}}
+        case "lyricscorrect":return lyricsReference != nil || lyrics.isEmpty
         default:return false
         }
     }
@@ -258,20 +270,21 @@ final class StudioAudio {
         applyMix()
     }
     func applyMix() {
-        let hasSolo=project.tracks.contains{$0.solo && $0.role != "source" && !$0.role.hasPrefix("guide_")}
+        let hasSolo=project.tracks.contains{$0.solo && $0.role != "source"}
+        let hasGuideSolo=project.tracks.contains{$0.solo && $0.role.hasPrefix("guide_")}
         let hasStems=project.tracks.contains{$0.role != "source" && $0.role != "take" && !$0.role.hasPrefix("guide_")}
         let hasDrumParts=project.tracks.contains{$0.role.hasPrefix("drum_")}
         let s=project.settings
-        countClick.volume=s.countClick ? s.countGain : 0;countClick.pan=s.countPan
-        countVoice.volume=s.countVoice ? s.countGain : 0;countVoice.pan=s.countPan
-        startCall.volume=s.callsEnabled ? s.callsGain : 0;startCall.pan=s.callsPan
+        countClick.volume=s.countClick && project.guideAudible("guide_count") ? s.countGain : 0;countClick.pan=s.countPan
+        countVoice.volume=s.countVoice && project.guideAudible("guide_count") ? s.countGain : 0;countVoice.pan=s.countPan
+        startCall.volume=s.callsEnabled && project.guideAudible("guide_voice") ? s.callsGain : 0;startCall.pan=s.callsPan
         for (i,t) in project.tracks.enumerated() where i < players.count {
-            if t.role == "guide_click" {players[i].volume=s.clickEnabled ? s.clickGain : 0;players[i].pan=s.clickPan;continue}
-            if t.role == "guide_voice" {players[i].volume=s.callsEnabled ? s.callsGain : 0;players[i].pan=s.callsPan;continue}
-            if t.role == "guide_cue" {players[i].volume=s.speakCues ? (s.cuesGain ?? s.callsGain) : 0;players[i].pan=s.callsPan;continue}
-            if t.role == "guide_count" {players[i].volume=s.regionCountEnabled ? s.countGain : 0;players[i].pan=s.countPan;continue}
+            if t.role == "guide_click" {players[i].volume=s.clickEnabled && project.guideAudible("guide_click") ? s.clickGain : 0;players[i].pan=s.clickPan;continue}
+            if t.role == "guide_voice" {players[i].volume=s.callsEnabled && project.guideAudible("guide_voice") ? s.callsGain : 0;players[i].pan=s.callsPan;continue}
+            if t.role == "guide_cue" {players[i].volume=s.speakCues && project.guideAudible("guide_cue") ? (s.cuesGain ?? s.callsGain) : 0;players[i].pan=s.callsPan;continue}
+            if t.role == "guide_count" {players[i].volume=s.regionCountEnabled && project.guideAudible("guide_count") ? s.countGain : 0;players[i].pan=s.countPan;continue}
             var audible = !t.muted && (!hasSolo || t.solo)
-            if mode == "original" {audible=t.role == "source" && !t.muted}
+            if mode == "original" {audible=t.role == "source" && !t.muted && !hasGuideSolo}
             else if t.role == "source" {audible=mode == "mix" && !hasStems && !t.muted && !hasSolo}
             else {audible=audible && Listening.includes(t.role,mode)}
             if t.role == "drums" && hasDrumParts && !t.solo {audible=false}
@@ -345,6 +358,17 @@ final class StudioAudio {
                 at:AVAudioTime(sampleTime:Int64((at+begin-a)*sr),atRate:sr))
         }
     }
+    func configureTimeEffects() {
+        stretch.rate=rate;stretch.pitch=pitch*100;guideStretch.rate=rate;guideStretch.pitch=0
+        stretch.bypass=abs(rate-1)<0.00001 && abs(pitch)<0.00001
+        guideStretch.bypass=abs(rate-1)<0.00001
+    }
+    private func preparePlayers() {
+        // Decode ahead before the shared start deadline, including the opening voice.
+        for node in players+[countClick,countVoice,startCall] {
+            node.prepare(withFrameCount:AVAudioFrameCount(node.outputFormat(forBus:0).sampleRate*0.25))
+        }
+    }
     func play(withCount:Bool=true) throws {
         guard !players.isEmpty else{return}
         if running{return}
@@ -358,7 +382,7 @@ final class StudioAudio {
         repeatCountEvents=project.settings.countEveryLoop ? project.countPlan(at:loopStart).events : []
         loopGap=project.settings.countEveryLoop ? plannedCount(at:loopStart) : 0
         firstLength=preRoll+end-position;scheduled=firstLength;completedLoops=0
-        stretch.rate=rate;stretch.pitch=pitch*100;guideStretch.rate=rate;guideStretch.pitch=0
+        configureTimeEffects()
         scheduleCount(at:0,position:position,enabled:withCount)
         schedule(position,end,at:preRoll,counting:withCount)
         if loop { for _ in 0..<3 {scheduleCount(at:scheduled,position:loopStart,enabled:project.settings.countEveryLoop);schedule(loopStart,loopEnd,at:scheduled+loopGap,counting:project.settings.countEveryLoop);scheduled += loopEnd-loopStart+loopGap} }
@@ -366,8 +390,8 @@ final class StudioAudio {
         silence.frameLength=1024
         for c in 0..<2 {silence.floatChannelData![c].initialize(repeating:0,count:1024)}
         clock.scheduleBuffer(silence,at:nil,options:.loops)
-        engine.prepare();try engine.start()
-        playbackHost=mach_absolute_time()+AVAudioTime.hostTime(forSeconds:0.08)
+        preparePlayers();engine.prepare();try engine.start()
+        playbackHost=mach_absolute_time()+AVAudioTime.hostTime(forSeconds:0.15)
         let time=AVAudioTime(hostTime:playbackHost)
         clock.play(at:time);for n in players+[countClick,countVoice,startCall] {n.play(at:time)}
         running=true
@@ -393,7 +417,7 @@ final class StudioAudio {
                 let lap=elapsed()<firstLength ? 0 : 1+Int((elapsed()-firstLength)/(size+loopGap))
                 if lap>completedLoops {
                     completedLoops=lap;let s=project.settings
-                    if s.loopStep>0,Double(rate)<s.loopMaxRate,lap%s.loopEvery==0 {rate=min(Float(s.loopMaxRate),rate+Float(s.loopStep));stretch.rate=rate;guideStretch.rate=rate}
+                    if s.loopStep>0,Double(rate)<s.loopMaxRate,lap%s.loopEvery==0 {rate=min(Float(s.loopMaxRate),rate+Float(s.loopStep));configureTimeEffects()}
                 }
             }
         } else if current() >= project.duration-0.001 {pause();position=project.duration}
@@ -404,11 +428,11 @@ final class StudioAudio {
         let format=clockFormat
         try engine.enableManualRenderingMode(.offline,format:format,maximumFrameCount:4096)
         defer {engine.stop();for n in players+[countClick,countVoice,startCall]{n.stop()};engine.disableManualRenderingMode();applyMix()}
-        stretch.rate=rate;stretch.pitch=pitch*100;guideStretch.rate=rate;guideStretch.pitch=0
+        configureTimeEffects()
         let lead=includeCount ? plannedCount(at:start) : 0
         scheduleCount(at:0,position:start,enabled:includeCount);schedule(start,end,at:lead,counting:includeCount)
         if !project.settings.exportGuides {startCall.volume=0;for (i,t) in project.tracks.enumerated() where t.role.hasPrefix("guide_"){players[i].volume=0}}
-        try engine.start();for n in players+[countClick,countVoice,startCall]{n.play()}
+        preparePlayers();try engine.start();for n in players+[countClick,countVoice,startCall]{n.play()}
         let output=try AVAudioFile(forWriting:url,settings:format.settings)
         let buffer=AVAudioPCMBuffer(pcmFormat:format,frameCapacity:4096)!
         let target=Int64((end-start+lead)/Double(rate)*format.sampleRate)

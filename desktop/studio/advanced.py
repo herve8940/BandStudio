@@ -128,7 +128,7 @@ def repair_opening_pulses(beats, beat_logits, fps):
     """Repair isolated weak intro detections, leaving the established pulse intact.
 
     A free/fast intro or an actual tempo change is not a malformed grid. Require
-    three regular bars shortly after the opening, weak model evidence at each
+    twelve regular intervals shortly after the opening, weak model evidence at each
     repaired pulse, and regular neighbours on both sides of a doubled pulse.
     """
     import numpy as np
@@ -140,7 +140,7 @@ def repair_opening_pulses(beats, beat_logits, fps):
         if beats[i]-beats[0]>12:break
         if period>.15 and np.max(abs(window/period-1))<=.10:
             anchor=i;break
-    if not anchor:return beats,False
+    if anchor is None:return beats,False
     period=float(np.median(delta[anchor:anchor+12]))
     positive=beat_logits[beat_logits>0]
     strong=max(2.,float(np.median(positive))*.5) if len(positive) else 2.
@@ -164,7 +164,34 @@ def repair_opening_pulses(beats, beat_logits, fps):
         if (weak(original[i]) and min(a,b)<.85*local and max(a,b)>1.05*local
                 and 1.6*local<a+b<2.4*local and abs(a-b)<=.4*local):
             rows[i]=round((original[i-1]+original[i+1])/2,6);changed=True
-    return (np.r_[rows,tail],True) if changed else (beats,False)
+    repaired=np.r_[rows,tail] if changed else beats
+    # A whole weak opening can drift between note attacks despite isolated
+    # repairs. Anchor it to twelve confident, steady intervals, without touching any
+    # established pulse. Never flatten a strong, faster, or accelerating intro.
+    for anchor in range(8,min(len(repaired)-12,33)):
+        if repaired[anchor]-repaired[0]>12:break
+        reference=repaired[anchor:anchor+13]
+        spans=np.diff(reference);period=float(np.median(spans))
+        if period<=.15 or np.max(abs(spans/period-1))>.10:continue
+        if weak(reference[0]) or sum(not weak(t) for t in reference)<11:continue
+        opening=repaired[:anchor+1];early=np.diff(opening)
+        if sum(not weak(t) for t in opening[:-1])>1:continue
+        if not .85<np.median(early)/period<1.15 or np.max(abs(early/period-1))>.2:continue
+        if np.std(early)<.035*period:continue
+        # Consistent acceleration/deceleration is musical evidence, even when quiet.
+        trend=float(np.corrcoef(np.arange(len(early)),early)[0,1])
+        if abs(trend)>.8:continue
+        fit=np.polyfit(np.arange(len(reference)),reference,1)
+        if np.max(abs(np.polyval(fit,np.arange(len(reference)))-reference))>1.25/fps:continue
+        period=float(fit[0])
+        count=round((reference[0]-opening[0])/period)
+        if count<4 or abs(count-anchor)>1:continue
+        first=reference[0]-count*period
+        if first<0 or abs(first-opening[0])>.2*period:continue
+        regular=first+np.arange(count)*period
+        if abs(count-anchor)==0 and np.max(abs(regular-opening[:-1]))<1/fps:continue
+        return np.r_[regular,repaired[anchor:]],True
+    return repaired,changed
 
 
 def grid_from_frames(beat_logits, downbeat_logits, duration, fps=50, *, quality=True):
@@ -284,8 +311,9 @@ def grid_from_frames(beat_logits, downbeat_logits, duration, fps=50, *, quality=
                   and result['beatsPerBar'] in (2,3,4) and triplets>=8
                   and triplets>=.2*max(1,len(beats)-1))
     result.update(pulseUnit='dottedQuarter' if compound else 'quarter',
-                  pulseUnitConfidence=triplets/max(1,len(beats)-1),decoderVersion=5,
-                  continuityCorrected=continuity_changed,introCorrected=intro_corrected)
+                  pulseUnitConfidence=triplets/max(1,len(beats)-1),decoderVersion=6,
+                  continuityCorrected=continuity_changed,introCorrected=intro_corrected,
+                  timingReviewRequired=intro_corrected)
     if continuity_changed and not result['tempoNote']:
         result['tempoNote']=('Pulsations irrégulières de l’introduction régularisées · à vérifier à l’écoute' if intro_corrected
                              else 'Continuité des pulsations corrigée dans les passages syncopés')

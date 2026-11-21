@@ -20,26 +20,23 @@ BandStudio est un logiciel gratuit de séparation d’instruments (stems) et de 
 - **Travailler un passage** : boucles, vitesse de 50 à 150 %, transposition de ±12 demi-tons, progression du tempo et capo pour les accords affichés.
 - **Comprendre le morceau** : tempo, temps et débuts de mesure, tonalité, sections modifiables, accords et paroles synchronisées. Les corrections manuelles sont conservées.
 - **Organiser les morceaux** : bibliothèque en liste avec pochettes recherchées automatiquement par titre/artiste (y compris les anciens imports), intégrées ou choisies, suppression réversible et restauration.
-- **Tout préparer** : enchaîne les analyses installées et les guides, en conservant les corrections manuelles et les étapes terminées en cas d’arrêt.
+- **Tout préparer** : instruments, batterie détaillée, chant/chœurs, paroles, accords, révision finale des sections et guides en un clic, avec les moteurs installés. Les corrections manuelles et les étapes terminées sont conservées.
 - **Préparer une série de morceaux** : ajoute plusieurs fichiers locaux dans la file, puis clique sur **Démarrer la file**. Pause, reprise et erreurs par morceau ; aucun démarrage automatique à l’ouverture.
 - **Préparer la répétition** : click, appels de sections, décomptes, repères et notes. Validation explicite du mix, de la grille et des guides avant l’envoi dans REAPER.
 - **Exporter** : mix, stems WAV/FLAC/MP3/AAC, paroles LRC/SRT, fiche PDF, MIDI batterie et projet REAPER portable avec médias et décompte initial réglable pour préparer le départ.
 
 La qualité dépend du morceau et des modèles installés. Une estimation d’IA se vérifie à l’écoute. BandStudio ne prétend pas reproduire tous les modèles de séparation spécialisés ou services de Moises. [Fonctions et limites](docs/BANDSTUDIO.md#traitement-du-morceau).
 
-## Nouveautés · 19 novembre 2026
+## Nouveautés · 21 novembre 2026
 
-- **Aide facultative dans Pistes & structure** : « Vérifier et compléter » propose les sections manquantes et le calage des accords, puis « Valider et exporter vers REAPER » applique la proposition. Le parcours habituel reste disponible. [Fonctionnement et limites](docs/STRUCTURE_REVIEW.md).
+- **Un clic : Tout préparer**. Instruments, batterie détaillée, chant principal/chœurs, paroles, accords Internet, sections puis click et annonces s’enchaînent avec les moteurs installés. La révision finale enregistre les améliorations automatiques ; un deuxième clic réutilise les étapes terminées.
+- **Voir le résultat**. Deux frises **Avant / Préparée** partagent la même échelle. Les sections ajoutées, renommées ou recalées sont repérables et chaque changement peut être écouté. **Vérifier et compléter** reste disponible pour comparer avant d’appliquer.
+- **Paroles et accords**. Références gratuites sans compte, corrections appuyées par le texte et recalage vocal local. Les grilles sont comparées à l’audio ; leur popularité n’est utilisée que si elle est publiée. Tes choix et corrections manuelles restent prioritaires.
+- **Plus de place pour jouer**. Menu gauche réductible, navigation regroupée, outils de paroles réunis et volume/mute/solo sur les pistes de guidage.
 
-- **Atelier Pistes / Structure** : recherche, filtres, vue compacte, vue d’ensemble colorée et cadrage de la section choisie.
-- **Correcteur de transitions** : ajustement conservateur des nouvelles analyses SongFormer compatibles. Sur 24 morceaux réservés au test, F1 à ±0,5 s : 46,84 → 52,06 / 100. [Périmètre et résultats](docs/CUE_CORRECTOR_TRAINING.md#résultats-du-lot-réservé-et-distribution).
-- **Grilles d’accords Internet** : sources distinctes, choix de la grille et placement proposé sur les temps, à vérifier à l’écoute.
-- **Corriger à l’écoute** : zoom, déplacement des sections et cues par mesure ou par temps, écoute autour d’un repère et validation un par un.
-- **Régler chaque guide** : niveaux indépendants pour métronome, appels, cues et décompte.
-- **Fiche morceau** : accords et paroles éditables par mesure, déplacements avec leurs mots synchronisés, annuler/rétablir et export PDF avec choix de destination.
-- **Conserver son travail** : réutilisation des analyses, corrections protégées et décompte suivant la grille enregistrée, y compris les levées.
+![Comparaison graphique des sections dans BandStudio, données de démonstration](site/assets/structure-comparison.png)
 
-[Découvrir les étapes dans le tutoriel](docs/BANDSTUDIO_TUTORIEL_fr.md).
+[Parcours visuel en français](https://herve8940.github.io/BandStudio/tutoriel.html) · [English visual tutorial](https://herve8940.github.io/BandStudio/tutorial.html) · [Notes de version FR / EN](docs/RELEASE_2026-11-21.md).
 
 ## Installer
 

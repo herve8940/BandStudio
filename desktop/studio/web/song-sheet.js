@@ -77,6 +77,8 @@
  }
  references.append(node('small','','Compare la version et la tonalité, puis corrige la fiche.'));
  references.append(button('Comparer les sources d’accords',()=>{view('prompter');$('chordReferencePrompter').scrollIntoView({block:'start'});}));
+ const correctLyrics=button('Corriger les paroles et recaler',()=>{view('tools');$('correctLyrics').click();});correctLyrics.id='sheetCorrectLyrics';references.append(correctLyrics);
+ const manualLyrics=button('Recaler à la main',()=>$('manualLyrics').click());manualLyrics.id='sheetManualLyrics';references.append(manualLyrics);
  const chordLegend=node('small','');chordLegend.id='sheetChordSource';references.append(chordLegend);
  const content=node('div','song-sheet');content.id='songSheet';
  sheet.append(heading,stats,meta,toolbar,sheetHelp,references,content);document.querySelector('main').append(sheet);
@@ -84,6 +86,7 @@
  let sheetProject='', highlighted=null, currentPitch=null;
 
  function libraryEntry() {
+  correctLyrics.disabled=manualLyrics.disabled=!state.loaded||state.busy;
   const p=state.project, entries=state.library||[], byID=entries.find(e=>e.id===p.id);
   if(byID)return byID;
   const matches=entries.filter(e=>e.name===p.name);
@@ -235,10 +238,14 @@
   const b=button(label,()=>{const g=editorGrid(),amount=beats==='bar-'?-g.meter:beats==='bar+'?g.meter:beats;moveTo(g.at(g.coordinate(Number($('annotationStart').value))+amount));});
   b.dataset.shift=beats;move.append(b);
  }
- move.append(button('Placer au curseur',()=>moveTo(transport.position||0)),button('Écouter le début',()=>{
-  send('seek',{time:Math.max(0,Number($('annotationStart').value)-1)});if(!transport.playing)send('play');
- }));
- const help=node('small','','Changer la mesure de début déplace toute la ligne et ses mots. Mesure 0 : levée avant la mesure 1.');
+ for(const [label,delta] of [['← 100 ms',-.1],['100 ms →',.1]]) {
+  const control=button(label,()=>moveTo(Number($('annotationStart').value)+delta));control.dataset.shiftSeconds=delta;move.append(control);
+ }
+ move.append(button('Placer au curseur',()=>moveTo(transport.position||0)),button('Écouter cette ligne',()=>{
+  const start=Math.max(0,Number($('annotationStart').value)-.5),end=Math.min(state.duration,Number($('annotationEnd').value)+.5);
+  if(Number.isFinite(start)&&Number.isFinite(end)&&end>start)send('audition',{start,end});
+ }),button('Pause',()=>{if(transport.playing)send('play');}));
+ const help=node('small','','Les flèches déplacent toute la ligne avec ses mots. Enregistrer sauvegarde tes horaires dans le morceau et les protège des analyses automatiques. Mesure 0 : levée avant la mesure 1.');
  const error=node('p','sheet-error');error.id='sheetPositionError';error.setAttribute('role','status');
  const replaceLabel=node('label','checkbox'), replace=node('input');replace.id='sheetReplaceChords';replace.type='checkbox';replace.checked=true;
  replaceLabel.id='sheetReplaceLabel';replaceLabel.append(replace,document.createTextNode('Remplacer les accords présents sur cette plage'));
@@ -263,6 +270,7 @@
  const baseAnnotation=openAnnotation;openAnnotation=function(item){
   baseAnnotation(item);replace.checked=true;replaceLabel.hidden=annotationEdit.kind!=='chords';error.textContent='';refreshPosition();
   $('annotationForm').querySelector('button[type=submit]').disabled=!!state.busy;
+  $('annotationForm').querySelector('button[type=submit]').textContent=annotationEdit.kind==='lyrics'?'Enregistrer le calage':'Enregistrer';
  };
  for(const side of ['Start','End']) {
   for(const part of ['Bar','Beat']) $('sheet'+side+part).onchange=()=>{

@@ -23,8 +23,8 @@ import updater
 import catalog
 import artwork
 
-COMPONENTS={'generate':'creative','vocalsplit':'creative','separate':'stems','drumsep':'drumsep','structure':'structure','lyrics':'words','chords':'chords','drums':'drums','smartgrid':'rhythm'}
-ENVIRONMENTS={'generate':'.venv-creative','vocalsplit':'.venv-creative','separate':'.venv-demucs','drumsep':'.venv-demucs','structure':'.venv-structure','lyrics':'.venv-words','chords':'.venv','drums':'.venv-drums','smartgrid':'.venv-demucs'}
+COMPONENTS={'generate':'creative','vocalsplit':'creative','separate':'stems','drumsep':'drumsep','structure':'structure','lyrics':'words','lyricscorrect':'words','chords':'chords','drums':'drums','smartgrid':'rhythm'}
+ENVIRONMENTS={'generate':'.venv-creative','vocalsplit':'.venv-creative','separate':'.venv-demucs','drumsep':'.venv-demucs','structure':'.venv-structure','lyrics':'.venv-words','lyricscorrect':'.venv-words','chords':'.venv','drums':'.venv-drums','smartgrid':'.venv-demucs'}
 
 class Api:
     def __init__(self,engine,library=None):
@@ -45,11 +45,16 @@ class Api:
         available['smartgrid']=available['smartgrid'] and any((self._engine/'.venv-demucs').glob('**/site-packages/beat_this'))
         steps=[]
         if available['separate'] and not any(t['role'] in ('drums','bass','vocals','other','guitar','piano') for t in self._project['tracks']):steps.append('separate')
+        roles={t['role'] for t in self._project['tracks']}
+        if available['drumsep'] and (self._engine/'drumsep/49469ca8.th').is_file() and ('separate' in steps or 'drums' in roles):steps.append('drumsep')
+        if available['vocalsplit'] and (self._engine/'creative/UVR_MDXNET_KARA_2.onnx').is_file() and ('separate' in steps or 'vocals' in roles):steps.append('vocalsplit')
         if not self._project.get('gridLocked'):steps.append('smartgrid' if available['smartgrid'] else 'grid')
         if available['structure']:steps.append('structure')
         if not self._project.get('key'):steps.append('key')
-        steps += (['lyrics'] if available['lyrics'] else [])+['chords']
-        return [kind for kind in steps if not model.analysis_done(self._project,kind)]+([] if self._ready_guides() else ['guides'])
+        if available['lyrics']:steps.append('lyricscorrect' if model.analysis_done(self._project,'lyrics') else 'lyrics')
+        steps=[kind for kind in steps if not model.analysis_done(self._project,kind)]
+        if 'source' in roles and (steps or (self._project.get('structureProposal') or {}).get('status')!='prepared'):steps.append('prepareReview')
+        return steps+(['guides'] if steps or not self._ready_guides() else [])
     def _ready_guides(self):
         return bool(self._root and self._project['guideKey']==model.guide_key(self._project) and all(model.relative_file(self._root,p).is_file() for p in self._project['guideFiles'].values()))
     def _state(self):
@@ -196,8 +201,9 @@ class Api:
             file=Path(value).resolve()
             if not file.is_relative_to(result.parent.resolve()):raise ValueError('Guide audio hors du dossier de traitement.')
             target=folder/(model.ident()+'.wav');shutil.copy2(file,target);mapping[key]=target.relative_to(self._root).as_posix()
-        self._project['tracks']=[t for t in self._project['tracks'] if not t['role'].startswith('guide_')]
-        for key,name,role in [('click','Métronome','guide_click'),('calls','Appels de régions','guide_voice'),('cues','Cues','guide_cue'),('counts','Décompte des régions','guide_count')]:self._project['tracks'].append(model.track(self._root/mapping[key],self._root,name,role))
+        previous_guides=self._project['tracks']
+        self._project['tracks']=[t for t in previous_guides if not t['role'].startswith('guide_')]
+        for key,name,role in [('click','Métronome','guide_click'),('calls','Appels de régions','guide_voice'),('cues','Cues','guide_cue'),('counts','Décompte des régions','guide_count')]:self._project['tracks'].append(model.guide_track(self._root/mapping[key],self._root,name,role,previous_guides))
         self._project['guideFiles']=mapping;self._project['guideKey']=model.guide_key(self._project);self._reload();self._save(invalidate=False);self._notice='Appels, décomptes et métronome prêts.'
         if obj.get('guideWarnings'):
             self._notice=f"Guides prêts · {len(obj['guideWarnings'])} annonce(s) sans place avant l’entrée : raccourcis le texte ou le décompte."
@@ -244,7 +250,8 @@ class Api:
         if not reanalyze and model.analysis_done(self._project,kind):
             self._notice='Analyse déjà disponible et résultat protégé. Les corrections et validations sont conservées.';return
         if kind=='grid' and self._project.get('gridLocked'):raise ValueError('Le calage est protégé. Décoche « Protéger le calage » dans Click & cues avant de relancer.')
-        desired={'lyrics':'vocals','drums':'drums','drumsep':'drums'}.get(kind,'source');source=next((t for t in self._project['tracks'] if t['role']==desired),None)
+        vocal='vocal_lead' if any(t['role']=='vocal_lead' for t in self._project['tracks']) else 'vocals'
+        desired={'lyrics':vocal,'lyricscorrect':vocal,'drums':'drums','drumsep':'drums'}.get(kind,'source');source=next((t for t in self._project['tracks'] if t['role']==desired),None)
         if not source and kind not in ('drums','drumsep'):source=next((t for t in self._project['tracks'] if t['role']=='source'),None)
         if not source:raise ValueError('Il manque la piste '+desired+'. Importe un morceau ou sépare ses instruments.')
         offset=source['offset']
@@ -263,6 +270,12 @@ class Api:
                 source=Path(t['path']).resolve()
                 if not source.is_relative_to(result.parent.resolve()):raise ValueError('Piste hors du dossier de traitement.')
                 target=self._root/'Audio'/(model.ident()+'.wav');shutil.copy2(source,target);tracks.append(model.track(target,self._root,names.get(t['role'],t['role']),t['role'],offset if kind=='drumsep' else 0))
+                if kind=='drumsep':
+                    parent=next(old for old in self._project['tracks'] if old['role']=='drums')
+                    tracks[-1].update({k:parent[k] for k in ('gain','pan','muted')})
+                    previous=next((old for old in self._project['tracks'] if old['role']==t['role']),None)
+                    if previous:tracks[-1].update({k:previous[k] for k in ('id','gain','pan','muted','solo')})
+            if kind=='drumsep' and {t['role'] for t in tracks}!={'drum_kick','drum_snare','drum_toms','drum_cymbals'}:raise ValueError('Séparation de batterie incomplète.')
             keep=[t for t in self._project['tracks'] if not t['role'].startswith('drum_')] if kind=='drumsep' else [t for t in self._project['tracks'] if t['role'] in ('source','take') or t['role'].startswith('guide_')]
             self._project['tracks']=keep+tracks;self._reload();self._audio.mode='mix'
         elif kind=='drums':
@@ -270,17 +283,19 @@ class Api:
         elif kind=='chords':
             from chord_sources import apply
             apply(self._project,obj)
-        elif kind=='lyrics':
+        elif kind in ('lyrics','lyricscorrect'):
+            kind='lyrics'
+            self._project['lyricsReference']=obj.get('lyricsReference')
             entries=[];manual=[x for x in self._project[kind] if x.get('manual')]
             for row in obj['segments']:
                 start=row.get('start',row.get('t',0));end=min(model.duration(self._project),row['end'])
                 if end<=start or any(x['start']<end and x['end']>start for x in manual):continue
-                entry=dict(id=model.ident(),start=start,end=end,text=row.get('text',row.get('label','')),manual=False)
+                entry=dict(id=model.ident(),start=start,end=end,text=row.get('text',row.get('label','')),manual=False,sourceURL=row.get('sourceURL'),confidence=row.get('confidence'))
                 if kind=='lyrics':entry['words']=[dict(start=w['t'],end=w['end'],text=w['w']) for w in row.get('words',[]) if start<=w['t']<w['end']<=end+.1]
                 entries.append(entry)
             self._project[kind]=sorted(manual+entries,key=lambda x:x['start'])
         model.analysis_completed(self._project,kind)
-        self._save();self._notice=obj['reference']['message'] if kind=='chords' else 'Analyse ajoutée. Vérifie et corrige les propositions dans l’atelier ou le prompteur.'
+        self._save();self._notice=obj['reference']['message'] if kind=='chords' else obj['lyricsReference']['message'] if kind=='lyrics' and obj.get('lyricsReference') else 'Analyse ajoutée. Vérifie et corrige les propositions dans l’atelier ou le prompteur.'
     def _set_rate(self,rate,pitch,resume=False):
         self._audio.pause();self._audio.rate=model.number(rate,.5,1.5);self._audio.pitch=model.number(pitch,-12,12);self._audio.prepare()
         if resume:self._audio.play()
@@ -290,17 +305,25 @@ class Api:
         for index,kind in enumerate(steps,1):
             self._job_plan_index=index-1
             before=copy.deepcopy(self._project)
-            titles={'separate':'Séparation','grid':'Tempo','smartgrid':'Temps et mesures','structure':'Structure','key':'Tonalité','lyrics':'Paroles','chords':'Accords','guides':'Click et annonces'}
+            titles={'separate':'Séparation','drumsep':'Éléments de batterie','vocalsplit':'Chant et chœurs','grid':'Tempo','smartgrid':'Temps et mesures','structure':'Structure','key':'Tonalité','lyrics':'Paroles','lyricscorrect':'Correction des paroles','chords':'Accords','prepareReview':'Vérification finale des sections et accords','guides':'Click et annonces'}
             self._job_name=f'Tout préparer · {index}/{len(steps)} · '+titles[kind];self._state()
             try:
                 if self._cancelled.is_set():raise RuntimeError('Traitement annulé.')
                 if kind in ('smartgrid','key'):advanced_task(self,kind,{})
+                elif kind=='vocalsplit':
+                    from windows.creative_host import creative_task
+                    creative_task(self,kind,{})
+                elif kind=='prepareReview':
+                    _,result=self._work(kind)
+                    prepared=result['project'];model.validate(prepared,self._root)
+                    if prepared['id']!=self._project['id']:raise ValueError('Préparation d’un autre morceau.')
+                    self._remember();self._project=prepared;self._reload();self._save(invalidate=False)
                 elif kind=='guides':self._guides()
                 else:self._analysis(kind,args)
             except Exception as error:
                 self._project=before;self._reload();self._save(invalidate=False)
                 raise RuntimeError(f'Arrêt à l’étape {index}/{len(steps)} ({kind}). Les étapes terminées sont conservées. {error}') from error
-        self._notice='Préparation terminée. Écoute le résultat, ajuste les propositions, puis valide le morceau.'
+        self._notice='Morceau préparé. Les améliorations sont visibles dans Pistes & structure ; écoute les passages signalés.'
     def _dialog(self,kind,**options):
         import webview
         return self._window.create_file_dialog(getattr(webview.FileDialog,kind),**options)
@@ -565,7 +588,7 @@ class Api:
             a.pause();self._op('Outil local : '+kind,lambda:advanced_task(self,kind,options));return
         if cmd=='analyze':
             kind=args.get('kind')
-            if kind not in ('grid','structure','separate','drumsep','lyrics','chords','drums'):raise ValueError('Analyse inconnue.')
+            if kind not in ('grid','structure','separate','drumsep','lyrics','lyricscorrect','chords','drums'):raise ValueError('Analyse inconnue.')
             self._op('Analyse locale : '+kind,lambda:self._analysis(kind,args));return
         if cmd=='reviewStructure':
             if not self._root or not any(t['role']=='source' for t in p['tracks']):raise ValueError('Importe le morceau original avant la vérification.')
@@ -590,6 +613,19 @@ class Api:
             from structure_review import record_decision
             record_decision(self._root,p['structureProposal'],'kept_current')
             p.pop('structureProposal',None);self._save(invalidate=False);self._notice='Parcours actuel conservé.';return
+        if cmd=='applyStructure':
+            if args.get('reviewed') is not True or not args.get('proposalID') or args['proposalID']!=(p.get('structureProposal') or {}).get('id'):
+                raise ValueError('Valide la proposition affichée dans Pistes & structure.')
+            def apply_structure():
+                _,result=self._work('structureApply')
+                prepared=result['project']
+                if prepared['id']!=self._project['id']:raise ValueError('La proposition appartient à un autre morceau.')
+                model.validate(prepared,self._root)
+                self._remember();self._project=prepared
+                for key in ('_root','_library','_mode','_rate','_pitch'):self._project.pop(key,None)
+                self._reload();self._save()
+                self._notice='Proposition enregistrée dans le morceau. Annuler permet de retrouver les repères précédents.'
+            a.pause();self._op('Application de la proposition',apply_structure);return
         if cmd=='exportStructure':
             if args.get('reviewed') is not True or not args.get('proposalID') or args['proposalID']!=(p.get('structureProposal') or {}).get('id'):
                 raise ValueError('Valide la proposition affichée dans Pistes & structure.')
@@ -652,7 +688,7 @@ class Api:
         self._remember()
         if cmd=='track':
             track=next(t for t in p['tracks'] if t['id']==args['id'])
-            if track['role'].startswith('guide_'):raise ValueError('Utilise Guidage pour régler cette piste.')
+            if track['role'].startswith('guide_') and any(k not in ('id','muted','solo') for k in args):raise ValueError('Utilise Guidage pour régler le contenu de cette piste.')
             for k,low,high in [('gain',0,2),('pan',-1,1),('offset',-120,43200)]:
                 if k in args:track[k]=model.number(args[k],low,high)
             for k in ('muted','solo'):

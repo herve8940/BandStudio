@@ -1,4 +1,4 @@
-from listening import included
+from listening import included, guide_audible
 """Portable audio timeline: the same block mixer is used offline and by PortAudio."""
 import copy
 import hashlib
@@ -64,13 +64,14 @@ class Audio:
     def mix(self,start,frames,include_guides=True,skip_guides_before=None):
         p=self.project;s=p['settings'];out=np.zeros((frames,2),np.float32)
         has_stems=any(t['role'] not in ('source','take') and not t['role'].startswith('guide_') for t in p['tracks'])
-        solo=any(t['solo'] for t in p['tracks'] if t['role']!='source' and not t['role'].startswith('guide_'))
+        solo=any(t['solo'] for t in p['tracks'] if t['role']!='source')
+        guide_solo=any(t['solo'] for t in p['tracks'] if t['role'].startswith('guide_'))
         for t in p['tracks']:
             role=t['role'];gain=t['gain'];pan=t['pan'];on=not t['muted'] and (not solo or t['solo'])
             if role.startswith('guide_'):
                 key={'guide_click':'click','guide_voice':'calls','guide_count':'count','guide_cue':'cues'}[role]
-                on=include_guides and s['regionCountEnabled' if role=='guide_count' else 'speakCues' if role=='guide_cue' else key+'Enabled'];gain=s.get(key+'Gain',s['callsGain']);pan=s['callsPan' if role=='guide_cue' else key+'Pan']
-            elif self.mode=='original':on=role=='source' and not t['muted']
+                on=on and include_guides and s['regionCountEnabled' if role=='guide_count' else 'speakCues' if role=='guide_cue' else key+'Enabled'];gain=s.get(key+'Gain',s['callsGain']);pan=s['callsPan' if role=='guide_cue' else key+'Pan']
+            elif self.mode=='original':on=role=='source' and not t['muted'] and not guide_solo
             elif role=='source':on=self.mode=='mix' and not has_stems and not t['muted'] and not solo
             else:on=on and included(role,self.mode)
             if role=='vocals' and any(x['role'].startswith('vocal_') for x in p['tracks']) and not t['solo']:on=False
@@ -88,12 +89,12 @@ class Audio:
             if n>0:out[a:a+n]+=x[:n]*pan_gain(gain,pan)
         for event in plan['events']:
             beat=(event['end']-event['time'])/self.rate
-            if s['countClick']:
+            if s['countClick'] and guide_audible(p,'guide_count'):
                 t=np.arange(int(SR*.035/self.rate))/SR;x=.65*np.sin(2*np.pi*(1760 if event['number']==1 else 1100)*t)*np.exp(-t*130*self.rate);place(np.column_stack((x,x)),event['time'],s['countGain'],s['countPan'])
             key='number:'+str(event['number'])
-            if s['countVoice'] and event['spoken'] and key in p['guideFiles']:
+            if s['countVoice'] and guide_audible(p,'guide_count') and event['spoken'] and key in p['guideFiles']:
                 x=pcm(converted(relative_file(self.root,p['guideFiles'][key]),self.root/'Cache/audio',self.engine,self.rate,0));place(x[:int(beat*SR*.92)],event['time'],s['countGain'],s['countPan'])
-        if length and include_call and s['callsEnabled'] and (s['countBars']>1 or not s['countVoice']):
+        if length and include_call and guide_audible(p,'guide_voice') and s['callsEnabled'] and (s['countBars']>1 or not s['countVoice']):
             section=next((x for x in p['sections'] if x['start']<=plan['target']+.1 and x['end']>plan['target'] and x.get('announce') is not False),None)
             key='call:'+section['id'] if section else ''
             if key in p['guideFiles']:

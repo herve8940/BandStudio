@@ -378,9 +378,11 @@ def test_available_chords_are_distinct_from_missing_timestamps_in_old_reviews(ma
         sources=[dict(publisher='Cifra Club',format='types',sectionNames=['Intro'])],anchors=0,
         warnings=['Aucune structure Internet exploitable trouvée : comparaison à partir des autres sources disponibles.'])
     page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:2})',p)
+    page.locator('#structureReviewSources summary').click()
     summary=page.locator('#structureReviewSourceSummary').inner_text()
     assert '2 grilles d’accords trouvées' in summary and 'exemples de passages' in summary
     assert '0 repère' not in summary
+    page.locator('.structure-review-notes summary').click()
     assert page.locator('#structureReviewWarnings').inner_text()=='Repères minutés non récupérés auprès de DRUMY.'
 
 
@@ -412,3 +414,80 @@ def test_hysteria_workspace_remains_readable_and_the_existing_navigation_is_unch
     if os.environ.get('BANDSTUDIO_REVIEW_SCREENSHOT'):
         page.set_viewport_size(dict(width=1440,height=1080))
         page.screenshot(path=os.environ['BANDSTUDIO_REVIEW_SCREENSHOT'],full_page=True)
+
+
+def local_edit(p):
+    p['sections'][1].update(locked=False,reviewed=False,origin='analysis')
+    p['structureProposal']=proposal(p)
+    p['structureProposal']['sections'][1]['name']='Solo proposé'
+    p['structureProposal']['changes']=[dict(id=str(uuid.uuid4()),kind='rename',time=p['sections'][1]['start'],
+                                           before=p['sections'][1]['name'],after='Solo proposé',reason='Test')]
+    return p
+
+
+def test_apply_locally_returns_saved_sections_without_export_or_early_guide_generation(tmp_path,monkeypatch):
+    import services,preparation
+    p=local_edit(project(tmp_path));p['guideKey']='old-guides'
+    p['preparation']=dict(rate=.8,pitch=2,mode='mix',fingerprint='old',validatedAt='yesterday')
+    p['structureProposal']['fingerprint']=review.fingerprint(p)
+    snap=tmp_path/'snapshot.json';out=tmp_path/'result.json';atomic(snap,p)
+    for module,name in ((services,'guides'),(services,'export_reaper'),(preparation,'export_validated')):
+        monkeypatch.setattr(module,name,lambda *a,**k:pytest.fail('Local application must not export'))
+    review.save_proposal(snap,out)
+    q=json.loads(out.read_text())['project']
+    assert q['sections'][1]['name']=='Solo proposé'
+    assert q['sections'][0]==p['sections'][0]  # Protected musical decisions.
+    assert q['tracks']==p['tracks'] and q['settings']==p['settings']
+    assert q['guideKey']=='' and 'structureProposal' not in q
+    assert q['preparation']==dict(rate=.8,pitch=2,mode='mix')
+    assert json.loads(snap.read_text())==p and not (tmp_path/'project.json').exists()
+    event=json.loads(next((tmp_path/'Learning/structure-reviews').glob('*.json')).read_text())
+    assert event['action']=='accepted_in_project'
+
+
+def test_stale_local_application_cannot_write_a_document_or_decision(tmp_path):
+    p=local_edit(project(tmp_path));p['sections'][1]['name']='New manual choice'
+    snap=tmp_path/'snapshot.json';out=tmp_path/'result.json';atomic(snap,p)
+    with pytest.raises(ValueError,match='changé'):review.save_proposal(snap,out)
+    assert not out.exists() and not (tmp_path/'Learning/structure-reviews').exists()
+
+
+def test_windows_local_application_is_saved_and_can_be_undone(tmp_path,monkeypatch):
+    from windows.host import Api
+    from windows import project as model
+    p=local_edit(project(tmp_path));before=copy.deepcopy(p)
+    host=Api(ENGINE,tmp_path/'library');host._root=tmp_path;host._project=p
+    monkeypatch.setattr(host,'_op',lambda title,work,**kw:work())
+    monkeypatch.setattr(host,'_state',lambda:None)
+    monkeypatch.setattr(host,'_reload',lambda:None)
+    def work(kind):
+        assert kind=='structureApply'
+        snap=tmp_path/'snapshot.json';out=tmp_path/'result.json';atomic(snap,host._project)
+        review.save_proposal(snap,out);return out,json.loads(out.read_text())
+    monkeypatch.setattr(host,'_work',work)
+    try:
+        host.command(dict(command='applyStructure',projectID=p['id'],args=dict(proposalID=p['structureProposal']['id'],reviewed=True)))
+        assert host._project['sections'][1]['name']=='Solo proposé'
+        assert json.loads((tmp_path/'project.json').read_text())['sections'][1]['name']=='Solo proposé'
+        assert host._history[-1]==before and not host._last_export
+        host.command(dict(command='undo',projectID=p['id'],args={}))
+        assert host._project['sections']==before['sections']
+    finally:host._audio.close()
+
+
+def test_local_apply_button_uses_preview_identity_and_existing_edit_guards(manual_page):
+    page,p=manual_page;p['structureProposal']=ui_proposal(p)
+    p['structureProposal']['audioEvidence']=['guitare','piano','basse','batterie','chant']
+    page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:2})',p)
+    page.locator('#structureReviewSources summary').click()
+    assert 'Pistes comparées : guitare, piano, basse, batterie, chant' in page.locator('#structureReviewSourceSummary').inner_text()
+    page.locator('#applyStructure').click()
+    assert page.evaluate('sent.at(-1)')==dict(command='applyStructure',projectID='manual',args=dict(proposalID='preview',reviewed=True))
+    assert page.locator('#exportStructure').is_visible()
+    page.locator('#notes').fill('Travail en cours')
+    assert page.locator('#applyStructure').is_disabled()
+    page.locator('#notes').fill('')
+    assert page.locator('#applyStructure').is_enabled()
+    p.pop('structureProposal')
+    page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:3})',p)
+    assert page.locator('#applyStructure').is_hidden()

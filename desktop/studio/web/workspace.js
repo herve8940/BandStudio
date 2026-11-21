@@ -3,6 +3,26 @@
 // Workspace navigation only: every edit continues through the existing project
 // commands, undo stack and protected-marker workflow.
 (() => {
+ // The toggle stays in the header so navigation can always be restored.
+ const rail=document.querySelector('.rail'),header=document.querySelector('.app > header');
+ rail.id='mainSidebar';
+ const headerStart=node('div','header-start'),title=header.firstElementChild;
+ header.prepend(headerStart);
+ const menu=button('',()=>setSidebar(!rail.hidden,true),'sidebar-toggle');menu.id='sidebarToggle';
+ menu.innerHTML='<svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><rect x="2" y="3" width="16" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M7 3v14" stroke="currentColor" stroke-width="1.5"/></svg><span>Menu</span>';
+ menu.setAttribute('aria-controls',rail.id);headerStart.append(menu,title);
+ const collapseMenu=button('‹ Réduire le menu',()=>{setSidebar(true,true);menu.focus();},'sidebar-collapse');collapseMenu.id='sidebarCollapse';
+ collapseMenu.setAttribute('aria-controls',rail.id);collapseMenu.setAttribute('aria-label','Réduire le menu');rail.prepend(collapseMenu);
+ function setSidebar(hidden,save=false){
+  rail.hidden=hidden;document.body.classList.toggle('sidebar-collapsed',hidden);
+  menu.setAttribute('aria-expanded',String(!hidden));menu.title=hidden?'Afficher le menu':'Réduire le menu';menu.setAttribute('aria-label',menu.title);menu.querySelector('span').textContent=menu.title;
+  collapseMenu.setAttribute('aria-expanded',String(!hidden));
+  if(save){try{localStorage.setItem('bandstudio.sidebarCollapsed',String(hidden));}catch{}}
+  requestAnimationFrame(redrawTimeline);
+ }
+ let sidebarHidden=false;
+ try{sidebarHidden=localStorage.getItem('bandstudio.sidebarCollapsed')==='true';}catch{}
+ setSidebar(sidebarHidden);
  const workspace=$('workspace'),arrangement=document.querySelector('.arrangement');
  let mode='tracks',filter='all',query='',compact=false,lastProject='';
  const heading=node('div','workspace-heading');
@@ -54,8 +74,7 @@
  arrangement.append(shortcuts);
 
  function color(name){
-  const value=name.toLocaleLowerCase('fr');
-  return /refrain|chorus/.test(value)?'#56cbbf':/couplet|verse/.test(value)?'#a894e5':/pont|bridge/.test(value)?'#e9b96b':/solo|instrument/.test(value)?'#7aa8ee':/break|arrêt/.test(value)?'#ee94a5':'#8b9eb7';
+  return sectionStyle(name).color;
  }
  function length(section,g){
   const pulses=Math.max(0,g.coordinate(section.end)-g.coordinate(section.start)),bars=pulses/g.meter;

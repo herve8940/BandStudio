@@ -38,6 +38,9 @@ def fingerprint(p):
     content = {k: p.get(k) for k in ('id', 'name', 'sections', 'cues', 'bpm', 'beats', 'settings',
                                     'lyrics', 'chords', 'drumHits', 'key', 'capo', 'notes', 'downbeats')}
     content['playback'] = playback(p)
+    guide_mix = sorted((t['role'], bool(t.get('muted')), bool(t.get('solo'))) for t in p['tracks']
+                       if t['role'].startswith('guide_') and (t.get('muted') or t.get('solo')))
+    if guide_mix:content['guideMix'] = guide_mix
     content['tracks'] = []
     for track in p['tracks']:
         if track['role'].startswith('guide_'):

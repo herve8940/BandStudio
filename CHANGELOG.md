@@ -1,5 +1,15 @@
 ## BandStudio · 2026-11-20 — rythme, accords et préparation
 
+## 2026-11-21 — Complete preparation and graphical section comparison
+
+- Extend Prepare all and the batch queue with installed drum/vocal sub-stem models, vocal-first lyrics, final automatic structure/chord review and guide regeneration; retain completed work and manual edits.
+- Show current/proposed and before/prepared timelines on a shared scale with bounded passage audition, coherent section colours, grouped menus and a collapsible sidebar.
+- Add account-free lyric-reference correction, conservative local alignment, manual lyric timing and audio-based chart selection with optional public ratings.
+- Refine section functions and missing-section evidence across available stems; automatic decisions remain separate from human review.
+- Preserve guide volume/mute/solo and sub-track mix settings; improve startup scheduling and spoken-word attacks.
+- Update French/English GitHub pages, website, visual tutorials and release notes. Extend Windows, macOS and Chromium/WebKit release checks.
+
+
 - Corrige les pulsations isolées faibles ou doublées au début d’une analyse lorsque la suite confirme un rythme régulier ; conserve les vrais changements de tempo, les levées et les grilles protégées. La correction s’applique à tous les titres compatibles, sans règle propre à un morceau.
 - Recherche les accords avec l’identité musicale plutôt que le nom de la chaîne vidéo, nettoie les indications HD et accepte les variantes de classement des artistes avec « The ». Réessaie les sources indisponibles d’un résultat partiel après cinq minutes, en conservant les grilles déjà trouvées.
 - Affiche explicitement l’absence d’amélioration ; distingue grilles d’accords, sections sans horaires et repères minutés. Une source minutée manquante n’est plus présentée comme une absence de tout résultat Internet.

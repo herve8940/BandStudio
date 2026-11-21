@@ -177,7 +177,7 @@ def analyze(audio, output, mode, engine, project_file=None, *, reanalyze=False):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument('command', choices=['structureMemory','structureReview','structureExport','validate','generate','vocalsplit','grid', 'structure', 'separate','drumsep','guides','decode','reaper','rpp','lyrics','chords','drums','midi','smartgrid','key','lyricsimport','lyricsexport','stemsexport','master','report','portable','sheet'])
+    p.add_argument('command', choices=['prepareReview','structureMemory','structureReview','structureApply','structureExport','validate','generate','vocalsplit','grid', 'structure', 'separate','drumsep','guides','decode','reaper','rpp','lyrics','lyricscorrect','chords','drums','midi','smartgrid','key','lyricsimport','lyricsexport','stemsexport','master','report','portable','sheet'])
     p.add_argument('--options',default='{}')
     p.add_argument('--options-file')
     p.add_argument('--input', default='')
@@ -226,9 +226,14 @@ def execute(a):
             from services import calibrate_grid
             write(a.output,calibrate_grid(json.loads(Path(a.output).read_text())))
         return
-    if a.command in ('structureMemory','structureReview','structureExport'):
-        from structure_review import propose, export_proposal,memory_proposal
+    if a.command=='prepareReview':
+        from structure_review import finish_preparation
+        finish_preparation(a.project,a.output,engine)
+        return
+    if a.command in ('structureMemory','structureReview','structureApply','structureExport'):
+        from structure_review import propose, export_proposal,memory_proposal,save_proposal
         if a.command=='structureMemory':write(a.output,dict(proposal=memory_proposal(json.loads(Path(a.project).read_text()))));return
+        if a.command=='structureApply':save_proposal(a.project,a.output);return
         if a.command=='structureReview':write(a.output,propose(json.loads(Path(a.project).read_text())))
         else:export_proposal(a.project,a.output,engine)
         return
@@ -245,11 +250,26 @@ def execute(a):
         else:export_validated(a.project,a.output,engine)
         return
     if a.command=='rpp':import_reaper(a.input,a.output,engine,a.project);return
-    if a.command=='lyrics':
-        print('Transcription locale du chant et alignement des mots…',flush=True)
-        import reacue_transcribe
-        with legacy_status(reacue_transcribe):
-            if reacue_transcribe.transcribe(a.input,a.output,lang=a.language)!=0:raise RuntimeError('La transcription des paroles a échoué.')
+    if a.command in ('lyrics','lyricscorrect'):
+        from lyrics_reference import correct, existing_transcription
+        project=json.loads(Path(a.project).read_text())
+        track=next((t for role in ('vocal_lead','vocals','source') for t in project['tracks'] if t['role']==role),{})
+        offset=track.get('offset',0)
+        if a.command=='lyrics':
+            print('Transcription locale du chant et alignement des mots…',flush=True)
+            import reacue_transcribe
+            with legacy_status(reacue_transcribe):
+                if reacue_transcribe.transcribe(a.input,a.output,lang=a.language,model_name=reacue_transcribe.selected_model())!=0:raise RuntimeError('La transcription des paroles a échoué.')
+            transcription=json.loads(Path(a.output).read_text())
+            for row in transcription.get('segments',[]):
+                row['manual']=any(x.get('manual') and x['start']<row['end']+offset and x['end']>row['t']+offset for x in project.get('lyrics',[]))
+        else:transcription=existing_transcription(project,offset,a.language)
+        print('Comparaison des références Internet et recalage sur le chant…',flush=True)
+        result=correct(project,transcription,a.input,Path(a.output).parent)
+        for row in result.get('segments',[]):
+            row['t']=row.get('t',row.get('start',0))+offset;row['end']+=offset
+            for word in row.get('words',[]):word['t']+=offset;word['end']+=offset
+        write(a.output,result)
         return
     if a.command=='chords':
         print('Recherche d’une grille Internet à partir du titre et de l’artiste…',flush=True)

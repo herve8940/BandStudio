@@ -98,7 +98,7 @@ extension StudioApp {
 
 
 extension StudioApp {
-    func creativeTask(_ args:[String:Any]) throws {
+    func creativeTask(_ args:[String:Any],completion:(()throws->Void)?=nil) throws {
         try requireIdle()
         guard let root=root,let kind=args["kind"] as? String,["generate","vocalsplit"].contains(kind) else{throw StudioError("Ouvre un morceau ou crée une session dans Prises.")}
         guard project.tracks.count+2<=128 else{throw StudioError("Le projet atteint sa limite de pistes.")}
@@ -119,14 +119,18 @@ extension StudioApp {
                 guard source.path.hasPrefix(result.deletingLastPathComponent().resolvingSymlinksInPath().path+"/") else{throw StudioError("Média généré hors de son dossier.")}
                 let file="Audio/"+UUID().uuidString+"-"+role+".wav";try FileManager.default.copyItem(at:source,to:root.appendingPathComponent(file))
                 let(duration,peaks)=try inspectAudio(root.appendingPathComponent(file))
-                tracks.append(Track(name:kind=="generate" ? "Accompagnement généré" : (role=="vocal_lead" ? "Chant principal" : "Chœurs"),file:file,role:role,duration:duration,offset:offset,gain:kind=="generate" ? 0.8 : sourceGain,pan:sourcePan,muted:kind=="generate" && self.project.duration>0,peaks:peaks))
+                var track=Track(name:kind=="generate" ? "Accompagnement généré" : (role=="vocal_lead" ? "Chant principal" : "Chœurs"),file:file,role:role,duration:duration,offset:offset,gain:kind=="generate" ? 0.8 : sourceGain,pan:sourcePan,muted:kind=="generate" ? self.project.duration>0 : (self.project.tracks.first(where:{$0.role=="vocals"})?.muted ?? false),peaks:peaks)
+                if kind=="vocalsplit",let old=self.project.tracks.first(where:{$0.role==role}){track.id=old.id;track.gain=old.gain;track.pan=old.pan;track.muted=old.muted;track.solo=old.solo}
+                tracks.append(track)
             }
             guard !tracks.isEmpty else{throw StudioError("Aucun résultat audio.")}
+            if kind=="vocalsplit",Set(tracks.map(\.role)) != Set(["vocal_lead","vocal_backing"]) {throw StudioError("Séparation du chant incomplète.")}
             self.remember()
             if kind=="vocalsplit"{self.project.tracks.removeAll{$0.role.hasPrefix("vocal_")}}
             self.project.tracks += tracks;try self.reloadAudio();self.audio.mode="mix";self.audio.applyMix();try self.changed()
             self.notice=kind=="generate" ? "Accompagnement créé. Sur un morceau existant, la nouvelle piste est muette : active son Solo pour l’écouter. Le tempo généré reste à analyser." : "Chant principal et chœurs proposés. La piste de chant complète reste disponible en Solo pour comparer."
             self.sendState()
+            if let completion=completion {try completion()}
         }
     }
 }

@@ -21,18 +21,16 @@ Windows packaging, speech, WebView2 and offline audio are exercised in CI; actua
 
 BandStudio grew from ReaCue. The [legacy REAPER documentation](README_REACUE.md) remains available. Code: [MIT](LICENSE). Optional models retain their own terms, including noncommercial restrictions for some structure/drum components: [third-party notices](THIRD_PARTY_NOTICES.md).
 
-## New · 19 November 2026
+## What’s new · 21 November 2026
 
-- Tracks / Structure workspace with search, filters, compact mode, coloured overview and selection zoom.
-- Conservative timing correction for compatible new SongFormer analyses. On 24 held-out recordings, F1 at ±0.5 s improved from 46.84 to 52.06 / 100. [Scope and evaluation (FR)](docs/CUE_CORRECTOR_TRAINING.md#résultats-du-lot-réservé-et-distribution).
-- Internet chord charts with separate sources, explicit chart selection and proposed beat alignment to check by ear.
+- **Prepare all**: instruments, detailed drums, lead/backing vocals, lyrics, online chords, final section review and guides in one workflow, using installed engines. Automatic improvements are saved; completed processing is reused.
+- **Before / Prepared**: aligned section timelines show added, renamed and adjusted sections. Select a change to audition it. The optional comparison-before-apply workflow remains available.
+- **Lyrics and chords**: free lyric references without an account, supported word corrections and local vocal alignment. Chord charts are compared with your recording; public ratings are only a secondary criterion when available. Manual edits and selected charts take priority.
+- **A clearer workspace**: grouped navigation, collapsible left menu, lyric tools together, and volume/mute/solo for guide tracks.
 
-- Zoom, move sections/cues by bar or beat, audition entrances and review markers one at a time.
-- Separate metronome, section-call, cue and count-in levels.
-- Edit chords and lyrics in the bar-based song sheet, move synchronized words, undo/redo and save a printable PDF where you choose.
-- Reuse analyses, preserve protected edits and follow the saved grid for count-ins, including pickups.
+![Section comparison in BandStudio, demonstration data](site/assets/structure-comparison.png)
 
-[Follow the step-by-step tutorial](docs/BANDSTUDIO_TUTORIAL_en.md). Import uses local audio files only; add several to the preparation queue and start it when ready.
+[Visual preparation tutorial](https://herve8940.github.io/BandStudio/tutorial.html) · [Song sheet → PDF](https://herve8940.github.io/BandStudio/song-sheet.html) · [Written guide](docs/BANDSTUDIO_TUTORIAL_en.md) · [Release notes FR / EN](docs/RELEASE_2026-11-21.md).
 
 ## Community & support
 
