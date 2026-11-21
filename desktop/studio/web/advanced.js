@@ -29,6 +29,14 @@ $('tapTempo').onclick=()=>{
 };
 $('exportStems').onclick=()=>studioTask('stemsexport',{format:$('stemFormat').value});
 $('exportLyrics').onclick=()=>studioTask('lyricsexport',{format:$('lyricFormat').value});
+$('manualLyrics').onclick=()=>{
+ if(!state.loaded||state.busy)return;
+ view('prompter');$('annotationKind').value='lyrics';renderAnnotations();
+ const lines=state.project.lyrics||[],at=transport.position||0;
+ const line=lines.find(x=>x.start<=at&&at<x.end)||lines.find(x=>x.start>=at)||lines.at(-1);
+ openAnnotation(line);$('wordEditor').open=!!line?.words?.length;
+};
+$('correctLyrics').onclick=()=>send('analyze',{kind:'lyricscorrect',model:'htdemucs',language:'auto',reanalyze:true});
 $('importLyrics').onclick=()=>$('lyricsFile').click();
 $('lyricsFile').onchange=async()=>{
  const f=$('lyricsFile').files?.[0];if(!f)return;
@@ -40,6 +48,7 @@ $('lyricsFile').onchange=async()=>{
 const oldFeatures=renderFeatures;
 renderFeatures=function(){oldFeatures();
  const p=state.project;
+ $('lyricsReferenceStatus').textContent=p.lyricsReference ? p.lyricsReference.message+' Sources : '+(p.lyricsReference.sources||[]).join(', ') : 'Recherche gratuite sans compte. Seuls le titre et l’artiste sont envoyés ; le recalage du chant reste local.';
  if(document.activeElement!==$('songKey'))$('songKey').value=p.key||'';
  if(document.activeElement!==$('capo'))$('capo').value=p.capo||0;
  $('lockGrid').checked=!!p.gridLocked;
@@ -54,7 +63,7 @@ renderFeatures=function(){oldFeatures();
  $('tempoDetail').textContent=detail;$('guideTempoDetail').textContent=detail;
 
  $('rhythmStatus').textContent=p.gridLocked?'Calage protégé · décoche la protection pour relancer la détection':p.analysisNote||'Calage modifiable';
- document.querySelectorAll('[data-studio-task],#exportStems,#exportLyrics,#importLyrics,#masterForm button,#markDownbeat,#tapTempo,#songKey,#capo,#lockGrid,#exportSheet,#startPhone').forEach(b=>b.disabled=!state.loaded||state.busy);
+ document.querySelectorAll('[data-studio-task],#exportStems,#exportLyrics,#importLyrics,#correctLyrics,#manualLyrics,#masterForm button,#markDownbeat,#tapTempo,#songKey,#capo,#lockGrid,#exportSheet,#startPhone').forEach(b=>b.disabled=!state.loaded||state.busy);
 };
 const originalStage=renderStage;
 renderStage=function(){originalStage();

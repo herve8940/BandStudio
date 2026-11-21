@@ -13,76 +13,134 @@ import uuid
 import numpy as np
 from preparation import media_file
 
-VERSION=1
+VERSION=2
+HARMONIC_ROLES=('guitar','piano','other')
+VOICE_ROLES=('vocals','vocal_lead','vocal_backing')
+DRUM_ROLES=('drums','drum_kick','drum_snare','drum_toms','drum_cymbals')
+ROLES=HARMONIC_ROLES+('bass',)+VOICE_ROLES+DRUM_ROLES+('source',)
+ROLE_LABELS=dict(guitar='guitare',piano='piano',other='autres instruments',bass='basse',
+                vocals='chant',vocal_lead='chant principal',vocal_backing='chœurs',drums='batterie',
+                drum_kick='grosse caisse',drum_snare='caisse claire',drum_toms='toms',drum_cymbals='cymbales',source='mix original')
+
+
+def track_features(path,offset,edges,bass=False):
+    """Small descriptors per half pulse, streamed in chunks, before mixer gains.
+
+    Sum channel powers: an out-of-phase stereo stem must not disappear when
+    analysed. Counts also distinguish missing media coverage from real silence.
+    """
+    from scipy.signal import resample_poly,stft
+    import soundfile as sf
+    n=len(edges)-1;sr=8000;size=2048;hop=256
+    chroma=np.zeros((n,12));texture=np.zeros((n,6));power=np.zeros(n);counts=np.zeros(n)
+    with sf.SoundFile(path) as stream:
+        for start in range(0,math.ceil(stream.frames/stream.samplerate),20):
+            begin=max(0,start-.3);stream.seek(round(begin*stream.samplerate))
+            data=stream.read(round(20.6*stream.samplerate),dtype='float32',always_2d=True)
+            divisor=math.gcd(sr,stream.samplerate)
+            data=resample_poly(data,sr//divisor,stream.samplerate//divisor,axis=0)
+            if len(data)<size:data=np.pad(data,((0,size-len(data)),(0,0)))
+            f,t,z=stft(data.T,sr,nperseg=size,noverlap=size-hop)
+            mag=np.sqrt(np.mean(np.abs(z)**2,axis=0));local=t+begin
+            bins=np.searchsorted(edges,local+offset,side='right')-1
+            keep=(local>=start)&(local<start+20)&(local<stream.frames/stream.samplerate)&(bins>=0)&(bins<n)
+            bins=bins[keep];mag=mag[:,keep]
+            counts+=np.bincount(bins,minlength=n)
+            power+=np.bincount(bins,weights=np.sum(mag**2,axis=0),minlength=n)
+            valid=(f>=45)&(f<=(700 if bass else 2600))
+            freq=f[valid];m=mag[valid]
+            peaks=(m>np.roll(m,1,axis=0))&(m>=np.roll(m,-1,axis=0));peaks[[0,-1]]=False
+            midi=np.rint(69+12*np.log2(freq/440)).astype(int)%12
+            weighted=m*peaks*(220/freq[:,None])**.6
+            for pc in range(12):chroma[:,pc]+=np.bincount(bins,weights=weighted[midi==pc].sum(axis=0),minlength=n)
+            for i,(lo,hi) in enumerate(zip((0,100,200,400,800,1600),(100,200,400,800,1600,4001))):
+                texture[:,i]+=np.bincount(bins,weights=np.sum(mag[(f>=lo)&(f<hi)]**2,axis=0),minlength=n)
+    return dict(chroma=chroma/np.maximum(counts[:,None],1),texture=texture/np.maximum(counts[:,None],1),
+                power=power/np.maximum(counts,1),coverage=counts>0)
+
+
+def normalized_track(raw):
+    energy=np.sqrt(raw['power']);scale=max(float(np.percentile(energy,90)),1e-5)
+    chroma=raw['chroma']/np.maximum(np.linalg.norm(raw['chroma'],axis=1,keepdims=True),1e-9)
+    texture=np.sqrt(raw['texture']);texture/=np.maximum(np.linalg.norm(texture,axis=1,keepdims=True),1e-9)
+    return dict(chroma=chroma,texture=texture,energy=np.clip(energy/scale,0,2),
+                coverage=raw['coverage'],level=np.array(scale))
 
 
 def describe(project):
     from services import beat_grid
-    from scipy.signal import resample_poly,stft
     beats,length=beat_grid(project)
     if len(beats)<4:return None
-    edges=np.unique(np.r_[beats,[(a+b)/2 for a,b in zip(beats,beats[1:])],length])
+    edges=np.unique(np.r_[0,beats,[(a+b)/2 for a,b in zip(beats,beats[1:])],length])
     edges=edges[(edges>=0)&(edges<=length)];middle=(edges[1:]+edges[:-1])/2
     if len(middle)<16 or len(middle)>30000:return None
-    root=Path(project['_root']);tracks=project['tracks']
-    selected={}
-    for key,roles in [('harmony',('guitar','other','piano','source')),('bass',('bass',)),('voice',('vocals',)),('drums',('drums',))]:
-        selected[key]=next((t for role in roles for t in tracks if t['role']==role),None)
-    paths={k:media_file(root,t['file']) for k,t in selected.items() if t}
-    signature=dict(version=VERSION,edges=edges.tolist(),files=[(k,str(p),p.stat().st_size,p.stat().st_mtime_ns,selected[k].get('offset',0)) for k,p in paths.items()])
+    root=Path(project['_root']);selected=[];seen=set();incomplete=False
+    harmonic=any(t['role'] in HARMONIC_ROLES for t in project['tracks'])
+    for t in project['tracks']:
+        role=t['role']
+        if role not in ROLES or (role=='source' and harmonic):continue
+        try:
+            path=media_file(root,t['file']);stat=path.stat();offset=float(t.get('offset',0))
+        except (OSError,ValueError):incomplete=True;continue
+        key=(str(path),offset)
+        if key in seen:continue  # One physical file is never two independent votes.
+        seen.add(key);selected.append((role,path,offset,stat.st_size,stat.st_mtime_ns))
+    signature=dict(version=VERSION,edges=edges.tolist(),files=[(r,str(p),o,s,m) for r,p,o,s,m in selected])
     digest=hashlib.sha256(json.dumps(signature,sort_keys=True).encode()).hexdigest()
     cache=root/'References'/('phrases-'+digest+'.npz')
     try:
-        with np.load(cache,allow_pickle=False) as saved:
-            result={k:saved[k] for k in saved.files}
+        with np.load(cache,allow_pickle=False) as saved:result={k:saved[k] for k in saved.files}
         if np.array_equal(result['edges'],edges) and all(np.isfinite(v).all() for v in result.values()):return result
     except (OSError,ValueError,KeyError):pass
-    import soundfile as sf
-    result=dict(edges=edges,middle=middle,available=np.array([int(selected[k] is not None) for k in ('bass','voice','drums')]))
-    n=len(middle);sr=8000;size=2048;hop=256
-    for key,path in paths.items():
-        chroma=np.zeros((n,12));texture=np.zeros((n,6));energy=np.zeros(n);counts=np.zeros(n)
-        with sf.SoundFile(path) as stream:
-            for start in range(0,math.ceil(stream.frames/stream.samplerate),20):
-                begin=max(0,start-.3);stream.seek(round(begin*stream.samplerate))
-                data=stream.read(round(20.6*stream.samplerate),dtype='float32',always_2d=True).mean(axis=1)
-                divisor=math.gcd(sr,stream.samplerate);data=resample_poly(data,sr//divisor,stream.samplerate//divisor)
-                if len(data)<size:data=np.pad(data,(0,size-len(data)))
-                f,t,z=stft(data,sr,nperseg=size,noverlap=size-hop)
-                mag=np.abs(z);local=t+begin;global_time=local+selected[key].get('offset',0)
-                bins=np.searchsorted(edges,global_time,side='right')-1
-                keep=(local>=start)&(local<start+20)&(bins>=0)&(bins<n)
-                bins=bins[keep];mag=mag[:,keep]
-                counts+=np.bincount(bins,minlength=n)
-                energy+=np.bincount(bins,weights=np.sum(mag**2,axis=0),minlength=n)
-                if key not in ('harmony','bass'):continue
-                valid=(f>=45)&(f<=(700 if key=='bass' else 2600))
-                freq=f[valid];m=mag[valid]
-                peaks=(m>np.roll(m,1,axis=0))&(m>=np.roll(m,-1,axis=0));peaks[[0,-1]]=False
-                midi=np.rint(69+12*np.log2(freq/440)).astype(int)%12
-                weighted=m*peaks*(220/freq[:,None])**.6
-                for pc in range(12):chroma[:,pc]+=np.bincount(bins,weights=weighted[midi==pc].sum(axis=0),minlength=n)
-                for i,(lo,hi) in enumerate(zip((0,100,200,400,800,1600),(100,200,400,800,1600,4001))):
-                    texture[:,i]+=np.bincount(bins,weights=np.sum(mag[(f>=lo)&(f<hi)]**2,axis=0),minlength=n)
-        energy=np.sqrt(energy/np.maximum(counts,1));energy=np.clip(energy/max(float(np.percentile(energy,90)),1e-9),0,2)
-        if key in ('harmony','bass'):
-            chroma/=np.maximum(np.linalg.norm(chroma,axis=1,keepdims=True),1e-9)
-            result[key]=chroma
-            if key=='harmony':
-                texture=np.sqrt(texture/np.maximum(counts[:,None],1));texture/=np.maximum(np.linalg.norm(texture,axis=1,keepdims=True),1e-9)
-                result['texture']=texture
-        result[key+'Energy']=energy
-    for key in ('bass','voice','drums'):
-        if key+'Energy' not in result:result[key+'Energy']=np.zeros(n)
-    if 'bass' not in result:result['bass']=np.zeros((n,12))
+    raw={}
+    for role,path,offset,_,_ in selected:
+        try:track=track_features(path,offset,edges,bass=role=='bass')
+        except (OSError,ValueError,RuntimeError):incomplete=True;continue
+        if not all(np.isfinite(v).all() for v in track.values()):incomplete=True;continue
+        if role in raw:
+            for key in ('chroma','texture','power'):raw[role][key]+=track[key]
+            raw[role]['coverage']|=track['coverage']
+        else:raw[role]=track
+    # An unreadable optional stem must not disable every other instrument.
+    if not any(r in raw for r in HARMONIC_ROLES+('source',)):
+        source=next((t for t in project['tracks'] if t['role']=='source'),None)
+        if source:
+            try:
+                path=media_file(root,source['file']);offset=source.get('offset',0)
+                if (str(path),offset) not in seen:raw['source']=track_features(path,offset,edges)
+            except (OSError,ValueError,RuntimeError):pass
+    if not raw:return None
+    result=dict(edges=edges,middle=middle,roles=np.array([r in raw for r in ROLES]),
+                available=np.array(['bass' in raw,any(r in raw for r in VOICE_ROLES),any(r in raw for r in DRUM_ROLES)]))
+    for role,track in raw.items():
+        for key,value in normalized_track(track).items():result[role+'_'+key]=value
+    families=dict(harmony=[r for r in HARMONIC_ROLES if r in raw] or ['source'],bass=['bass'],
+                  voice=['vocals'] if 'vocals' in raw else list(VOICE_ROLES[1:]),
+                  drums=['drums'] if 'drums' in raw else list(DRUM_ROLES[1:]))
+    for family,roles in families.items():
+        tracks=[raw[r] for r in roles if r in raw]
+        if tracks:
+            combined={k:sum(t[k] for t in tracks) for k in ('chroma','texture','power')}
+            combined['coverage']=np.logical_or.reduce([t['coverage'] for t in tracks])
+            values=normalized_track(combined)
+        else:
+            values=dict(chroma=np.zeros((len(middle),12)),texture=np.zeros((len(middle),6)),energy=np.zeros(len(middle)),coverage=np.zeros(len(middle),bool))
+        result[family+'Energy']=values['energy'];result[family+'Coverage']=values['coverage']
+        if family in ('harmony','bass'):result[family]=values['chroma']
+        if family=='harmony':result['texture']=values['texture']
     cache.parent.mkdir(parents=True,exist_ok=True)
-    # Cache is optional and contains only small descriptors, never model labels.
-    temp=cache.with_name(cache.name+'.'+uuid.uuid4().hex+'.tmp')
-    try:
-        with temp.open('wb') as stream:np.savez_compressed(stream,**result)
-        temp.replace(cache)
-    finally:temp.unlink(missing_ok=True)
+    # A broken/temporarily missing stem should be retried on the next review.
+    if not incomplete:
+        temp=cache.with_name(cache.name+'.'+uuid.uuid4().hex+'.tmp')
+        try:
+            with temp.open('wb') as stream:np.savez_compressed(stream,**result)
+            temp.replace(cache)
+        finally:temp.unlink(missing_ok=True)
     return result
+
+
+def used_roles(features):
+    return [r for r,present in zip(ROLES,features.get('roles',[])) if present]
 
 
 def resampled(values,count):
@@ -104,9 +162,36 @@ def compare(features,a,b,min_cells=16):
     # Different lyrics/levels are normal in repeated verses. Compare the share
     # of sung frames, not the singer's exact amplitude contour.
     result['voiceDifference']=abs(float(np.mean(values('voiceEnergy',ia)>.2))-float(np.mean(values('voiceEnergy',ib)>.2)))
-    result['usable']=bool(features['available'].all() and np.mean(features['harmonyEnergy'][ia])>.08 and np.mean(features['harmonyEnergy'][ib])>.08)
+    available=features['available']
+    result['usable']=bool(available[1] and (available[0] or available[2]) and
+                          np.mean(features['harmonyEnergy'][ia])>.08 and np.mean(features['harmonyEnergy'][ib])>.08)
+    # Missing stems cannot veto the evidence from present instruments, but an
+    # unread/offset region is not evidence for matching silence.
+    for index,key in ((0,'bass'),(2,'drums')):
+        if not available[index]:result['bass' if key=='bass' else 'drumsEnergy']=1.
+        elif key+'Coverage' in features:
+            if min(features[key+'Coverage'][ia].mean(),features[key+'Coverage'][ib].mean())<.9:result['usable']=False
+            if max(features[key+'Energy'][ia].mean(),features[key+'Energy'][ib].mean())<.08:
+                result['bass' if key=='bass' else 'drumsEnergy']=1.
+    for key in ('voiceCoverage','harmonyCoverage'):
+        if key in features and min(features[key][ia].mean(),features[key][ib].mean())<.9:result['usable']=False
+    checks={};roles=used_roles(features)
+    harmonic_level=max((float(features[r+'_level']) for r in roles if r in HARMONIC_ROLES),default=0)
+    for role in roles:
+        if role not in HARMONIC_ROLES+VOICE_ROLES[1:]+DRUM_ROLES[1:]:continue
+        if role in HARMONIC_ROLES and float(features[role+'_level'])<max(1e-5,.12*harmonic_level):continue
+        x,y=values(role+'_energy',ia),values(role+'_energy',ib)
+        if max(x.mean(),y.mean())<.08:continue
+        covered=min(features[role+'_coverage'][ia].mean(),features[role+'_coverage'][ib].mean())>=.9
+        activity=abs(float(np.mean(x>.2)-np.mean(y>.2)))
+        if role in HARMONIC_ROLES:
+            checks[role]=bool(covered and activity<=.25 and cosine(role+'_chroma')>=.80 and cosine(role+'_texture')>=.85)
+        elif role in DRUM_ROLES:
+            checks[role]=bool(covered and activity<=.30 and cosine(role+'_energy')>=.70)
+        else:checks[role]=bool(covered and activity<=.25)
+    result['stemChecks']=checks
     result['matches']=bool(result['usable'] and result['harmony']>=.90 and result['bass']>=.85 and result['texture']>=.93
-                           and result['drumsEnergy']>=.85 and result['voiceDifference']<=.18)
+                           and result['drumsEnergy']>=.85 and result['voiceDifference']<=.18 and all(checks.values()))
     return result
 
 

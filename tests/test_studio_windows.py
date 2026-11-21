@@ -143,8 +143,9 @@ def test_prepare_all_runs_serially_and_preserves_completed_steps(tmp_path,monkey
 
 def test_prepare_plan_preserves_existing_stems_and_locked_grid(tmp_path):
     api=Api(tmp_path/'no-components',tmp_path/'library');api._project=fixture(tmp_path/'song.bandstudio');api._project['gridLocked']=True
-    assert api._plan()==['key','chords','guides']
-    api._project['key']='Dm';assert api._plan()==['chords','guides']
+    # Chord discovery/alignment belongs to the final review after the sections.
+    assert api._plan()==['key','prepareReview','guides']
+    api._project['key']='Dm';assert api._plan()==['prepareReview','guides']
     assert not {'separate','grid','smartgrid'}.intersection(api._plan())
 
 

@@ -263,14 +263,14 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         }
     }
     func runAnalysis(_ kind:String,model:String,language:String="auto",quality:String="standard",reanalyze:Bool=false,chordSource:String="",completion:(() throws -> Void)?=nil) throws {
-        guard ["grid","structure","separate","drumsep","lyrics","chords","drums"].contains(kind),["htdemucs","htdemucs_6s","htdemucs_ft"].contains(model) else {throw StudioError("Traitement inconnu.")}
+        guard ["grid","structure","separate","drumsep","lyrics","lyricscorrect","chords","drums"].contains(kind),["htdemucs","htdemucs_6s","htdemucs_ft"].contains(model) else {throw StudioError("Traitement inconnu.")}
         if !reanalyze && project.analysisDone(kind) {notice="Analyse déjà disponible et résultat protégé. Les corrections et validations sont conservées.";sendState();try completion?();return}
         if kind == "grid" && project.gridLocked {throw StudioError("Le calage est protégé. Décoche « Protéger le calage » dans Click & cues avant de relancer.")}
-        let desired=kind == "lyrics" ? "vocals" : (["drums","drumsep"].contains(kind) ? "drums" : "source")
+        let desired=["lyrics","lyricscorrect"].contains(kind) ? (project.tracks.contains{$0.role=="vocal_lead"} ? "vocal_lead" : "vocals") : (["drums","drumsep"].contains(kind) ? "drums" : "source")
         guard let root=root,let source=project.tracks.first(where:{$0.role==desired}) ?? (["drums","drumsep"].contains(kind) ? nil : project.tracks.first(where:{$0.role == "source"})) else {throw StudioError(["drums","drumsep"].contains(kind) ? "Sépare d’abord une piste batterie." : "Importe d’abord un morceau.")}
         if !chordSource.isEmpty && (kind != "chords" || project.chordReference?.sources.contains(where:{$0.url==chordSource}) != true) {throw StudioError("Choisis une grille trouvée pour ce morceau.")}
         try startJob(kind,input:project.audioURL(source,root:root),arguments:["--model",model,"--language",language,"--quality",quality]+(reanalyze ? ["--reanalyze"] : [])+(chordSource.isEmpty ? [] : ["--chord-source",chordSource])) {result in
-            if ["lyrics","chords","drums"].contains(kind) {try self.applyTextAnalysis(kind,result:result)}
+            if ["lyrics","lyricscorrect","chords","drums"].contains(kind) {try self.applyTextAnalysis(kind == "lyricscorrect" ? "lyrics" : kind,result:result)}
             else{try self.applyAnalysis(kind,result:result,reanalyze:reanalyze);self.notice="Analyse terminée. Vérifie les nouvelles propositions à l’écoute."}
             try completion?()
         }
@@ -296,9 +296,13 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 let relative="Audio/"+UUID().uuidString+"-"+role+".wav"
                 try FileManager.default.copyItem(at:source,to:root.appendingPathComponent(relative))
                 let (duration,peaks)=try inspectAudio(root.appendingPathComponent(relative))
-                newTracks.append(Track(name:names[role] ?? role,file:relative,role:role,duration:duration,offset:kind == "drumsep" ? (project.tracks.first(where:{$0.role=="drums"})?.offset ?? 0) : 0,peaks:peaks))
+                var track=Track(name:names[role] ?? role,file:relative,role:role,duration:duration,offset:kind == "drumsep" ? (project.tracks.first(where:{$0.role=="drums"})?.offset ?? 0) : 0,peaks:peaks)
+                if kind=="drumsep",let parent=project.tracks.first(where:{$0.role=="drums"}){track.gain=parent.gain;track.pan=parent.pan;track.muted=parent.muted}
+                if kind=="drumsep",let old=project.tracks.first(where:{$0.role==role}){track.id=old.id;track.gain=old.gain;track.pan=old.pan;track.muted=old.muted;track.solo=old.solo}
+                newTracks.append(track)
             }
             guard !newTracks.isEmpty else{throw StudioError("Aucune piste produite.")}
+            if kind=="drumsep",Set(newTracks.map(\.role)) != Set(["drum_kick","drum_snare","drum_toms","drum_cymbals"]) {throw StudioError("Séparation de batterie incomplète.")}
             if kind == "drumsep" {project.tracks=project.tracks.filter{!$0.role.hasPrefix("drum_")}+newTracks}
             else {project.tracks=project.tracks.filter{$0.role == "source" || $0.role == "take" || $0.role.hasPrefix("guide_")}+newTracks}
             try audio.load(project,root:root);audio.mode="mix";audio.applyMix()
@@ -395,7 +399,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 let r=try number(args,"value",range:0.5...1.5);let pos=audio.current(),playing=audio.running
                 audio.pause();audio.position=pos;audio.rate=Float(r);try savePlayback();if playing{try audio.play()}
             case "pitch":
-                let value=try number(args,"value",range:-12...12);audio.pitch=Float(value);audio.stretch.pitch=Float(value)*100;try savePlayback()
+                let value=try number(args,"value",range:-12...12);audio.pitch=Float(value);audio.configureTimeEffects();try savePlayback()
             case "mode":
                 guard let mode=args["value"] as? String,Listening.valid(mode) else{return}
                 if mode == "original" && !project.tracks.contains(where:{$0.role == "source"}){throw StudioError("Ce projet ne contient pas de piste originale.")}
@@ -477,6 +481,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 if let root=root {try StudioLearning.keepStructure(root,proposal)}
                 project.structureProposal=nil;try changed(invalidate:false);notice="Parcours actuel conservé."
             case "exportStructure":try exportStructure(args)
+            case "applyStructure":try applyStructure(args)
             case "reaper":try exportRPP(open:args["open"] as? Bool ?? false)
             case "showExport":if !lastExport.isEmpty{NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath:lastExport)])}
             case "annotation":try annotation(args)

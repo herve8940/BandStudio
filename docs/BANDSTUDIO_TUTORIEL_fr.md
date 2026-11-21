@@ -2,21 +2,23 @@
 
 [English](BANDSTUDIO_TUTORIAL_en.md) · [Installation et guide](BANDSTUDIO.md) · [Site](https://herve8940.github.io/BandStudio/)
 
-Mis à jour le 20 novembre 2026. Ce tutoriel concerne l’application autonome BandStudio sur macOS et Windows.
+Mis à jour le 21 novembre 2026. Ce tutoriel concerne l’application autonome BandStudio sur macOS et Windows.
 
 **Pour débuter : [ouvrir le tutoriel visuel en 8 étapes](https://herve8940.github.io/BandStudio/tutoriel.html)** — import, tempo, premier « 1 », régions, guides, validation et export REAPER. Utilise les boutons Précédent et Suivant pour avancer à ton rythme.
 
 ## 1. Importer et préparer
 
-Ouvre un fichier audio de ton ordinateur. Pour plusieurs morceaux, utilise **File de préparation**, ajoute les fichiers puis clique sur **Démarrer la file**. La file ne démarre jamais seule après ouverture de l’application.
+Ouvre un fichier audio de ton ordinateur. Pour plusieurs morceaux, utilise **Préparer une série**, ajoute les fichiers puis clique sur **Démarrer la file**. La file ne démarre jamais seule après ouverture de l’application.
 
-Dans **Séparer & analyser**, choisis les moteurs installés ou **Tout préparer**. Les résultats déjà présents sont réutilisés et les corrections protégées sont conservées. Les analyses locales disposent d’un cache pour éviter de refaire un calcul identique ; une modification de l’audio, du modèle ou des paramètres peut nécessiter un nouveau calcul.
+Dans **Pistes & structure**, clique sur **Tout préparer**. Les moteurs installés enchaînent instruments, batterie détaillée, chant principal/chœurs, tempo, sections, tonalité et paroles. La révision finale cherche les accords Internet, compare les pistes et les références, puis enregistre les améliorations automatiques avant de générer le click et les annonces. Les moteurs manquants s’installent dans **Réglages → Analyses locales** ; **Préparation détaillée** permet de relancer une étape séparément.
+
+Le résultat affiche **Ton morceau, préparé** et les frises **Avant / Préparée**. Clique sur une modification pour voir son détail, **Cadrer le changement** pour zoomer les deux frises et **Écouter ce passage** pour vérifier l’entrée. Les calculs terminés sont réutilisés après une interruption ou un deuxième clic ; tes corrections protégées restent conservées. Une préparation automatique ne coche pas une validation humaine. Les passages incertains restent signalés. **Exporter le morceau** ouvre la validation finale dans **Projet REAPER**.
 
 À l’import, BandStudio tente de caler la grille avant de préparer les guides. Les paramètres de calage d’un autre morceau ne sont pas repris. Une indication « à vérifier » signifie que l’écoute reste nécessaire, particulièrement pour le premier « 1 ».
 
 ## 2. Vérifier le premier temps et le décompte
 
-Ouvre **Click & cues** et écoute le début avec le métronome. Vérifie le premier temps, le nombre de temps par mesure et le mode de grille : détectée pour conserver les variations du morceau, fixe si tu imposes un tempo constant. Corrige les paramètres si le « 1 » ne tombe pas au bon endroit.
+Ouvre **Click & repères** et écoute le début avec le métronome. Vérifie le premier temps, le nombre de temps par mesure et le mode de grille : détectée pour conserver les variations du morceau, fixe si tu imposes un tempo constant. Corrige les paramètres si le « 1 » ne tombe pas au bon endroit.
 
 Le décompte suit la grille enregistrée, y compris ses variations. Il peut commencer pendant le silence initial et accompagner une levée ; l’audio du morceau reste entier. Écoute également une reprise au milieu du morceau. Si une intro automatique a été recalée, vérifie son départ ; les sections corrigées ou validées restent protégées.
 
@@ -26,7 +28,7 @@ Les nouvelles analyses corrigent les détections isolées faibles ou doublées d
 
 Dans **Pistes & structure**, choisis la vue **Pistes** pour le mix ou **Structure** pour parcourir les sections. La vue Structure affiche leur départ, leur fin, leur longueur et leur validation ; **Modifier** ouvre la section et **↻** la met en boucle. La vue d’ensemble colorée permet de rejoindre un passage.
 
-La recherche filtre la vue courante. Dans Pistes, filtre **Instruments**, **Original** ou **Guides** ; **Compact** réduit la hauteur des pistes et **Masquer l’inspecteur** libère la largeur. Ces commandes ne changent pas le mix.
+La recherche filtre la vue courante. Dans Pistes, filtre **Instruments**, **Original** ou **Guides** ; **Compact** réduit la hauteur des pistes et **Masquer l’inspecteur** libère la largeur. **Réduire le menu** replie la colonne de gauche ; **Afficher le menu** la rétablit. Ces commandes ne changent pas le mix.
 
 Pour affiner un repère :
 
@@ -41,7 +43,7 @@ Une frontière commune conserve la continuité des deux sections. Les correction
 
 Dans le même écran **Pistes & structure**, clique sur **Vérifier et compléter** pour comparer les sources disponibles avec l’audio et tes repères. Les étapes de préparation manquantes peuvent prendre du temps. Les sections et accords proposés ne remplacent ta préparation qu’après validation.
 
-1. Lis le récapitulatif et ouvre **Sources consultées**. Une grille d’accords peut être disponible même si les repères minutés de DRUMY n’ont pas été récupérés. Une liste de sections sans horaires n’indique pas où elles commencent dans ton enregistrement.
+1. Compare les frises **Actuelle / Proposée**, lis le récapitulatif et ouvre **Sources consultées** si nécessaire. Contrairement au résultat de **Tout préparer**, cette proposition attend **Appliquer au projet** ou la validation/export. Une grille d’accords peut être disponible même si les repères minutés de DRUMY n’ont pas été récupérés. Une liste de sections sans horaires n’indique pas où elles commencent dans ton enregistrement.
 2. Clique sur **Écouter les passages** lorsqu’il y en a. Vérifie les accords, leurs positions et les entrées proposées. « 0 passages à écouter » ne certifie pas tout le morceau ; écoute aussi le mix, la grille et les guides.
 3. Si tu préfères ta préparation, clique sur **Garder le parcours actuel**. Si la proposition convient et que l’écoute finale est faite, **Valider et exporter vers REAPER** applique la proposition et crée le projet en une action. **Afficher l’export** permet de retrouver le fichier `.rpp`.
 
@@ -51,7 +53,7 @@ Les nouvelles analyses SongFormer compatibles bénéficient d’un ajustement fi
 
 ## 4. Doser les guides
 
-Dans **Pistes & structure**, ouvre **Mix des guides** pour afficher les réglages. Les quatre niveaux **Métronome**, **Appels**, **Cues** et **Décompte** se règlent séparément. **Muet** coupe ou rétablit le niveau de chaque guide. Modifier un volume ou cocher la validation d’un repère ne relance pas une analyse IA ni la fabrication des guides. Modifier le placement d’un repère peut demander leur régénération.
+Dans **Pistes & structure**, les pistes **Métronome**, **Appels de régions**, **Cues** et **Décompte des régions** ont leurs commandes **M** (mute), **S** (solo) et volume, comme les instruments. **Mix des guides** rassemble leurs réglages. Le solo tient compte des autres pistes ; il ne laisse pas passer une voix de décompte isolée par erreur. Modifier un volume ou cocher la validation d’un repère ne relance pas une analyse IA ni la fabrication des guides. Modifier le placement d’un repère peut demander leur régénération.
 
 ## 5. Corriger la fiche du morceau
 
@@ -63,9 +65,10 @@ Ouvre **Fiche morceau**. La fiche rassemble l’identité du morceau, la pochett
 - Utilise les champs **Mesure de début**, **Temps**, **Mesure de fin**, **Temps**, les boutons de déplacement ou **Placer au curseur**. Déplacer une ligne conserve les décalages de ses mots synchronisés.
 - **+ Accord** et **+ Paroles** ajoutent une annotation. Lorsqu’un accord en remplace d’autres sur une portion, les parties situées en dehors de cette portion restent conservées.
 - **Importer des paroles** permet d’utiliser ton fichier. **Annuler** et **Rétablir** permettent de revenir sur les corrections.
-- Dans **Séparer & analyser** ou **Paroles & accords**, lance la recherche de grille Internet. Vérifie d’abord le titre et l’artiste. Les sources trouvées restent séparées : **Ouvrir la grille** affiche la page d’origine, **Utiliser cette grille** choisit celle à caler. La recherche nécessite Internet et certaines sources peuvent être indisponibles.
+- Dans **Préparation détaillée** ou **Paroles & accords**, lance la recherche de grille Internet. Vérifie d’abord le titre et l’artiste. Les sources trouvées restent séparées : **Ouvrir la grille** affiche la page d’origine, **Utiliser cette grille** choisit celle à caler. La recherche nécessite Internet et certaines sources peuvent être indisponibles.
 - Les accords de la source sont proposés sur la grille rythmique du morceau. Écoute et corrige leur placement ; un calage proposé ne garantit ni la bonne version ni le bon accord. **Caler sur le temps / contretemps** aide au placement. Les corrections manuelles restent conservées.
-- **Autres sources sur Internet** et les recherches de paroles ouvrent le navigateur. Les paroles de ces sites ne sont pas importées automatiquement.
+- **Tout préparer** recherche aussi des références de paroles gratuites, sans compte, puis corrige les mots suffisamment étayés et les recale sur le chant avec les ressources locales disponibles. Pour relancer cette étape : **Paroles & accords → Corriger ou importer les paroles → Corriger avec Internet et recaler**. Une référence incompatible, un alignement insuffisant ou une ligne manuelle conserve le texte précédent. **Autres sources sur Internet** reste une recherche complémentaire dans le navigateur.
+- Le choix automatique des accords privilégie la concordance avec l’enregistrement ; les notes publiques du titre ne sont qu’un critère secondaire lorsqu’elles sont disponibles. Une grille que tu as choisie explicitement est conservée.
 
 Si aucune grille n’est trouvée, vérifie que l’artiste est bien le musicien ou le groupe, pas le nom d’une chaîne vidéo, puis relance la recherche. BandStudio nettoie les mentions telles que « HD Video » et reconnaît plusieurs séparateurs artiste/titre. Pour un résultat partiel, une nouvelle recherche après cinq minutes réessaie les sources manquantes tout en conservant les grilles trouvées. **Référence non récupérée** indique un problème d’accès à cette source, pas l’absence d’accords partout sur Internet. Vérifie toujours qu’il s’agit de la même version du morceau.
 

@@ -9,7 +9,7 @@ function renderPreparation(){
  const p=state.project,s={...guideDefaults,...p.settings},ready=preparationApproved(),loaded=state.loaded;
  const identity=p.id+':'+state.revision;
  if(identity!==reviewIdentity){reviewIdentity=identity;for(const id of ['reviewAudio','reviewGrid','reviewGuides'])$(id).checked=ready;}
- $('preparationBadge').textContent=!loaded?'Aucun morceau ouvert':ready?'✓ Morceau validé':'Préparation en cours';
+ $('preparationBadge').textContent=!loaded?'Aucun morceau ouvert':ready?'✓ Morceau validé':p.structureProposal?.status==='prepared'?'✓ Morceau préparé':'Préparation en cours';
  $('preparationBadge').classList.toggle('approved',ready);
  $('deliveryStatus').textContent=ready?'✓ Validé pour REAPER':loaded?'À vérifier':'Importe un morceau';
  $('deliveryStatus').classList.toggle('approved',ready);
@@ -57,7 +57,7 @@ for(const [action,label] of [['start','|◀ Début'],['previous','◀ Repère'],
 navigation.append(button('＋ Repère ici',()=>openEditor('cue')));
 $('workspace').prepend(navigation);
 document.addEventListener('keydown',e=>{
- if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)||document.querySelector('dialog[open]')||e.metaKey||e.ctrlKey||e.altKey)return;
+ if(e.defaultPrevented||e.target.closest('button,summary,input,textarea,select,[contenteditable=true]')||document.querySelector('dialog[open]')||e.metaKey||e.ctrlKey||e.altKey)return;
  const direction={Home:'start',End:'end',ArrowLeft:e.shiftKey?'previous':'back',ArrowRight:e.shiftKey?'next':'forward'}[e.code];
  if(direction){e.preventDefault();navigate(direction);}
  if(e.code==='KeyM'){e.preventDefault();openEditor('cue');}
@@ -66,7 +66,7 @@ renderPreparation();
 
 $('restoreProject').onclick=()=>send('restoreProject');
 const preparePanel=node('article','prepare-all');
-preparePanel.append(node('h3','','Préparer le morceau en un clic'),node('p','','Enchaîne les analyses installées, puis crée le click et les annonces. Les pistes déjà séparées et le calage protégé sont conservés. Écoute le résultat avant de valider.'));
+preparePanel.append(node('h3','','Préparer le morceau en un clic'),node('p','','Instruments, batterie détaillée, chant et chœurs, paroles recalées, accords Internet et sections vérifiées. Un seul parcours, avec les moteurs installés ; les corrections manuelles sont conservées.'));
 const planText=node('small');planText.id='analysisPlan';
 function prepareAll(){send('prepareAll',{model:$('model').value,quality:$('separationQuality').value,language:$('lyricsLanguage').value});}
 const prepareButton=button('✧ Tout préparer',prepareAll,'primary');prepareButton.id='prepareAll';
@@ -76,10 +76,10 @@ const structurePrepare=button('✧ Tout préparer',prepareAll);structurePrepare.
 const beforeBatchRender=renderPreparation;
 renderPreparation=function(){
  beforeBatchRender();
- const labels={separate:'Séparation',grid:'Tempo',smartgrid:'Temps et mesures',structure:'Structure',key:'Tonalité',lyrics:'Paroles',chords:'Accords',guides:'Click et annonces'};
+ const labels={separate:'Séparation',grid:'Tempo',smartgrid:'Temps et mesures',structure:'Structure',key:'Tonalité',lyrics:'Paroles',chords:'Accords',drumsep:'Batterie détaillée',vocalsplit:'Chant et chœurs',lyricscorrect:'Paroles recalées',prepareReview:'Vérification finale et accords',guides:'Click et annonces'};
  const plan=state.analysisPlan||[];
- planText.textContent='Étapes prévues : '+(plan.map(k=>labels[k]||k).join(' → ')||'ouvre un morceau pour commencer');
- const disabled=!state.loaded||state.busy||!state.project.tracks.some(t=>t.role==='source');
+ planText.textContent='Étapes prévues : '+(plan.map(k=>labels[k]||k).join(' → ')||(state.loaded?'tout est déjà préparé':'ouvre un morceau pour commencer'));
+ const disabled=!state.loaded||state.busy||guideDirty||$('notes').value!==(state.project.notes||'')||!state.project.tracks.some(t=>t.role==='source');
  prepareButton.disabled=structurePrepare.disabled=disabled;
 };
 renderPreparation();

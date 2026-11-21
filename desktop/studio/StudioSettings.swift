@@ -74,10 +74,11 @@ struct TimedText:Codable {
 }
 struct TimedWord:Codable {var start:Double;var end:Double;var text:String}
 struct ChordSequence:Codable {var kind:String;var chords:[String];var `repeat`:Int}
-struct ChordSource:Codable {var title:String;var publisher:String;var url:String;var chords:[String];var transitions:[[String]]?=nil;var sections:[String:[String]]?=nil;var sectionSequences:[ChordSequence]?=nil;var sectionOrder:[String]?=nil;var chordSequence:[String]?=nil;var note:String?=nil}
+struct ChartSectionAnchor:Codable {var name:String;var kind:String;var words:[String]}
+struct ChordSource:Codable {var title:String;var publisher:String;var url:String;var chords:[String];var transitions:[[String]]?=nil;var sections:[String:[String]]?=nil;var sectionSequences:[ChordSequence]?=nil;var sectionOrder:[String]?=nil;var chordSequence:[String]?=nil;var note:String?=nil;var anchorSchema:Int?=nil;var sectionAnchors:[ChartSectionAnchor]?=nil;var rating:Double?=nil;var ratingCount:Int?=nil}
 struct ChordAlignment:Codable {var status:String;var message:String;var subdivision:Int?=nil;var tuningCents:Double?=nil;var uncertainCells:Int?=nil;var orderedSections:Int?=nil;var orderedChart:Bool?=nil;var bassEvidence:Bool?=nil}
 struct ChordCheck:Codable {var id:String;var status:String}
-struct ChordReference:Codable {var query:String;var status:String;var sources:[ChordSource];var checkedAt:Double;var message:String;var alignment:ChordAlignment?=nil;var selectedURL:String?=nil;var catalogVersion:Int?=nil;var checks:[ChordCheck]?=nil}
+struct ChordReference:Codable {var query:String;var status:String;var sources:[ChordSource];var checkedAt:Double;var message:String;var alignment:ChordAlignment?=nil;var selectedURL:String?=nil;var catalogVersion:Int?=nil;var checks:[ChordCheck]?=nil;var selectionMode:String?=nil;var selectionReason:String?=nil}
 struct StructureSource:Codable {var title:String;var publisher:String;var url:String;var format:String?=nil;var sectionNames:[String]?=nil}
 struct StructureSourceCheck:Codable {var publisher:String;var status:String;var format:String;var url:String?=nil}
 struct StructureChange:Codable {var id:String;var kind:String;var time:Double;var before:String;var after:String;var reason:String}
@@ -93,6 +94,8 @@ struct StructureProposal:Codable {
     var sourceChecks:[StructureSourceCheck]?=nil;var confirmedSections:Int?=nil
     var memory:StructureMemory?=nil;var restoredGrid:StructureGrid?=nil
     var reviewPassages:[ReviewPassage]?=nil;var repeatedGroups:Int?=nil;var transferredPhrases:Int?=nil
+    var audioEvidence:[String]?=nil
+    var beforeSections:[Section]?=nil
     var hasChanges:Bool {!changes.isEmpty || chordUpdate || memory != nil || restoredGrid != nil}
     var reviewNotice:String {hasChanges ? "Proposition disponible dans Pistes & structure. Les sections actuelles sont conservées jusqu’à ta validation." : "Aucune amélioration proposée — préparation actuelle conservée."}
 }
@@ -119,6 +122,12 @@ struct CountEvent {var time:Double;var end:Double;var number:Int;var spoken:Bool
 struct CountPlan {var lead:Double;var end:Double;var target:Double;var events:[CountEvent]}
 
 extension StudioProject {
+    func guideAudible(_ role:String)->Bool {
+        let track=tracks.first{$0.role==role}
+        let hasSolo=tracks.contains{$0.solo && $0.role != "source"}
+        return !(track?.muted ?? false) && (!hasSolo || (track?.solo ?? false))
+    }
+
     var pulseBPM:Double {settings.gridMode=="fixed" ? settings.manualBPM/settings.pulseScale : bpm>0 ? bpm : settings.manualBPM/settings.pulseScale}
     func countPlan(at position:Double)->CountPlan {
         let meter=settings.beatsPerBar,n=settings.countBars*meter
@@ -159,7 +168,7 @@ extension StudioProject {
     }
 
     enum CodingKeys:String,CodingKey {
-        case structureProposal,preparation,sessionDuration,capture,version,id,name,tracks,sections,cues,bpm,beats,notes,settings,guideFiles,guideKey,lyrics,chords,chordReference,drumHits,key,sourceURL,capo,analysesCompleted,gridLocked,downbeats,analysisNote
+        case structureProposal,preparation,sessionDuration,capture,version,id,name,tracks,sections,cues,bpm,beats,notes,settings,guideFiles,guideKey,lyrics,lyricsReference,chords,chordReference,drumHits,key,sourceURL,capo,analysesCompleted,gridLocked,downbeats,analysisNote
     }
     init(from decoder:Decoder) throws {
         let d=try decoder.container(keyedBy:CodingKeys.self)
@@ -178,6 +187,7 @@ extension StudioProject {
         guideFiles=try d.decodeIfPresent([String:String].self,forKey:.guideFiles) ?? [:]
         guideKey=try d.decodeIfPresent(String.self,forKey:.guideKey) ?? ""
         lyrics=try d.decodeIfPresent([TimedText].self,forKey:.lyrics) ?? []
+        lyricsReference=try d.decodeIfPresent(LyricsReference.self,forKey:.lyricsReference)
         chords=try d.decodeIfPresent([TimedText].self,forKey:.chords) ?? []
         chordReference=try d.decodeIfPresent(ChordReference.self,forKey:.chordReference)
         drumHits=try d.decodeIfPresent([DrumHit].self,forKey:.drumHits) ?? []
@@ -190,7 +200,7 @@ extension StudioProject {
         sourceURL=try d.decodeIfPresent(String.self,forKey:.sourceURL) ?? ""
     }
     func desiredGuideKey()->String {
-        struct Input:Encodable{var generator=5;var settings:GuideSettings;var bpm:Double;var beats:[Double];var sections:[Section];var cues:[Cue];var duration:Double}
+        struct Input:Encodable{var generator=6;var settings:GuideSettings;var bpm:Double;var beats:[Double];var sections:[Section];var cues:[Cue];var duration:Double}
         var sound=settings
         sound.referenceBPM=nil
         if sound.gridMode=="detected" {sound.pulseUnit=nil}

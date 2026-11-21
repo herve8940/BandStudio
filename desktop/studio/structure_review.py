@@ -169,6 +169,12 @@ def lookup(project):
 
 def kind(name):
     value = normalized(name)
+    if value in ('prechorus','pre chorus','pre refrain'):return 'prechorus'
+    if value in ('postchorus','post chorus','post refrain'):return 'postchorus'
+    if any(x in value for x in ('post chorus','post refrain')):return 'postchorus'
+    if value in ('break','breakdown','arret'):return 'break'
+    if value in ('ending','end'):return 'outro'
+    if value in ('re intro','reintro'):return 'instrumental'
     if 'pre' in value.split() and ('verse' in value or 'couplet' in value): return 'preverse'
     if 'pre' in value.split() and ('solo' in value): return 'presolo'
     if 'riff avant couplet' in value: return 'preverse'
@@ -190,7 +196,8 @@ def kind(name):
 def label(name):
     names = dict(intro='Intro', preverse='Riff avant couplet', presolo='Riff avant solo',
                  verse='Couplet', chorus='Refrain', solo='Solo', outro='Outro',
-                 bridge='Pont', prechorus='Pré-refrain', instrumental='Instrumental')
+                 bridge='Pont', prechorus='Pré-refrain', postchorus='Post-refrain', break_='Break', instrumental='Instrumental')
+    names['break']=names.pop('break_')
     return names.get(kind(name), name)
 
 
@@ -484,16 +491,30 @@ def propose(project, reference=None):
         sources,checks=chart_references(project.get('chordReference'))
         sources.insert(0,{**reference,'format':'timed'});source_note=''
     from section_evidence import refine
-    try:proposed['sections'],adjustments=refine(proposed)
+    from musical_patterns import describe,used_roles,ROLE_LABELS
+    features=None
+    try:
+        features=describe(proposed)
+        proposed['sections'],adjustments=refine(proposed,features)
     except (OSError,ValueError):adjustments=[]
     sections,changes,warnings,anchors=combine_references(proposed,reference,sources)
-    changes=sorted(adjustments+changes,key=lambda c:c['time'])
+    from section_functions import analyse as functions
+    functional=functions(proposed,features,reference,sections)
+    sections=functional['sections']
+    if functional['evidence']['timedAnchors']>=3:
+        # The offset/interior fit resolves these initial whole-file failures.
+        # Keep other source conflicts and protected-region notices visible.
+        obsolete=('Durées incompatibles :','Pas assez de repères concordants','La référence dérive par rapport au morceau :')
+        warnings=[w for w in warnings if not w.startswith(obsolete)]
+    changes=sorted(adjustments+functional['changes']+changes,key=lambda c:c['time'])
+    warnings=functional['warnings']+warnings
+    anchors=max(anchors,functional['evidence']['timedAnchors'])
     if source_note:
         warnings.insert(0,source_note)
     proposed['sections']=sections
     from musical_patterns import analyse as patterns,transfer_chords,listening_plan
     try:
-        pattern=patterns(proposed)
+        pattern=patterns(proposed,features)
         sections=pattern['sections'];changes.extend(pattern['changes']);proposed['sections']=sections
     except (OSError,ValueError):
         pattern=dict(groups=[],pairs=[])
@@ -513,7 +534,7 @@ def propose(project, reference=None):
         track = next((t for t in project['tracks'] if t['role']=='source'), None)
         if track:
             try:
-                result = analyze(proposed, media_path(project['_root'], track['file']), source_url=source['url'], ordered=True,phrase_groups=pattern['groups'])
+                result = analyze(proposed, media_path(project['_root'], track['file']), ordered=True,phrase_groups=pattern['groups'])
                 if result.get('segments'):
                     apply(proposed, result)
                     musical=lambda rows:[(round(c['start'],6),round(c['end'],6),c['text']) for c in rows]
@@ -528,7 +549,7 @@ def propose(project, reference=None):
                 warnings.append('Calage des accords indisponible : accords actuels conservés.')
     else:
         warnings.append('Aucune grille d’accords Internet disponible : accords actuels conservés.')
-    proposed['chords'],transfers=transfer_chords(proposed,pattern)
+    proposed['chords'],transfers=transfer_chords(proposed,pattern,features)
     musical=lambda rows:[(round(c['start'],6),round(c['end'],6),c['text']) for c in rows]
     chord_update=musical(proposed.get('chords',[]))!=musical(project.get('chords',[]))
     passages=listening_plan(proposed,changes,pattern)
@@ -539,13 +560,16 @@ def propose(project, reference=None):
                 sources=[dict(title=(s['title']+' — '+s['artist']) if s.get('artist') else s['title'],publisher=s['publisher'],
                               url=s['url'],format=s['format'],sectionNames=[e['name'] for e in s['entries']] if s['format']=='timed' else s['entries']) for s in sources],
                 sourceChecks=checks,confirmedSections=sum(confirmed(s) for s in project['sections']),
+                audioEvidence=[ROLE_LABELS[r] for r in used_roles(features or {})],
                 reviewPassages=passages,repeatedGroups=len(pattern['groups']),transferredPhrases=len(transfers),
-                anchors=anchors, changes=changes, warnings=list(dict.fromkeys(warnings)),
+                anchors=anchors, changes=sorted(changes,key=lambda c:c['time']), warnings=list(dict.fromkeys(warnings)),
                 sections=sections, chords=proposed.get('chords', []), chordReference=proposed.get('chordReference'), chordUpdate=chord_update)
 
 
 def apply_proposal(project):
     proposal = project.get('structureProposal') or {}
+    if proposal.get('status')=='prepared':
+        raise ValueError('Cette préparation a déjà été appliquée au morceau.')
     if proposal.get('schema') != SCHEMA or proposal.get('fingerprint') != fingerprint(project):
         raise ValueError('Le morceau a changé depuis la proposition. Relance Vérifier et compléter.')
     uuid.UUID(proposal['id'])
@@ -572,6 +596,52 @@ def apply_proposal(project):
     return result
 
 
+def save_proposal(snapshot,output):
+    """Return a validated document for the host's normal save/undo transaction."""
+    original=json.loads(Path(snapshot).read_text())
+    project=apply_proposal(original)
+    project['guideKey']=''  # Rebuild announcements for the new sections on playback.
+    if project.get('preparation'):
+        project['preparation'].pop('fingerprint',None)
+        project['preparation'].pop('validatedAt',None)
+    if fingerprint(original)!=original['structureProposal']['fingerprint']:
+        raise ValueError('Un média a changé pendant la validation. Relance la vérification.')
+    atomic(output,dict(project=project))
+    record_decision(project['_root'],original['structureProposal'],'accepted_in_project',fingerprint(project))
+
+
+def finish_preparation(snapshot,output,engine):
+    """Finish one-click preparation, retaining a visual before/after receipt.
+
+    This is an automatic analysis, not a human approval or a training label.
+    Manually protected regions/chords pass the same defence as explicit apply.
+    """
+    original=json.loads(Path(snapshot).read_text())
+    signature=fingerprint(original)
+    proposal=propose(original)
+    result=apply_proposal({**original,'structureProposal':proposal})
+    fixed={s['id'] for s in original['sections'] if protected(s)}
+    # Automatic refinements must remain refinable on a later preparation.
+    for section in result['sections']:
+        if section['id'] not in fixed and section.get('origin')=='reference':
+            section.update(locked=False,reviewed=False,origin='automatic-review')
+    proposal.update(status='prepared',beforeSections=copy.deepcopy(original['sections']),sections=copy.deepcopy(result['sections']),
+                    message='Préparation terminée. Les améliorations sont appliquées ; les passages signalés restent à écouter.')
+    roles={t['role'] for t in result['tracks']}
+    for names,label in (({'drum_kick','drum_snare','drum_toms','drum_cymbals'},'Éléments de batterie'),({'vocal_lead','vocal_backing'},'Chant principal et chœurs')):
+        if not names<=roles:proposal['warnings'].append(label+' : séparation complète indisponible ; les pistes existantes sont conservées.')
+    result['guideKey']=''
+    if result.get('preparation'):
+        result['preparation'].pop('fingerprint',None);result['preparation'].pop('validatedAt',None)
+    proposal['fingerprint']=fingerprint(result)
+    result['structureProposal']=proposal
+    validate_document(result)
+    if fingerprint(original)!=signature:
+        raise ValueError('Un média a changé pendant la préparation.')
+    atomic(output,dict(project=result))
+    record_decision(result['_root'],{**proposal,'fingerprint':signature},'prepared_automatically',proposal['fingerprint'])
+
+
 def export_proposal(snapshot, output, engine):
     """Prepare a new portable export, committing the document only on success.
 
@@ -580,7 +650,7 @@ def export_proposal(snapshot, output, engine):
     """
     from services import guides
     from preparation import validate_project, export_validated
-    from windows.project import track, guide_key
+    from windows.project import guide_track, guide_key
     original = json.loads(Path(snapshot).read_text())
     project = apply_proposal(original)
     work = Path(output).parent; root = Path(project['_root'])
@@ -601,10 +671,11 @@ def export_proposal(snapshot, output, engine):
                 target = guide_folder / (str(i)+'.wav'); shutil.copy2(source, target)
                 mapping[key] = target.relative_to(root).as_posix()
             project['guideFiles'] = mapping
-            project['tracks'] = [t for t in project['tracks'] if not t['role'].startswith('guide_')]
+            previous_guides = project['tracks']
+            project['tracks'] = [t for t in previous_guides if not t['role'].startswith('guide_')]
             for key,name,role in [('click','Métronome','guide_click'),('calls','Appels de régions','guide_voice'),
                                   ('cues','Cues','guide_cue'),('counts','Décomptes','guide_count')]:
-                project['tracks'].append(track(root/mapping[key], root, name, role))
+                project['tracks'].append(guide_track(root/mapping[key], root, name, role, previous_guides))
             project['guideKey'] = guide_key(project)
         else:
             project['guideKey'] = ''  # Old guides must not be reused after section edits.

@@ -176,3 +176,24 @@ def test_reference_search_opens_encoded_query_and_preserves_song(tmp_path, monke
         assert (parsed.scheme,parsed.netloc,parsed.path,parsed.fragment)==('https','www.google.com','/search','')
         assert parse_qs(parsed.query)['q']==['AC/DC & Muse # live'+(' chords accords' if kind=='chords' else ' lyrics paroles')]
     assert p==before and not api._history
+
+
+def test_manual_lyrics_button_nudges_words_auditions_and_saves(sheet_page):
+    page,p=sheet_page
+    page.locator('#sheetManualLyrics').click()
+    assert page.locator('#annotationEditor').is_visible()
+    assert page.locator('#wordEditor').get_attribute('open') is not None
+    for _ in range(3):page.locator('[data-shift-seconds="0.1"]').click()
+    page.locator('[data-shift-seconds="-0.1"]').click()
+    assert float(page.locator('#annotationStart').input_value())==pytest.approx(1.2)
+    assert float(page.locator('#annotationEnd').input_value())==pytest.approx(2.2)
+    assert float(page.locator('#wordRows [data-word=start]').first.input_value())==pytest.approx(1.2)
+    page.get_by_role('button',name='Écouter cette ligne',exact=True).click()
+    assert page.evaluate('sent.at(-1).command')=='audition'
+    assert page.evaluate('sent.at(-1).args.start')==pytest.approx(.7)
+    assert page.evaluate('sent.at(-1).args.end')==pytest.approx(2.7)
+    page.get_by_role('button',name='Enregistrer le calage',exact=True).click()
+    saved=page.evaluate('sent.at(-1)')
+    assert saved['command']=='annotation' and saved['args']['kind']=='lyrics'
+    assert saved['args']['start']==pytest.approx(1.2)
+    assert saved['args']['words'][1]['start']==pytest.approx(1.7)

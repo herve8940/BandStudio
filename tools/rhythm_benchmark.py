@@ -19,10 +19,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'desktop/studio'))
 
 
-def score(reference, estimated, tolerance=.07):
+def score(reference, estimated, tolerance=.07, min_time=5., max_time=float('inf')):
     """One-to-one ordered matching, 70 ms tolerance, ignoring first 5 s."""
-    ref = sorted(t for t in reference if t >= 5)
-    est = sorted(t for t in estimated if t >= 5)
+    ref = sorted(t for t in reference if min_time <= t < max_time)
+    est = sorted(t for t in estimated if min_time <= t < max_time)
     i = j = hits = 0
     while i < len(ref) and j < len(est):
         if abs(ref[i]-est[j]) <= tolerance:
@@ -30,6 +30,20 @@ def score(reference, estimated, tolerance=.07):
         elif est[j] < ref[i]: j += 1
         else: i += 1
     return 2*hits/(len(ref)+len(est)) if ref or est else 0.
+
+
+def precision_metrics(reference, estimated):
+    """Expose opening errors and sub-frame precision, in addition to MIR F1.
+
+    Nearest-reference error alone hides missing/extra beats, so always report
+    it alongside one-to-one F1 at the correct metric level, including t=0.
+    """
+    ref, est = np.asarray(reference), np.asarray(estimated)
+    errors = [float(np.min(abs(est-t)))*1000 for t in ref] if len(est) else []
+    return dict(fullF1_20ms=score(ref, est, .02, 0),
+                introF1_20ms=score(ref, est, .02, 0, 10),
+                introF1_70ms=score(ref, est, .07, 0, 10),
+                nearestP95Ms=float(np.percentile(errors, 95)) if errors else None)
 
 
 def select(data, exclude=(), holdout=False):
@@ -97,7 +111,8 @@ def run(args):
         beats=np.asarray(result['beats'])
         phase=int(np.argmin(abs(beats-result['firstBeat']))) if len(beats) else 0
         bars=beats[phase::result['beatsPerBar']]
-        metric=dict(beatF1=score(annotation[:,0],beats),barF1=score(annotation[annotation[:,1]==1,0],bars))
+        metric=dict(beatF1=score(annotation[:,0],beats),barF1=score(annotation[annotation[:,1]==1,0],bars),
+                    **precision_metrics(annotation[:,0], beats))
         results.append({**row,**metric, 'grid':result, 'inputSHA256':digest})
         (args.output/'baseline.json').write_text(json.dumps(results,indent=2))
         print(f'{n+1}/{len(rows)} {key} {row["split"]}: beat={metric["beatF1"]:.3f} bar={metric["barF1"]:.3f} ({time.monotonic()-started:.1f}s)',flush=True)

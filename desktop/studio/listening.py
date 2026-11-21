@@ -16,3 +16,11 @@ def matches(role, instrument):
 def included(role, mode):
     kind, instrument = parse_mode(mode)
     return not matches(role, instrument) if kind == 'minus' else matches(role, instrument) if kind == 'solo' else True
+
+
+def guide_audible(project, role):
+    """Apply the track mute/solo bus to guides, including count-in voices."""
+    tracks = project['tracks']
+    guide = next((t for t in tracks if t['role'] == role), {})
+    has_solo = any(t.get('solo', False) for t in tracks if t['role'] != 'source')
+    return not guide.get('muted', False) and (not has_solo or guide.get('solo', False))

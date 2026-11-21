@@ -94,6 +94,17 @@ def test_update_applies_only_code_and_keeps_backup(tmp_path,monkeypatch):
     assert (backup/'engine/worker.py').read_text()=='old'
     assert not (folder/'pending.json').exists()
 
+def test_local_work_is_not_overwritten_until_the_overlay_is_released(tmp_path,monkeypatch):
+    folder,engine,_=pending(tmp_path,monkeypatch)
+    marker=engine/'local-overlay.json';marker.write_text('{}')
+    monkeypatch.setattr(updater,'download',lambda *args:pytest.fail('local build must not download a replacement'))
+    assert updater.check(engine)['state']=='local'
+    assert updater.apply_pending() is False
+    assert (engine/'worker.py').read_text()=='old' and (folder/'pending.json').exists()
+    marker.unlink()
+    assert updater.apply_pending()
+    assert (engine/'worker.py').read_text()=='new'
+
 def test_update_rolls_back_all_files_after_replace_failure(tmp_path,monkeypatch):
     folder,engine,_=pending(tmp_path,monkeypatch)
     replace=updater.os.replace

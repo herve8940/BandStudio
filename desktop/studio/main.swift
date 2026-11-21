@@ -115,6 +115,27 @@ func selfTest(_ directory:String) throws {
     do{try bad.validate();throw StudioError("Traversée de chemin acceptée")}
     catch let error as StudioError {if error.message == "Traversée de chemin acceptée"{throw error}}
     let audio=StudioAudio();try audio.load(loaded,root:root)
+    var guides=loaded
+    guides.settings.clickEnabled=true;guides.settings.callsEnabled=true;guides.settings.speakCues=true;guides.settings.regionCountEnabled=true
+    for role in ["guide_click","guide_voice","guide_cue","guide_count"] {
+        guides.tracks.append(Track(name:role,file:"Audio/source.caf",role:role,duration:2))
+    }
+    try audio.load(guides,root:root)
+    for index in 3..<7 {
+        audio.project=guides;audio.project.tracks[index].solo=true
+        for mode in ["original","mix","drums","minus"] {
+            audio.mode=mode;audio.applyMix()
+            guard audio.players[index].volume>0,audio.players.enumerated().allSatisfy({$0.offset==index || $0.element.volume==0}) else{throw StudioError("Solo du guide incorrect")}
+        }
+        audio.project.tracks[index].muted=true;audio.applyMix()
+        guard audio.players.allSatisfy({$0.volume==0}) else{throw StudioError("Mute du guide solo ignoré")}
+    }
+    audio.project=guides;audio.project.tracks[1].solo=true;audio.mode="mix";audio.applyMix()
+    guard audio.players[1].volume>0,audio.players[3...6].allSatisfy({$0.volume==0}),audio.countVoice.volume==0,audio.startCall.volume==0 else{throw StudioError("Solo musical laisse passer les guides")}
+    audio.project=guides;audio.project.settings.cuesGain=0.37;audio.applyMix()
+    guard abs(audio.players[5].volume-0.37)<0.001 else{throw StudioError("Volume des cues ignoré")}
+    print("PASS native guide volume, mute, solo and count-in isolation")
+    try audio.load(loaded,root:root)
     for mode in ["original","mix","drums","minus"] {
         audio.mode=mode;audio.applyMix()
         let url=root.appendingPathComponent(mode+".caf")
@@ -134,6 +155,40 @@ func selfTest(_ directory:String) throws {
     let slow=try AVAudioFile(forReading:root.appendingPathComponent("slow.caf"))
     guard slow.length == 88200 else{throw StudioError("Durée ralentie incorrecte")}
     print("PASS project roundtrip, protected short cues, traversal rejection, crop and slowdown")
+}
+
+func audioStartupSelfTest(_ directory:String) throws {
+    let root=URL(fileURLWithPath:directory)
+    try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
+    let format=AVAudioFormat(standardFormatWithSampleRate:44100,channels:2)!
+    let silence=AVAudioPCMBuffer(pcmFormat:format,frameCapacity:44100)!
+    silence.frameLength=44100
+    for ch in 0..<2 {silence.floatChannelData![ch].initialize(repeating:0,count:44100)}
+    let source=root.appendingPathComponent("silence.caf")
+    try AVAudioFile(forWriting:source,settings:format.settings).write(from:silence)
+    var p=StudioProject();p.settings.gridMode="fixed";p.settings.manualBPM=120
+    p.settings.countBars=2;p.settings.countClick=true;p.settings.countVoice=false;p.settings.callsEnabled=false
+    p.tracks=[Track(name:"Silence",file:"silence.caf",role:"source",duration:1)]
+    let audio=StudioAudio();try audio.load(p,root:root)
+    for pass in 0..<4 {
+        let output=root.appendingPathComponent("startup-\(pass).wav")
+        try audio.render(to:output,start:0,end:1,includeCount:true)
+        guard audio.stretch.bypass,audio.guideStretch.bypass else{throw StudioError("Traitement inutile à vitesse neutre")}
+        let file=try AVAudioFile(forReading:output)
+        let buffer=AVAudioPCMBuffer(pcmFormat:file.processingFormat,frameCapacity:AVAudioFrameCount(file.length))!
+        try file.read(into:buffer);let samples=buffer.floatChannelData![0]
+        for beat in 0..<8 {
+            let expected=beat*22050
+            let onset=(expected..<expected+100).first{abs(samples[$0])>0.01}
+            guard let onset=onset,onset-expected<=2 else{throw StudioError("Premier click retardé ou tronqué")}
+            guard (expected+2205..<expected+20000).allSatisfy({abs(samples[$0])<0.00001}) else{throw StudioError("Click doublé ou hors grille")}
+        }
+    }
+    audio.rate=0.75;audio.configureTimeEffects()
+    guard !audio.stretch.bypass,!audio.guideStretch.bypass else{throw StudioError("Ralentissement désactivé")}
+    audio.rate=1;audio.pitch=2;audio.configureTimeEffects()
+    guard !audio.stretch.bypass,audio.guideStretch.bypass else{throw StudioError("Transposition des guides incorrecte")}
+    print("PASS four repeated starts: eight complete clicks, sample-aligned at 120 BPM; speed and pitch preserved")
 }
 
 func advancedSelfTest(_ directory:String,_ engine:String) throws {
@@ -215,6 +270,9 @@ if CommandLine.arguments.count >= 4 && CommandLine.arguments[1] == "--creative-t
 }
 if CommandLine.arguments.count >= 4 && CommandLine.arguments[1] == "--advanced-test" {
     do{try advancedSelfTest(CommandLine.arguments[2],CommandLine.arguments[3]);exit(0)}catch{fputs("FAIL: \(error.localizedDescription)\n",stderr);exit(1)}
+}
+if CommandLine.arguments.count >= 3 && CommandLine.arguments[1] == "--audio-startup-test" {
+    do {try audioStartupSelfTest(CommandLine.arguments[2]);exit(0)}catch{fputs("FAIL: \(error.localizedDescription)\n",stderr);exit(1)}
 }
 if CommandLine.arguments.count >= 3 && CommandLine.arguments[1] == "--self-test" {
     do {try selfTest(CommandLine.arguments[2]);exit(0)}catch{fputs("FAIL: \(error.localizedDescription)\n",stderr);exit(1)}
@@ -326,6 +384,32 @@ if CommandLine.arguments.count >= 3 && CommandLine.arguments[1] == "--transport-
             audio.pause()
         }
         print("PASS repeated real-time play/pause, no startup jump to end");exit(0)
+    } catch {fputs("FAIL: \(error.localizedDescription)\n",stderr);exit(1)}
+}
+if CommandLine.arguments.count >= 4 && CommandLine.arguments[1] == "--prepare-all-test" {
+    do {
+        setbuf(stdout,nil)
+        let root=URL(fileURLWithPath:CommandLine.arguments[2]),host=StudioApp()
+        guard FileManager.default.fileExists(atPath:root.appendingPathComponent(".test-fixture").path) else {throw StudioError("Copie de test requise.")}
+        host.root=root;host.library=root.deletingLastPathComponent();host.runtime=URL(fileURLWithPath:CommandLine.arguments[3])
+        host.project=try StudioProject.load(root);try host.audio.load(host.project,root:root)
+        let protected=try JSONEncoder().encode(host.project.sections.filter{$0.locked || $0.reviewed == true || $0.origin == "manual"})
+        print("PLAN: "+host.analysisPlan().joined(separator:" → "))
+        try host.prepareAll(["model":"htdemucs","language":"en"])
+        let end=Date().addingTimeInterval(1200);var last=""
+        while host.busy && Date()<end {
+            if host.jobName != last {last=host.jobName;print(last)}
+            RunLoop.current.run(until:Date().addingTimeInterval(0.05))
+        }
+        if host.busy {host.job?.terminate();throw StudioError("Délai du parcours complet dépassé")}
+        guard host.project.structureProposal?.status=="prepared",host.project.structureProposal?.beforeSections != nil else {throw StudioError("Préparation finale absente : "+host.notice)}
+        guard host.project.analysisDone("drumsep"),host.project.analysisDone("vocalsplit"),host.project.lyricsReference != nil else {throw StudioError("Étapes incomplètes : "+host.notice)}
+        for section in try JSONDecoder().decode([Section].self,from:protected) {
+            guard host.project.sections.contains(where:{$0.id==section.id && $0.start==section.start && $0.end==section.end && $0.name==section.name}) else {throw StudioError("Section protégée modifiée")}
+        }
+        guard host.analysisPlan().isEmpty else {throw StudioError("Calculs répétés : "+host.analysisPlan().joined(separator:", "))}
+        try host.prepareAll([:]);guard !host.busy else {throw StudioError("Deuxième préparation relancée")}
+        print("PASS native all-inclusive preparation, protected sections, saved result, and second click without recomputation");exit(0)
     } catch {fputs("FAIL: \(error.localizedDescription)\n",stderr);exit(1)}
 }
 let app=NSApplication.shared

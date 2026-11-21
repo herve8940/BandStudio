@@ -19,7 +19,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, HTTPRedirectHandler, build_opener
 
 from chord_provider_defaults import PROVIDERS
-CATALOG_VERSION = 6
+CATALOG_VERSION = 8
 NETWORK_BUDGET = 8.
 CACHE_RETRY_SECONDS = 300.
 HOSTS = {host for p in PROVIDERS if p.get('template') for host in (p['domain'],'www.'+p['domain'])} | {'www.cifraclub.com.br','cifraclub.com.br'}
@@ -336,10 +336,14 @@ def _read_chart(provider,title,artist,url):
         if not safe_url(url) or not same_publisher(url,'https://'+provider['domain']):
             raise ValueError('Adresse de grille invalide.')
         chart=Chart(provider['id']);chart.feed(page)
+        from chart_sections import extract as section_anchors,SCHEMA as ANCHOR_SCHEMA
         if matches_heading(chart.title,title,artist) and chart.chords:
             source=dict(title=title+' — '+artist,publisher=provider['publisher'],url=url,chords=chart.chords,transitions=chart.transitions,sections=chart.sections,
                         sectionSequences=[s for s in chart.sectionSequences if s['chords']],sectionOrder=chart.sectionOrder,
+                        sectionAnchors=section_anchors(page),anchorSchema=ANCHOR_SCHEMA,
                         chordSequence=chart.chordSequence if not chart.sectionOrder and not chart.hasTab else [])
+            from chord_choice import reputation
+            source.update(reputation(page,title))
             if chart.capo:
                 names=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];pcs=dict(C=0,D=2,E=4,F=5,G=7,A=9,B=11)
                 def transpose(chord):return re.sub(r'(^|/)([A-G])([#b]?)',lambda m:m[1]+names[(pcs[m[2]]+{'':0,'#':1,'b':-1}[m[3]]+chart.capo)%12],chord)
@@ -454,6 +458,7 @@ def lookup(project, *, reanalyze=False):
         if reference['sources']:
             preferred=(previous or {}).get('selectedURL') or next(iter((previous or {}).get('sources',[])),{}).get('url')
             reference.update(status='found',selectedURL=next((s['url'] for s in reference['sources'] if s['url']==preferred),reference['sources'][0]['url']),
+                selectionMode=(previous or {}).get('selectionMode','manual' if (previous or {}).get('selectedURL') else 'automatic'),
                 message=f"{len(reference['sources'])} grille(s) trouvée(s). Les versions restent séparées ; choisis la source à caler.")
         elif any(c['status']=='unavailable' for c in reference['checks']):
             reference.update(status='unavailable',message='Aucune grille récupérée : certaines sources sont indisponibles. Tu peux ouvrir les recherches ciblées ou réessayer.')
@@ -482,7 +487,13 @@ def analyze(project,audio,*,reanalyze=False,source_url='',ordered=False,phrase_g
     sources=result['reference']['sources']
     if source_url and not any(s['url']==source_url for s in sources):raise ValueError('Cette grille ne fait pas partie des sources trouvées pour le morceau.')
     if sources:
-        chosen=next((s for s in sources if s['url']==(source_url or result['reference'].get('selectedURL'))),sources[0])
+        if source_url:
+            chosen=next(s for s in sources if s['url']==source_url)
+            result['reference']['selectionMode']='manual';result['reference']['selectionReason']='Ta grille choisie est conservée.'
+        else:
+            from chord_choice import choose
+            chosen,reason=choose({**project,'chordReference':result['reference']},sources)
+            result['reference']['selectionReason']=reason
         result['reference']['selectedURL']=chosen['url']
         from advanced import media_path
         from chord_alignment import place
@@ -496,6 +507,7 @@ def analyze(project,audio,*,reanalyze=False,source_url='',ordered=False,phrase_g
         if chosen.get('chordSequence'):extra['written_chart']=chosen['chordSequence']
         result['segments'],alignment=place(*arguments,sequences=chosen.get('sectionSequences'),**extra) if ordered else place(*arguments)
         result['reference']['message']=f"{len(sources)} grille(s) trouvée(s) · source utilisée : {chosen['publisher']}. "+alignment['message']
+        result['reference']['message']+=' '+result['reference']['selectionReason']
         if result.get('cachedAfterFailure'):result['reference']['message']='Internet indisponible : utilisation de la source déjà enregistrée. '+alignment['message']
         result['reference']['alignment']=alignment
     return result

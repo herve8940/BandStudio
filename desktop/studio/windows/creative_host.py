@@ -15,8 +15,12 @@ def creative_task(host,kind,options):
         if not path.is_relative_to(result.parent.resolve()) or role not in ('take','vocal_lead','vocal_backing'):raise ValueError('Résultat créatif invalide.')
         target=root/'Audio'/(model.ident()+'-'+role+'.wav');shutil.copy2(path,target)
         t=model.track(target,root,'Accompagnement généré' if kind=='generate' else {'vocal_lead':'Chant principal','vocal_backing':'Chœurs'}[role],role,source['offset'] if source else 0)
-        t['gain']=source['gain'] if source else .8;t['pan']=source['pan'] if source else 0;t['muted']=kind=='generate' and model.duration(p)>0;tracks.append(t)
+        t['gain']=source['gain'] if source else .8;t['pan']=source['pan'] if source else 0;t['muted']=source['muted'] if source else kind=='generate' and model.duration(p)>0
+        previous=next((x for x in p['tracks'] if x['role']==role),None)
+        if kind=='vocalsplit' and previous:t.update({k:previous[k] for k in ('id','gain','pan','muted','solo')})
+        tracks.append(t)
     if not tracks:raise ValueError('Aucune piste générée.')
+    if kind=='vocalsplit' and {t['role'] for t in tracks}!={'vocal_lead','vocal_backing'}:raise ValueError('Séparation du chant incomplète.')
     host._remember()
     if kind=='vocalsplit':p['tracks']=[t for t in p['tracks'] if not t['role'].startswith('vocal_')]
     p['tracks']+=tracks;host._save();host._reload();host._audio.mode='mix'

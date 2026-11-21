@@ -31,6 +31,22 @@ extension StudioApp {
             }
         }
     }
+    func applyStructure(_ args:[String:Any]) throws {
+        try requireIdle()
+        guard let proposal=project.structureProposal,args["reviewed"] as? Bool == true,
+              args["proposalID"] as? String == proposal.id else {throw StudioError("Valide la proposition affichée dans Pistes & structure.")}
+        audio.pause();let checkedRevision=revision
+        try startJob("structureApply") {result in
+            guard self.revision==checkedRevision else {throw StudioError("Le morceau a changé. Relance la vérification.")}
+            let object=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
+            guard let value=object["project"] else {throw StudioError("La proposition n’est pas complète.")}
+            let prepared=try JSONDecoder().decode(StudioProject.self,from:JSONSerialization.data(withJSONObject:value))
+            guard prepared.id==self.project.id else {throw StudioError("La proposition appartient à un autre morceau.")}
+            try prepared.validate();self.remember();self.project=prepared
+            try self.reloadAudio();try self.changed()
+            self.notice="Proposition enregistrée dans le morceau. Annuler permet de retrouver les repères précédents."
+        }
+    }
     func exportStructure(_ args:[String:Any]) throws {
         try requireIdle()
         guard let proposal=project.structureProposal,args["reviewed"] as? Bool == true,
@@ -63,7 +79,7 @@ extension StudioApp {
         try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
         let result=folder.appendingPathComponent("result.json"),snap=folder.appendingPathComponent("project.json")
         try snapshot(at:snap)
-        let environment=["generate":".venv-creative","vocalsplit":".venv-creative","structure":".venv-structure","separate":".venv-demucs","drumsep":".venv-demucs","smartgrid":".venv-demucs","lyrics":".venv-words","chords":".venv","drums":".venv-drums"]
+        let environment=["generate":".venv-creative","vocalsplit":".venv-creative","structure":".venv-structure","separate":".venv-demucs","drumsep":".venv-demucs","smartgrid":".venv-demucs","lyrics":".venv-words","lyricscorrect":".venv-words","chords":".venv","drums":".venv-drums"]
         let p=Process();p.executableURL=runtime.appendingPathComponent((environment[kind] ?? ".venv")+"/bin/python")
         var safeArguments=arguments
         if let index=safeArguments.firstIndex(of:"--options"),index+1<safeArguments.count {
@@ -95,7 +111,7 @@ extension StudioApp {
             }
         }
         StudioDiagnostics.shared.event("job.start",["kind":kind]);try p.run();job=p;busy=true;jobLog=log;jobStarted=ProcessInfo.processInfo.systemUptime;lastBroadcast=0
-        let titles=["structureMemory":"Recherche d’une préparation mémorisée","structureReview":"Comparaison de la structure","structureExport":"Validation et export REAPER","validate":"Vérification du morceau et des médias","generate":"Création musicale locale","vocalsplit":"Séparation chant principal et chœurs","smartgrid":"Détection des temps et débuts de mesure","drumsep":"Séparation des éléments de batterie","key":"Estimation de la tonalité","lyricsimport":"Import des paroles synchronisées","lyricsexport":"Export des paroles","stemsexport":"Export des stems","master":"Normalisation du mix","report":"Analyse des niveaux audio","portable":"Création du projet portable","sheet":"Création de la fiche PDF","guides":"Préparation du click, des appels et du décompte","separate":"Séparation des instruments","structure":"Analyse de la structure","grid":"Détection du tempo et des temps","reaper":"Création du projet REAPER","lyrics":"Transcription des paroles","chords":"Recherche de grille Internet","drums":"Transcription de la batterie","midi":"Export MIDI","decode":"Conversion du fichier audio"]
+        let titles=["prepareReview":"Vérification finale des sections et accords","structureApply":"Application de la proposition","structureMemory":"Recherche d’une préparation mémorisée","structureReview":"Comparaison de la structure","structureExport":"Validation et export REAPER","validate":"Vérification du morceau et des médias","generate":"Création musicale locale","vocalsplit":"Séparation chant principal et chœurs","smartgrid":"Détection des temps et débuts de mesure","drumsep":"Séparation des éléments de batterie","key":"Estimation de la tonalité","lyricsimport":"Import des paroles synchronisées","lyricsexport":"Export des paroles","stemsexport":"Export des stems","master":"Normalisation du mix","report":"Analyse des niveaux audio","portable":"Création du projet portable","sheet":"Création de la fiche PDF","guides":"Préparation du click, des appels et du décompte","separate":"Séparation des instruments","structure":"Analyse de la structure","grid":"Détection du tempo et des temps","reaper":"Création du projet REAPER","lyrics":"Transcription et vérification des paroles","lyricscorrect":"Correction des paroles et recalage vocal","chords":"Recherche de grille Internet","drums":"Transcription de la batterie","midi":"Export MIDI","decode":"Conversion du fichier audio"]
         jobName=kind == "rpp" ? "Import des pistes et régions REAPER" : (titles[kind] ?? kind);notice="";sendState()
     }
     // Stop revokes a queued transport action while guides are still rendering.
@@ -132,11 +148,16 @@ extension StudioApp {
             guard source.path.hasPrefix(result.deletingLastPathComponent().resolvingSymlinksInPath().path+"/") else {throw StudioError("Un guide audio est hors du dossier de traitement.")}
             let file=UUID().uuidString+".wav";try FileManager.default.copyItem(at:source,to:folder.appendingPathComponent(file));paths[name]=prefix+"/"+file
         }
+        let previousGuides=project.tracks.filter{$0.role.hasPrefix("guide_")}
         project.tracks.removeAll{$0.role.hasPrefix("guide_")}
         for (name,title,role) in [("click","Métronome","guide_click"),("calls","Appels de régions","guide_voice"),("cues","Cues","guide_cue"),("counts","Décompte des régions","guide_count")] {
             let relative=paths[name]!,url=root.appendingPathComponent(relative)
             let (duration,peaks)=try inspectAudio(url)
-            project.tracks.append(Track(name:title,file:relative,role:role,duration:duration,peaks:peaks))
+            var track=Track(name:title,file:relative,role:role,duration:duration,peaks:peaks)
+            if let previous=previousGuides.first(where:{$0.role==role}) {
+                track.id=previous.id;track.muted=previous.muted;track.solo=previous.solo
+            }
+            project.tracks.append(track)
         }
         project.guideFiles=paths;project.guideKey=key
         try reloadAudio();try changed(invalidate:false);notice="Click, appels et décompte prêts."
@@ -243,7 +264,7 @@ extension StudioApp {
                 let a=row["start"] as? Double ?? row["t"] as? Double ?? 0,b=min(project.duration,row["end"] as? Double ?? 0)
                 let text=row["text"] as? String ?? row["label"] as? String ?? ""
                 if b>a && a>=0 {
-                    var item=TimedText(start:a,end:b,text:text)
+                    var item=TimedText(start:a,end:b,text:text,sourceURL:row["sourceURL"] as? String,confidence:row["confidence"] as? Double)
                     if kind == "lyrics" {
                         item.words=(row["words"] as? [[String:Any]] ?? []).compactMap{w in
                             guard let t=w["t"] as? Double,let end=w["end"] as? Double,let word=w["w"] as? String,t>=a,end>t,end<=b+0.1 else{return nil}
@@ -261,8 +282,11 @@ extension StudioApp {
                 project.chords.sort{$0.start<$1.start}
             }
         }
+        if kind == "lyrics",let reference=obj["lyricsReference"] {
+            project.lyricsReference=try JSONDecoder().decode(LyricsReference.self,from:JSONSerialization.data(withJSONObject:reference))
+        }
         project.analysisCompleted(kind)
-        try changed();notice="Analyse ajoutée. Tu peux corriger chaque entrée dans le prompteur."
+        try changed();notice=kind == "lyrics" ? (project.lyricsReference?.message ?? "Transcription ajoutée.") : "Analyse ajoutée. Tu peux corriger chaque entrée dans le prompteur."
     }
     func annotation(_ args:[String:Any]) throws {
         guard let kind=args["kind"] as? String,["lyrics","chords"].contains(kind) else{return}
@@ -373,6 +397,9 @@ extension StudioApp {
         func available(_ env:String)->Bool {fm.fileExists(atPath:runtime.appendingPathComponent(env+"/bin/python").path)}
         var steps:[String]=[]
         if available(".venv-demucs"),!project.tracks.contains(where:{["drums","bass","vocals","other","guitar","piano"].contains($0.role)}){steps.append("separate")}
+        let canSeparate=steps.contains("separate")
+        if available(".venv-demucs"),fm.fileExists(atPath:runtime.appendingPathComponent("drumsep/49469ca8.th").path),canSeparate || project.tracks.contains(where:{$0.role=="drums"}) {steps.append("drumsep")}
+        if available(".venv-creative"),fm.fileExists(atPath:runtime.appendingPathComponent("creative/UVR_MDXNET_KARA_2.onnx").path),canSeparate || project.tracks.contains(where:{$0.role=="vocals"}) {steps.append("vocalsplit")}
         if !project.gridLocked {
             let libs=runtime.appendingPathComponent(".venv-demucs/lib")
             let smart=((try? fm.contentsOfDirectory(at:libs,includingPropertiesForKeys:nil)) ?? []).contains{fm.fileExists(atPath:$0.appendingPathComponent("site-packages/beat_this").path)}
@@ -380,9 +407,13 @@ extension StudioApp {
         }
         if available(".venv-structure"){steps.append("structure")}
         if project.key.isEmpty{steps.append("key")}
-        if available(".venv-words"){steps.append("lyrics")}
-        steps.append("chords")
-        return steps.filter{!project.analysisDone($0)}+(project.guideKey == project.desiredGuideKey() ? [] : ["guides"])
+        if available(".venv-words"){steps.append(project.analysisDone("lyrics") ? "lyricscorrect" : "lyrics")}
+        steps=steps.filter{!project.analysisDone($0)}
+        // The final pass discovers and aligns chords once, after the sections.
+        // Existing choices remain editable and no human validation is invented.
+        if project.tracks.contains(where:{$0.role=="source"}),!steps.isEmpty || project.structureProposal?.status != "prepared" {steps.append("prepareReview")}
+        if !steps.isEmpty || project.guideKey != project.desiredGuideKey(){steps.append("guides")}
+        return steps
     }
     func calibrateImportedSong() throws {
         guard !project.analysisDone("grid") else{return}
@@ -404,10 +435,23 @@ extension StudioApp {
         let steps=analysisPlan().filter{only?.contains($0) ?? true},identity=project.id,generation=transportGeneration
         func next(_ index:Int) throws {
             guard self.project.id==identity,self.transportGeneration==generation else{return}
-            if index==steps.count {if let completion=completion {try completion();return};self.notice="Préparation terminée. Écoute le résultat, ajuste les propositions, puis valide le morceau.";self.sendState();return}
+            if index==steps.count {if let completion=completion {try completion();return};self.notice="Morceau préparé. Les améliorations sont visibles dans Pistes & structure ; écoute les passages signalés.";self.sendState();return}
             let kind=steps[index]
             let finish:()throws->Void = {try next(index+1)}
             if kind=="guides" {try self.withGuides(finish)}
+            else if kind=="vocalsplit" {try self.creativeTask(["kind":kind],completion:finish)}
+            else if kind=="prepareReview" {
+                let checkedRevision=self.revision
+                try self.startJob(kind) {result in
+                    guard self.revision==checkedRevision else{throw StudioError("Le morceau a changé pendant la vérification finale.")}
+                    let object=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
+                    guard let value=object["project"] else{throw StudioError("Préparation finale incomplète.")}
+                    let prepared=try JSONDecoder().decode(StudioProject.self,from:JSONSerialization.data(withJSONObject:value))
+                    guard prepared.id==self.project.id else{throw StudioError("Préparation d’un autre morceau.")}
+                    try prepared.validate();self.remember();self.project=prepared;try self.reloadAudio();try self.changed(invalidate:false)
+                    try finish()
+                }
+            }
             else if ["smartgrid","key"].contains(kind){try self.advancedTask(["kind":kind],completion:finish)}
             else{try self.runAnalysis(kind,model:args["model"] as? String ?? "htdemucs",language:args["language"] as? String ?? "auto",quality:args["quality"] as? String ?? "standard",completion:finish)}
             if self.busy {self.jobPlan=steps;self.jobPlanIndex=index;self.jobName="Tout préparer · \(index+1)/\(steps.count) · "+self.jobName;self.sendState()}

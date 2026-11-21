@@ -105,7 +105,7 @@ def guide_key(p):
     for item in value['sections']+value['cues']:
         for key in ('reviewed','locked','origin'):item.pop(key,None)
     # Platform names prevent accidentally reusing Mac voice assets after editing on Windows.
-    return 'windows-guides-6:'+hashlib.sha256(json.dumps(value,sort_keys=True,allow_nan=False).encode()).hexdigest()
+    return 'windows-guides-7:'+hashlib.sha256(json.dumps(value,sort_keys=True,allow_nan=False).encode()).hexdigest()
 
 def period(p,at):
     import bisect
@@ -140,7 +140,9 @@ def analysis_done(p,kind):
         return bool(p.get(field) or kind in p.get('analysesCompleted',[]) or (p.get('preparation') or {}).get('fingerprint'))
     roles=[t['role'] for t in p.get('tracks',[])]
     if kind=='separate':return any(r in ('drums','bass','vocals','other','guitar','piano') for r in roles)
-    if kind=='drumsep':return any(r.startswith('drum_') for r in roles)
+    if kind=='drumsep':return all(r in roles for r in ('drum_kick','drum_snare','drum_toms','drum_cymbals'))
+    if kind=='vocalsplit':return all(r in roles for r in ('vocal_lead','vocal_backing'))
+    if kind=='lyricscorrect':return bool(p.get('lyricsReference')) or not p.get('lyrics')
     return False
 
 
@@ -184,3 +186,10 @@ def edit_marker(p,args,review=False):
             elif at<previous['end']:raise ValueError('Cette position chevauche la section précédente.')
         item['start']=at;item['locked']=True;item['origin']='manual'
     item['reviewed']=False
+
+
+def guide_track(path, root, name, role, previous):
+    result = track(path, root, name, role)
+    old = next((t for t in previous if t['role'] == role), {})
+    result.update({key: old[key] for key in ('id', 'muted', 'solo') if key in old})
+    return result

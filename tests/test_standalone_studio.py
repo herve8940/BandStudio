@@ -167,6 +167,27 @@ def test_native_ui_commands_and_project_binding(tmp_path,windows):
             project['id']='next-project'
             page.evaluate('p=>window.studioReceive({type:"state",project:p,duration:100,loaded:true,library:[],revision:2})',project)
             expect(page.locator('#editor')).not_to_be_visible()
+            # Generated guides expose the same M/S controls and their actual settings gain.
+            project['settings']={'clickGain':.45,'callsGain':.6,'cuesGain':.7,'countGain':.8}
+            for role,key in [('guide_click','clickGain'),('guide_voice','callsGain'),('guide_cue','cuesGain'),('guide_count','countGain')]:
+                guide={**project['tracks'][0],'id':role,'role':role,'name':role,'gain':.1}
+                project['tracks'].append(guide)
+            page.evaluate('p=>window.studioReceive({type:"state",project:p,duration:100,loaded:true,library:[],revision:3})',project)
+            for role,key in [('guide_click','clickGain'),('guide_voice','callsGain'),('guide_cue','cuesGain'),('guide_count','countGain')]:
+                row=page.locator(f'.track[data-id={role}]')
+                assert float(row.get_by_role('slider').input_value())==project['settings'][key]
+                for label,flag in [('M','muted'),('S','solo')]:
+                    row.locator('.track-buttons button').nth(0 if label=='M' else 1).click()
+                    assert page.evaluate('window.sent.at(-1)')==dict(command='track',args={'id':role,flag:True},projectID=project['id'])
+                row.get_by_role('slider').fill('0.35')
+                row.get_by_role('slider').dispatch_event('change')
+                assert page.evaluate('window.sent.at(-1)')==dict(command='guideMix',args={'key':key,'value':.35},projectID=project['id'])
+            project['tracks'][-1].update(muted=True,solo=True)
+            page.evaluate('p=>window.studioReceive({type:"state",project:p,duration:100,loaded:true,library:[],revision:4})',project)
+            expect(page.locator('.track[data-id=guide_count] .track-buttons button').nth(0)).to_have_attribute('aria-pressed','true')
+            expect(page.locator('.track[data-id=guide_count] .track-buttons button').nth(1)).to_have_attribute('aria-pressed','true')
+            page.locator('.track[data-id=guide_count] .track-name').click()
+            expect(page.locator('#view-guides')).to_be_visible()
             for name in ['prepare','delivery','library','settings','guides','prompter','studio']:
                 page.locator(f'.rail [data-view={name}]').click()
                 expect(page.locator('#view-'+name)).to_be_visible()
@@ -202,7 +223,7 @@ def test_native_ui_commands_and_project_binding(tmp_path,windows):
             page.locator('#annotationForm button[type=submit]').click()
             assert page.evaluate('window.sent.at(-1).args.start')==1.25
             page.locator('.rail [data-view=studio]').click()
-            page.locator('.track-name').click()
+            page.locator('.track-name').first.click()
             page.locator('#trackPan').fill('0.5')
             page.locator('#trackOffset').fill('-0.05')
             page.locator('#trackForm button[type=submit]').click()

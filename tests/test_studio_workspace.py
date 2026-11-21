@@ -69,3 +69,43 @@ def test_arbitrary_section_names_are_text_and_manual_protection_is_visible(manua
     assert page.locator('#structureTable img').count()==0
     assert page.locator('.structure-status').first.inner_text()=='✓ Validée\nProtégée'
     assert page.locator('.overview-section').first.inner_text()==p['sections'][0]['name']
+
+
+def test_sidebar_collapses_persists_and_restores_without_changing_section(manual_page):
+    page,p=manual_page
+    page.locator('[data-workspace-mode=structure]').click()
+    page.locator('.structure-row[data-id=b] .structure-name').click()
+    page.locator('#zoomSelection').click()
+    selected=page.evaluate('({id:selected,start:viewport().start,span:viewport().span})')
+    page.evaluate('sent.length=0')
+    for width in (1360,960):
+        page.set_viewport_size({'width':width,'height':1000})
+        before=page.locator('.arrangement').bounding_box()['width']
+        page.locator('#sidebarToggle').click()
+        assert not page.locator('.rail').is_visible()
+        assert page.locator('#sidebarToggle').get_attribute('aria-expanded')=='false'
+        assert page.locator('.arrangement').bounding_box()['width']>before+100
+        assert page.evaluate('({id:selected,start:viewport().start,span:viewport().span})')==selected
+        assert page.locator('#structureTable').evaluate('(e)=>e.scrollWidth<=e.clientWidth+1')
+        assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
+        page.locator('#sidebarToggle').click()
+        assert page.locator('.rail').is_visible()
+    assert page.evaluate('sent')==[]
+    page.locator('#sidebarToggle').click()
+    page.reload()
+    assert not page.locator('.rail').is_visible()
+    page.locator('#sidebarToggle').click()
+    page.locator('.rail [data-view=guides]').click()
+    assert page.locator('#view-guides').is_visible()
+    assert page.locator('#sidebarToggle').is_visible()
+
+
+def test_online_lyric_correction_is_available_from_the_sheet(manual_page):
+    page,p=manual_page
+    page.evaluate("view('sheet')")
+    page.locator('#sheetCorrectLyrics').click()
+    assert page.evaluate('sent.at(-1)')==dict(command='analyze',projectID='manual',args=dict(kind='lyricscorrect',model='htdemucs',language='auto',reanalyze=True))
+    p['lyricsReference']=dict(status='corrected',message='Deux lignes recalées.',sources=['LRCLIB'],corrected=2,review=0)
+    page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:3,busy:true})',p)
+    assert page.locator('#correctLyrics').is_disabled()
+    assert page.locator('#lyricsReferenceStatus').inner_text()=='Deux lignes recalées. Sources : LRCLIB'
