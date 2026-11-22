@@ -187,6 +187,7 @@ class Api:
     def _reload(self):
         pos,mode=self._audio.position,self._audio.mode;self._audio.load(self._project,self._root);self._audio.position=min(pos,model.duration(self._project));self._audio.mode=mode
     def _load(self,root,prepare_guides=True):
+        if root.resolve() in catalog.pending(self._library):raise ValueError('Ce morceau est dans la corbeille BandStudio. Restaure-le depuis Mes morceaux pour l’ouvrir.')
         p=model.load(root)
         from section_grid_rollback import rollback_section_grid
         rollback_section_grid(p,root)
@@ -482,14 +483,15 @@ class Api:
             self._notice='Morceau renommé.';return
         if cmd=='deleteProject':
             path=catalog.member(self._library,args['path']);active=self._root is not None and path==self._root.resolve()
-            if active:a.close();a.data.clear()
+            if active:
+                self._transport_generation+=1;a.close()
             try:catalog.remove(self._library,path)
             except Exception:
                 if active:self._reload()
                 raise
             if active:
                 self._audio=Audio(self._engine);self._project=model.fresh();self._root=None;self._history=[];self._future=[];self._last_export='';self._revision+=1
-            self._notice='Morceau déplacé dans la corbeille BandStudio. Tu peux le restaurer depuis Mes morceaux.';return
+            self._notice='Morceau retiré de la bibliothèque. Tu peux le restaurer depuis Mes morceaux.';return
         if cmd=='restoreProject':
             catalog.restore(self._library);self._notice='Morceau restauré dans la bibliothèque.';return
         if cmd=='projectArtwork':

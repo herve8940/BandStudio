@@ -1,6 +1,7 @@
 from listening import included, guide_audible
 """Portable audio timeline: the same block mixer is used offline and by PortAudio."""
 import copy
+from contextlib import contextmanager
 import hashlib
 import math
 from pathlib import Path
@@ -20,10 +21,24 @@ SR=44100
 def pcm(path):
     with warnings.catch_warnings():
         warnings.simplefilter('ignore');rate,data=wavfile.read(path,mmap=True)
-    if rate!=SR or data.dtype!=np.float32:raise ValueError('Le média doit être converti en WAV flottant 44,1 kHz.')
-    if data.ndim==1:data=data[:,None]
-    if data.shape[1]!=2:raise ValueError('Le lecteur attend un média stéréo.')
+    try:
+        if rate!=SR or data.dtype!=np.float32:raise ValueError('Le média doit être converti en WAV flottant 44,1 kHz.')
+        if data.ndim==1:data=data[:,None]
+        if data.shape[1]!=2:raise ValueError('Le lecteur attend un média stéréo.')
+    except Exception:
+        release_pcm(data);raise
     return data
+
+def release_pcm(data):
+    """Release a reader-owned mapping only after its callback and views are done."""
+    mapping=getattr(data,'_mmap',None)
+    if mapping is not None and not mapping.closed:mapping.close()
+
+@contextmanager
+def temporary_pcm(path):
+    data=pcm(path)
+    try:yield data
+    finally:release_pcm(data)
 
 def converted(source,cache,engine,rate=1,pitch=0):
     info=sf.info(source)
@@ -52,15 +67,24 @@ class Audio:
     def close(self):
         self.pause()
         if self.stream:self.stream.close();self.stream=None
+        with self.lock:self._release_media()
+    def _release_media(self):
+        for data in self.data.values():release_pcm(data)
+        self.data.clear()
     def load(self,p,root):
         self.close();self.project=copy.deepcopy(p);self.root=Path(root);self.position=0
         self.mode='original' if any(t['role']=='source' for t in p['tracks']) else 'mix'
         self.prepare()
     def prepare(self):
-        self.data={}
-        for t in self.project['tracks']:
-            file=relative_file(self.root,t['file']);pitch=0 if t['role'].startswith('guide_') else self.pitch
-            self.data[t['id']]=pcm(converted(file,self.root/'Cache/audio',self.engine,self.rate,pitch))
+        self.pause()
+        with self.lock:
+            self._release_media()
+            try:
+                for t in self.project['tracks']:
+                    file=relative_file(self.root,t['file']);pitch=0 if t['role'].startswith('guide_') else self.pitch
+                    self.data[t['id']]=pcm(converted(file,self.root/'Cache/audio',self.engine,self.rate,pitch))
+            except Exception:
+                self._release_media();raise
     def mix(self,start,frames,include_guides=True,skip_guides_before=None):
         p=self.project;s=p['settings'];out=np.zeros((frames,2),np.float32)
         has_stems=any(t['role'] not in ('source','take') and not t['role'].startswith('guide_') for t in p['tracks'])
@@ -93,13 +117,15 @@ class Audio:
                 t=np.arange(int(SR*.035/self.rate))/SR;x=.65*np.sin(2*np.pi*(1760 if event['number']==1 else 1100)*t)*np.exp(-t*130*self.rate);place(np.column_stack((x,x)),event['time'],s['countGain'],s['countPan'])
             key='number:'+str(event['number'])
             if s['countVoice'] and guide_audible(p,'guide_count') and event['spoken'] and key in p['guideFiles']:
-                x=pcm(converted(relative_file(self.root,p['guideFiles'][key]),self.root/'Cache/audio',self.engine,self.rate,0));place(x[:int(beat*SR*.92)],event['time'],s['countGain'],s['countPan'])
+                with temporary_pcm(converted(relative_file(self.root,p['guideFiles'][key]),self.root/'Cache/audio',self.engine,self.rate,0)) as x:
+                    place(x[:int(beat*SR*.92)],event['time'],s['countGain'],s['countPan'])
         if length and include_call and guide_audible(p,'guide_voice') and s['callsEnabled'] and (s['countBars']>1 or not s['countVoice']):
             section=next((x for x in p['sections'] if x['start']<=plan['target']+.1 and x['end']>plan['target'] and x.get('announce') is not False),None)
             key='call:'+section['id'] if section else ''
             if key in p['guideFiles']:
                 available=next((e['time'] for e in plan['events'] if e['spoken']),plan['end']) if s['countVoice'] else plan['end']
-                x=pcm(converted(relative_file(self.root,p['guideFiles'][key]),self.root/'Cache/audio',self.engine,self.rate,0));limit=round(max(0,available-.05)/self.rate*SR);place(x[:limit],0,s['callsGain'],s['callsPan'])
+                with temporary_pcm(converted(relative_file(self.root,p['guideFiles'][key]),self.root/'Cache/audio',self.engine,self.rate,0)) as x:
+                    limit=round(max(0,available-.05)/self.rate*SR);place(x[:limit],0,s['callsGain'],s['callsPan'])
         return out
     def play(self,with_count=True,hardware=True):
         if self.running:return
@@ -148,14 +174,16 @@ class Audio:
                         self.pending_rate=min(s['loopMaxRate'],self.rate+s['loopStep']);self.running=False;break
             return out*.85
     def render(self,target,start,end,include_count=True):
-        other=Audio(self.engine);other.rate=self.rate;other.pitch=self.pitch;other.load(self.project,self.root);other.mode=self.mode;other.position=start
-        other.project=copy.deepcopy(other.project)
-        # An artificial endpoint lets the exact same block scheduler render a selected passage.
-        other.loop=True;other.loopStart=start;other.loopEnd=end;other.project['settings']['loopStep']=0
-        other.count=other.make_count(start,other.project['settings']['exportGuides']) if include_count else np.zeros((0,2),np.float32);other.count_at=0;other.running=True
-        plan=count_plan(other.project,start);other.count_events=plan['events'] if include_count else [];other.lead_frames=round(plan['lead']/self.rate*SR) if include_count else 0;other.count_target=plan['target'] if include_count and plan['events'] else None
-        total=round((end-start)/self.rate*SR)+other.lead_frames;left=total
-        with sf.SoundFile(target,'w',samplerate=SR,channels=2,subtype='FLOAT') as f:
-            while left:
-                n=min(left,4096);f.write(other.block(n,other.project['settings']['exportGuides']));left-=n
-        other.close()
+        other=Audio(self.engine)
+        try:
+            other.rate=self.rate;other.pitch=self.pitch;other.load(self.project,self.root);other.mode=self.mode;other.position=start
+            other.project=copy.deepcopy(other.project)
+            # An artificial endpoint lets the exact same block scheduler render a selected passage.
+            other.loop=True;other.loopStart=start;other.loopEnd=end;other.project['settings']['loopStep']=0
+            other.count=other.make_count(start,other.project['settings']['exportGuides']) if include_count else np.zeros((0,2),np.float32);other.count_at=0;other.running=True
+            plan=count_plan(other.project,start);other.count_events=plan['events'] if include_count else [];other.lead_frames=round(plan['lead']/self.rate*SR) if include_count else 0;other.count_target=plan['target'] if include_count and plan['events'] else None
+            total=round((end-start)/self.rate*SR)+other.lead_frames;left=total
+            with sf.SoundFile(target,'w',samplerate=SR,channels=2,subtype='FLOAT') as f:
+                while left:
+                    n=min(left,4096);f.write(other.block(n,other.project['settings']['exportGuides']));left-=n
+        finally:other.close()

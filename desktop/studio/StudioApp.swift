@@ -101,8 +101,9 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     @objc func about() {NSApp.orderFrontStandardAboutPanel(options:[.applicationName:"BandStudio",.applicationVersion:"1.1.0 · préparation pour REAPER",.credits:NSAttributedString(string:"Stems, appels, décompte, paroles, accords et projets REAPER\nTraitement local sur ce Mac")])}
     func projectList()->[[String:String]] {
         guard let library=library else{return []}
+        let hidden=pendingTrashedProjects()
         return ((try? FileManager.default.contentsOfDirectory(at:library,includingPropertiesForKeys:nil)) ?? [])
-            .filter{$0.pathExtension == "bandstudio" && $0.resolvingSymlinksInPath().deletingLastPathComponent()==library.resolvingSymlinksInPath() && FileManager.default.fileExists(atPath:$0.appendingPathComponent("project.json").path)}.sorted{$0.lastPathComponent < $1.lastPathComponent}
+            .filter{!hidden.contains($0.standardizedFileURL) && $0.pathExtension == "bandstudio" && $0.resolvingSymlinksInPath().deletingLastPathComponent()==library.resolvingSymlinksInPath() && FileManager.default.fileExists(atPath:$0.appendingPathComponent("project.json").path)}.sorted{$0.lastPathComponent < $1.lastPathComponent}
             .map{url in
                 var item=["name":url.deletingPathExtension().lastPathComponent,"path":url.path]
                 if let data=try? Data(contentsOf:url.appendingPathComponent("project.json")),let p=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any],let name=p["name"] as? String {item["name"]=name}
@@ -171,6 +172,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         if busy || recorder.running || recordPending {throw StudioError("Termine le traitement ou la prise avant de changer de projet.")}
     }
     func load(_ url:URL,prepareGuides:Bool=true) throws {
+        guard !pendingTrashedProjects().contains(url.standardizedFileURL) else{throw StudioError("Ce morceau est dans la corbeille BandStudio. Restaure-le depuis Mes morceaux pour l’ouvrir.")}
         try requireIdle()
         var p=try StudioProject.load(url)
         if p.sectionGridVersion==1 {
