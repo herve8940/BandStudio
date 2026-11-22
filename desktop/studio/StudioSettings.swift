@@ -132,22 +132,9 @@ extension StudioProject {
     func countPlan(at position:Double)->CountPlan {
         let meter=settings.beatsPerBar,n=settings.countBars*meter
         guard n>0 else{return CountPlan(lead:0,end:0,target:position,events:[])}
-        var anchor=0,target=0
-        let at:(Int)->Double
-        let grid=Array(Set(beats.filter{$0.isFinite && $0>=0})).sorted()
-        if settings.gridMode=="detected",grid.count>1 {
-            anchor=(grid.indices.min{abs(grid[$0]-settings.firstBeat)<abs(grid[$1]-settings.firstBeat)} ?? 0)%meter
-            let deltas=zip(grid,grid.dropFirst()).map{$1-$0}
-            func median(_ values:[Double])->Double {let a=values.sorted(),i=a.count/2;return a.count%2==0 ? (a[i-1]+a[i])/2 : a[i]}
-            let head=median(Array(deltas.prefix(8))),tail=median(Array(deltas.suffix(8)))
-            at={i in i<0 ? grid[0]+Double(i)*head : i>=grid.count ? grid.last!+Double(i-grid.count+1)*tail : grid[i]}
-            if position<=grid[0]+1e-7 {target=anchor}
-            else if position>grid.last! {target=grid.count-1+Int(ceil((position-grid.last!)/tail-1e-7))}
-            else {target=grid.firstIndex(where:{$0>=position-1e-7}) ?? grid.count-1}
-        } else {
-            let period=60/pulseBPM,first=settings.firstBeat
-            at={first+Double($0)*period};target=Int(ceil((position-first)/period-1e-7))
-        }
+        let period=60/pulseBPM,first=settings.firstBeat,anchor=0
+        let at:(Int)->Double={first+Double($0)*period}
+        let target=position<=0 ? Int(ceil(-first/(period*Double(meter))-1e-9))*meter : Int(ceil((position-first)/period-1e-9))
         // Speak the full count through the pickup, including "four" before "one".
         let lead=max(0,position-at(target-n))
         let events=(target-n..<target).map{i in CountEvent(time:at(i)-position+lead,end:at(i+1)-position+lead,number:((i-anchor)%meter+meter)%meter+1,spoken:i>=target-meter)}
@@ -202,7 +189,7 @@ extension StudioProject {
         sourceURL=try d.decodeIfPresent(String.self,forKey:.sourceURL) ?? ""
     }
     func desiredGuideKey()->String {
-        struct Input:Encodable{var generator=6;var settings:GuideSettings;var bpm:Double;var beats:[Double];var sections:[Section];var cues:[Cue];var duration:Double}
+        struct Input:Encodable{var generator=7;var settings:GuideSettings;var bpm:Double;var beats:[Double];var sections:[Section];var cues:[Cue];var duration:Double}
         var sound=settings
         sound.referenceBPM=nil
         if sound.gridMode=="detected" {sound.pulseUnit=nil}
@@ -217,11 +204,6 @@ extension StudioProject {
         return SHA256.hash(data:(try? enc.encode(input)) ?? Data()).map{String(format:"%02x",$0)}.joined()
     }
     func period(at position:Double)->Double {
-        if settings.gridMode == "detected",beats.count>1 {
-            let index=beats.firstIndex(where:{$0>position}) ?? beats.count-1
-            let i=max(1,index),delta=beats[i]-beats[i-1]
-            if delta>0.1 && delta<3{return delta}
-        }
         return 60/pulseBPM
     }
 }

@@ -25,6 +25,18 @@ def tempo_info(project):
                 source='manual' if s.get('gridMode')=='fixed' else 'reference' if reference else 'estimated')
 
 
+def metronome_grid(project, duration):
+    """One continuous clock, including intros, detection gaps and outros.
+
+    Detected beats remain available for musical analysis. They must not drive
+    a metronome: detector jitter and missed beats are not tempo changes.
+    """
+    first=project['settings']['firstBeat'];period=60/pulse_bpm(project)
+    start=math.ceil(-first/period-1e-9)
+    stop=math.ceil((duration-first)/period-1e-9)
+    return [max(0.,first+i*period) for i in range(start,stop)]
+
+
 def grid(project):
     s=project['settings'];meter=s['beatsPerBar']
     beats=sorted(set(t for t in project.get('beats',[]) if math.isfinite(t) and t>=0))
@@ -49,7 +61,13 @@ def grid(project):
 def count_plan(project,position=0):
     s=project['settings'];meter=s['beatsPerBar'];n=s['countBars']*meter
     if not n:return dict(lead=0,end=0,target=position,events=[])
-    at,following,anchor=grid(project);target=following(position)
+    first=s['firstBeat'];period=60/pulse_bpm(project)
+    at=lambda i:first+i*period
+    # At the beginning, hand over on the first nonnegative downbeat. Extend
+    # the saved phase backwards instead of waiting through an untracked intro.
+    target=(math.ceil(-first/(period*meter)-1e-9)*meter if position<=0 else
+            math.ceil((position-first)/period-1e-9))
+    anchor=0
     # Count every beat through an opening pickup, including the final "four".
     # The music keeps its pickup; the generated click takes over on the "one".
     lead=max(0,position-at(target-n))

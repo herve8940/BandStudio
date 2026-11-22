@@ -14,13 +14,13 @@ import re
 import threading
 import time
 import unicodedata
-from urllib.parse import urlsplit, urlencode, urljoin, parse_qs
+from urllib.parse import urlsplit, urlencode, urljoin, parse_qs, quote
 from urllib.error import HTTPError
 from urllib.request import Request, HTTPRedirectHandler, build_opener
 
 from chord_provider_defaults import PROVIDERS
-CATALOG_VERSION = 8
-NETWORK_BUDGET = 8.
+CATALOG_VERSION = 9
+NETWORK_BUDGET = 14.
 CACHE_RETRY_SECONDS = 300.
 HOSTS = {host for p in PROVIDERS if p.get('template') for host in (p['domain'],'www.'+p['domain'])} | {'www.cifraclub.com.br','cifraclub.com.br'}
 MAX_BYTES = 1_500_000
@@ -79,6 +79,7 @@ def identity(project):
         parts=re.split(r'\s+[-–—|]\s+',title,maxsplit=1)
         if len(parts)==2:
             if normalized(parts[0])==normalized(artist):title=parts[1]
+            elif normalized(parts[1])==normalized(artist):title=parts[0]
             elif not meta.get('source') and normalized(title)==normalized(name):
                 # Video tags can put the uploader in artist and the complete
                 # "Artist - Title" filename in title. Require both independent
@@ -110,6 +111,8 @@ def search_url(query,kind='chords',provider=''):
 
 
 def provider_url(provider,title,artist):
+    if provider['id']=='ukuleletabs':
+        return provider['template'].format(artist=quote(artist.replace(' ','+'),safe=''))
     if provider['id'] in ('echords','acordesweb'):artist=artist.replace('/','').replace('⧸','')
     # Most catalogs collapse initials; GuitarTabsExplorer retains their dots.
     if provider['id']!='explorer':artist=artist.replace('.','')
@@ -131,7 +134,7 @@ def matches_heading(heading,title,artist):
     for field in fields:
         field=re.sub(r'\s*[\[(](?:acordes|chords|cifras?|tabs?|tablatura)[\])]','',field,flags=re.I)
         field=re.split(r':\s*(?:acordes|chords|cifras)\b',field,flags=re.I)[0]
-        field=re.sub(r'\s+(?:chords|tabs|acordes|cifras)(?:\s+and\s+tabs)?\s*$','',field,flags=re.I)
+        field=re.sub(r'\s+(?:uke tab|chords|tabs|acordes|cifras)(?:\s+and\s+tabs)?\s*$','',field,flags=re.I)
         cleaned.append(clean_name(field))
     def title_key(value):return normalized(re.sub(r"['’`′]",'',value))
     def artist_key(value):return re.sub(r'^the\s+','',normalized(value.replace('/','').replace('⧸','').replace('.','')))
@@ -287,7 +290,11 @@ class Chart(HTMLParser):
         self.sequence=dict(kind=kind,chords=[],repeat=1)
         if len(self.sectionSequences)<128:self.sectionSequences.append(self.sequence)
     def handle_starttag(self,tag,attrs):
-        if tag not in ('br','hr','meta','link','img','input','source','wbr'):self.stack.append((tag,dict(attrs)))
+        attrs=dict(attrs)
+        if self.provider=='khmerchords' and attrs.get('id')=='lc-content':
+            capo=attrs.get('data-capo','')
+            if capo.isdigit():self.capo=min(12,int(capo))
+        if tag not in ('br','hr','meta','link','img','input','source','wbr'):self.stack.append((tag,attrs))
     def handle_endtag(self,tag):
         for i in range(len(self.stack)-1,-1,-1):
             if self.stack[i][0]==tag:self.stack=self.stack[:i];break
@@ -297,11 +304,14 @@ class Chart(HTMLParser):
         if not self.stack:return
         tag,attrs=self.stack[-1]
         in_pre=any(t=='pre' for t,_ in self.stack)
-        in_chart=in_pre or (self.provider=='chordsworld' and any('chord-short-code-wrap' in a.get('class','').split() for _,a in self.stack))
+        in_chart=in_pre or (self.provider=='chordsworld' and any('chord-short-code-wrap' in a.get('class','').split() for _,a in self.stack)) or (self.provider=='khmerchords' and any(a.get('id')=='lc-content' for _,a in self.stack)) or (self.provider=='chordsandtabs' and any(t=='div' and 'song' in a.get('class','').split() for t,a in self.stack))
         in_chord=in_chart and ((self.provider=='cifraclub' and tag=='b') or
             (self.provider in ('echords','explorer') and tag=='span' and 'data-chord' in attrs) or
             (self.provider=='acordesweb' and tag=='a' and any(t=='pre' and a.get('id')=='chordsPre' for t,a in self.stack)) or
-            (self.provider=='chordsworld' and tag=='c-2'))
+            (self.provider=='chordsworld' and tag=='c-2') or
+            (self.provider=='khmerchords' and tag=='span' and 'c' in attrs.get('class','').split()) or
+            (self.provider=='ukuleletabs' and tag=='a' and 'chord' in attrs.get('class','').split()) or
+            (self.provider=='chordsandtabs' and tag=='sup'))
         if self.provider=='chordsworld' and 'capo--Value' in attrs.get('class','').split() and token.isdigit():self.capo=min(12,int(token))
         if in_chart and tag=='music-part':
             kind=section_kind(re.sub(r'\s+\d+$','',token))
@@ -327,6 +337,23 @@ class Chart(HTMLParser):
             self.previous=token
 
 
+class SongLinks(HTMLParser):
+    """Resolve numbered Ukulele Tabs pages from their public artist index."""
+    def __init__(self,base,title):
+        super().__init__();self.base=base;self.title=normalized(title);self.anchor=None;self.urls=[]
+    def handle_starttag(self,tag,attrs):
+        if tag=='a':self.anchor=[dict(attrs).get('href',''),[]]
+    def handle_data(self,text):
+        if self.anchor is not None:self.anchor[1].append(text)
+    def handle_endtag(self,tag):
+        if tag!='a' or self.anchor is None:return
+        href,text=self.anchor;self.anchor=None
+        url=urljoin(self.base,href)
+        if (normalized(''.join(text))==self.title and safe_url(url) and same_publisher(self.base,url)
+                and re.search(r'-uke-tab-\d+\.html$',urlsplit(url).path)
+                and url not in self.urls and len(self.urls)<MAX_DISCOVERED_URLS):self.urls.append(url)
+
+
 def _read_chart(provider,title,artist,url):
     status='not_found';source=None
     try:
@@ -336,6 +363,13 @@ def _read_chart(provider,title,artist,url):
         if not safe_url(url) or not same_publisher(url,'https://'+provider['domain']):
             raise ValueError('Adresse de grille invalide.')
         chart=Chart(provider['id']);chart.feed(page)
+        if provider['id']=='ukuleletabs' and urlsplit(url).path.endswith('-uke-tabs.html') and not chart.chords:
+            links=SongLinks(url,title);links.feed(page)
+            for candidate in links.urls:
+                request_timeout()
+                result=_read_chart(provider,title,artist,candidate)
+                if result[1]!='not_found':return result
+            return provider['id'],'not_found',None
         from chart_sections import extract as section_anchors,SCHEMA as ANCHOR_SCHEMA
         if matches_heading(chart.title,title,artist) and chart.chords:
             source=dict(title=title+' — '+artist,publisher=provider['publisher'],url=url,chords=chart.chords,transitions=chart.transitions,sections=chart.sections,
@@ -398,7 +432,7 @@ def _read_provider(provider,title,artist):
 
 
 def _search(title,artist,only=None):
-    """At most three requests in flight, eight seconds total, no model loading.
+    """At most three requests in flight, bounded total time, no model loading.
 
     Daemon readers only return immutable results. A slow site cannot hold up the
     worker on exit; late results never mutate the project or its selected chart.

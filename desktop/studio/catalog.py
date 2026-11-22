@@ -68,6 +68,33 @@ def remove(library,path):
     return str(folder/path.name)
 
 
+def rename(library,path,name):
+    """Change the display name; stable paths preserve media and setlists."""
+    path=member(library,path)
+    if not isinstance(name,str):raise ValueError('Donne un nom au morceau.')
+    name=name.strip()
+    if not name or len(name)>200 or any(ord(c)<32 for c in name):
+        raise ValueError('Le nom doit contenir entre 1 et 200 caractères, sur une seule ligne.')
+    target=path/'project.json'
+    if target.is_symlink():raise ValueError('Fichier de morceau invalide.')
+    project=json.loads(target.read_text(encoding='utf-8'))
+    approval=project.get('preparation') or {}
+    if approval.get('validatedAt'):
+        from preparation import fingerprint
+        snapshot={**project,'_root':str(path)}
+        try:
+            # A label change keeps a valid musical approval. Never revalidate
+            # stale settings, edits or missing/modified media while renaming.
+            if approval.get('fingerprint')==fingerprint(snapshot):
+                snapshot['name']=name
+                project['preparation']={**approval,'fingerprint':fingerprint(snapshot)}
+        except (OSError,ValueError,KeyError):pass
+    project['name']=name
+    from services import atomic
+    atomic(target,project)
+    return name
+
+
 def restore(library):
     items=trashed(library)
     if not items:raise ValueError('La corbeille BandStudio est vide.')
@@ -84,6 +111,7 @@ if __name__=='__main__':
         from artwork import seed
         seed(library,sys.argv[3],sys.argv[4],json.loads(sys.argv[5]));value=True
     elif action=='remove':value=remove(library,sys.argv[3])
+    elif action=='rename':value=rename(library,sys.argv[3],sys.argv[4])
     elif action=='restore':value=restore(library)
     else:raise ValueError('Action inconnue.')
     print(json.dumps(value,ensure_ascii=True))

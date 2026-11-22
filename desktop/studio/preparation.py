@@ -6,12 +6,13 @@ import json
 import math
 from pathlib import Path
 import shutil
+import tempfile
 import uuid
 
 import soundfile as sf
 
 from platform_tools import executable
-from services import atomic, export_reaper, run, safe_name
+from services import atomic, export_reaper, reaper_filename, run
 
 
 def media_file(root, relative):
@@ -178,6 +179,16 @@ def transformed(p, folder, engine):
     return result
 
 
+def export_destination(root, name):
+    """Do not repeat a long song title in every level of the export path."""
+    folder='REAPER-'+datetime.now().strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex[:6]
+    for exports in (root/'Exports',root.parent/'Exports'):
+        target=exports/folder
+        try:return target,reaper_filename(name,target)
+        except ValueError:continue
+    raise ValueError('Chemin d’export trop long pour REAPER. Place le morceau dans un dossier plus court, puis relance l’export.')
+
+
 def export_validated(snapshot, output, engine):
     p = json.loads(Path(snapshot).read_text())
     approval = p.get('preparation') or {}
@@ -185,20 +196,23 @@ def export_validated(snapshot, output, engine):
     if not approval.get('validatedAt') or approval.get('fingerprint') != signature:
         raise ValueError('Le morceau a changé ou n’a pas été validé. Ouvre Valider & envoyer avant l’export.')
     summary = review(p)
-    work = Path(output).parent
-    scaled = transformed(p, work / 'PreparedAudio', engine)
-    prepared = work / 'prepared.json'
-    atomic(prepared, scaled)
-    temporary = work / 'export-result.json'
-    export_reaper(prepared, temporary)
-    info = json.loads(temporary.read_text())
-    staged = Path(info['folder'])
-    if fingerprint(p) != signature:
-        raise ValueError('Un média a changé pendant l’export. Valide à nouveau le morceau.')
-    atomic(staged / 'validation.json', dict(version=1, approval=approval, summary=summary))
-    exports = Path(p['_root']) / 'Exports'
-    exports.mkdir(exist_ok=True)
-    target = exports / (safe_name(p['name']) + '-' + datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:6])
-    staged.rename(target)
-    atomic(output, dict(path=str(target / Path(info['path']).name), folder=str(target), summary=summary))
-    shutil.rmtree(work / 'PreparedAudio', ignore_errors=True)
+    target, filename = export_destination(Path(p['_root']),p['name'])
+    target.parent.mkdir(exist_ok=True)
+    # Keep intermediate audio paths short too, on the destination volume so
+    # publishing the complete folder is atomic even for an external drive.
+    with tempfile.TemporaryDirectory(prefix='.export-',dir=target.parent) as scratch:
+        work = Path(scratch)
+        scaled = transformed(p, work / 'PreparedAudio', engine)
+        prepared = work / 'prepared.json'
+        atomic(prepared, scaled)
+        temporary = work / 'export-result.json'
+        export_reaper(prepared, temporary)
+        info = json.loads(temporary.read_text())
+        staged = Path(info['folder'])
+        if fingerprint(p) != signature:
+            raise ValueError('Un média a changé pendant l’export. Valide à nouveau le morceau.')
+        atomic(staged / 'validation.json', dict(version=1, approval=approval, summary=summary))
+        exported = Path(info['path'])
+        if exported.name != filename:exported.rename(staged/filename)
+        staged.rename(target)
+    atomic(output, dict(path=str(target / filename), folder=str(target), summary=summary))

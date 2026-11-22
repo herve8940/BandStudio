@@ -26,7 +26,8 @@ def test_public_pages_have_resolving_local_assets_and_translated_tutorials():
         assert '/Users/' not in text and 'file://' not in text
     sitemap=(ROOT/'site/sitemap.xml').read_text()
     assert 'tutorial.html' in sitemap and 'song-sheet.html' in sitemap
-    assert 'RELEASE_2026-11-21.md' in (ROOT/'tools/publish_studio_release.py').read_text()
+    latest_notes=max((ROOT/'docs').glob('RELEASE_????-??-??.md'))
+    assert latest_notes.name in (ROOT/'tools/publish_studio_release.py').read_text()
 
 
 def test_packaged_release_contains_all_preparation_modules_and_visual_assets():

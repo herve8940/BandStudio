@@ -24,7 +24,7 @@ def main():
         assets.append(str(asset))
     assets+=list(map(str,dist.rglob('BandStudio-1.1.0-Windows-x64.zip*')))
     notes=dist/'notes.md'
-    notes.write_text(Path('docs/RELEASE_2026-11-21.md').read_text(encoding='utf-8')+'\n\nRévision : '+sha+'\n',encoding='utf-8')
+    notes.write_text(Path('docs/RELEASE_2026-11-22.md').read_text(encoding='utf-8')+'\n\nRévision : '+sha+'\n',encoding='utf-8')
     exists=subprocess.run(['gh','release','view',tag],capture_output=True).returncode==0
     if not exists:gh('release','create',tag,*assets,'--target',sha,'--title','BandStudio 1.1 · '+sha[:7],'--notes-file',str(notes),'--latest=true')
     # A retried job may find a release whose first upload was interrupted.

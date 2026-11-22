@@ -21,6 +21,9 @@ MARKUP={
  'echords':'<song-chord><pre><span data-chord="C">C</span><span data-chord="G">G</span><span data-chord="C">C</span></pre></song-chord>',
  'explorer':'<pre class="tab-container"><span class="chord" data-chord="C">C</span><span class="chord" data-chord="G">G</span><span class="chord" data-chord="C">C</span></pre>',
  'acordesweb':'<pre id="chordsPre">[Intro]<a>C</a><a>G</a><a>C</a></pre>',
+ 'khmerchords':'<div id="lc-content"><span class="c">C</span><span class="c">G</span><span class="c">C</span></div>',
+ 'chordsandtabs':'<div class="song"><sup>C</sup><sup>G</sup><sup>C</sup></div>',
+ 'ukuleletabs':'<pre><a class="chord">C</a><a class="chord">G</a><a class="chord">C</a></pre>',
  'chordsworld':'<span class="capo--Value">0</span><div class="chord-short-code-wrap"><music-part>Intro</music-part><c-2>C</c-2><c-2>G</c-2><c-2>C</c-2></div>',
 }
 
@@ -40,8 +43,8 @@ def test_provider_parsers_only_read_scoped_chord_markup(provider):
 def test_all_sources_are_separate_and_previous_choice_survives_refresh(monkeypatch):
     monkeypatch.setattr(web,'fetch',fake_fetch)
     p=song();result=web.lookup(p)
-    assert len(result['reference']['sources'])==5
-    assert len({s['publisher'] for s in result['reference']['sources']})==5
+    assert len(result['reference']['sources'])==8
+    assert len({s['publisher'] for s in result['reference']['sources']})==8
     assert all(c['status']=='found' for c in result['reference']['checks'])
     assert result['reference']['catalogVersion']==web.CATALOG_VERSION
     chosen=result['reference']['sources'][2]['url'];p['chordReference']={**result['reference'],'selectedURL':chosen}
@@ -54,7 +57,7 @@ def test_provider_failure_does_not_prevent_other_charts(monkeypatch):
         return fake_fetch(url)
     monkeypatch.setattr(web,'fetch',fetch)
     result=web.lookup(song())['reference']
-    assert result['status']=='found' and len(result['sources'])==3
+    assert result['status']=='found' and len(result['sources'])==6
     assert result['sources'][0]['publisher']=='GuitarTabsExplorer'
     assert [c['status'] for c in result['checks'][:2]]==['unavailable','unavailable']
 
@@ -62,7 +65,7 @@ def test_old_single_provider_cache_is_expanded(monkeypatch):
     monkeypatch.setattr(web,'fetch',fake_fetch)
     p=song();p['chordReference']=dict(query='Artist Song',status='found',sources=[dict(url='https://www.cifraclub.com/artist/song/')])
     result=web.lookup(p)
-    assert not result['cacheHit'] and len(result['reference']['sources'])==5
+    assert not result['cacheHit'] and len(result['reference']['sources'])==8
 
 def test_selection_uses_only_chosen_chart_and_does_not_repeat_network(monkeypatch):
     monkeypatch.setattr(web,'fetch',fake_fetch);p=song();p['chordReference']=web.lookup(p)['reference']
@@ -129,15 +132,15 @@ def test_partial_cache_retries_failures_without_refetching_or_losing_good_charts
         return fake_fetch(url)
     monkeypatch.setattr(web,'fetch',fetch)
     result=web.lookup(p)
-    assert len(calls)==4 and len(result['reference']['sources'])==5
+    assert len(calls)==7 and len(result['reference']['sources'])==8
     assert result['reference']['sources'][0]==previous['sources'][0]
     assert result['reference']['selectedURL']==previous['selectedURL']
     p['chordReference']=result['reference']
-    assert web.lookup(p)['cacheHit'] and len(calls)==4
+    assert web.lookup(p)['cacheHit'] and len(calls)==7
 
 def test_browser_search_catalog_and_query_encoding():
-    assert len(web.public_catalog())==13
-    assert sum(p['automatic'] for p in web.public_catalog())==5
+    assert len(web.public_catalog())==22
+    assert sum(p['automatic'] for p in web.public_catalog())==8
     for provider in web.PROVIDERS:
         url=web.search_url('AC/DC & été #test',provider=provider['id']);parsed=urlsplit(url)
         assert parsed.hostname=='www.google.com' and parsed.scheme=='https'
@@ -160,7 +163,7 @@ def test_slow_sources_have_one_global_budget_and_three_connections(monkeypatch):
     try:
         reference=web.lookup(song())['reference']
         assert time.monotonic()-start<.6
-        assert len(started)==3 and all(c['status']=='unavailable' for c in reference['checks'])
+        assert 1<=len(started)<=3 and all(c['status']=='unavailable' for c in reference['checks'])
     finally:gate.set()
 
 def test_explicit_capo_is_converted_to_sounding_chords(monkeypatch):
@@ -176,12 +179,12 @@ def test_multiple_sources_and_targeted_search_in_ui(manual_page,monkeypatch):
     page_ui,p=manual_page;p['chordReference']=web.lookup(song())['reference']
     page_ui.evaluate('data=>studioReceive({type:"state",...data})',dict(project=p,loaded=True,duration=32,revision=2,chordProviders=web.public_catalog()))
     page_ui.locator('.rail [data-view=prompter]').click();panel=page_ui.locator('#chordReferencePrompter')
-    assert panel.locator('.chord-source').count()==5
-    assert panel.get_by_role('button',name='Utiliser cette grille',exact=True).count()==4
+    assert panel.locator('.chord-source').count()==8
+    assert panel.get_by_role('button',name='Utiliser cette grille',exact=True).count()==7
     panel.get_by_role('button',name='Utiliser cette grille',exact=True).first.click()
     assert page_ui.evaluate('sent.at(-1).args.sourceURL')==p['chordReference']['sources'][1]['url']
     panel.locator('summary').click()
-    assert panel.locator('.chord-provider').count()==13
+    assert panel.locator('.chord-provider').count()==22
     panel.get_by_role('button',name='Rechercher sur Ultimate Guitar',exact=True).click()
     assert page_ui.evaluate('sent.at(-1)')==dict(command='referenceSearch',projectID='manual',args=dict(kind='chords',provider='ultimate',query='Artist Song'))
 

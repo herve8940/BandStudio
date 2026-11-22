@@ -65,7 +65,7 @@ func selfTest(_ directory:String) throws {
           webChords.chordReference?.alignment?.subdivision==2,
           webChords.chordReference?.sources.first?.transitions==[["C","G"]],webChords.chordReference?.selectedURL==source,
           webChords.chordReference?.catalogVersion==2,webChords.chordReference?.checks?.first?.status=="found" else{throw StudioError("Source, calage ou correction manuelle d’accords perdus")}
-    guard ChordProvider.all.count==13,ChordProvider.all.filter({$0.template != nil}).count==5 else{throw StudioError("Catalogues d’accords absents du paquet")}
+    guard ChordProvider.all.count==22,ChordProvider.all.filter({$0.template != nil}).count==8 else{throw StudioError("Catalogues d’accords absents du paquet")}
     let providerSearch=try ChordProvider.searchURL(query:"AC/DC Highway to Hell",kind:"chords",provider:"ultimate")
     guard URLComponents(url:providerSearch,resolvingAgainstBaseURL:false)?.queryItems?.first?.value?.contains("site:ultimate-guitar.com")==true else{throw StudioError("Recherche ciblée invalide")}
     print("PASS native web chord sources, grid placement, confidence and manual protection roundtrip")
@@ -94,8 +94,8 @@ func selfTest(_ directory:String) throws {
     var intro=loaded;intro.settings.gridMode="detected";intro.settings.firstBeat=2.68;intro.settings.countBars=2
     intro.beats=(0..<24).map{2.68+Double($0)*0.64};intro.bpm=93.75
     let count=intro.countPlan(at:0)
-    guard abs(count.lead-2.44)<1e-8,abs(count.end-5.12)<1e-8,count.events.map({$0.number})==[1,2,3,4,1,2,3,4],abs(count.end-count.lead-count.target)<1e-8 else{throw StudioError("Décompte détaché de l’entrée musicale")}
-    intro.beats=(0..<24).map{0.56+Double($0)*0.62};intro.settings.firstBeat=1.18
+    guard abs(count.lead-5.0)<1e-8,abs(count.end-5.12)<1e-8,count.events.map({$0.number})==[1,2,3,4,1,2,3,4],abs(count.end-count.lead-count.target)<1e-8 else{throw StudioError("Décompte détaché de l’entrée musicale")}
+    intro.beats=(0..<24).map{0.56+Double($0)*0.62};intro.settings.firstBeat=1.18;intro.bpm=60/0.62
     let pickup=intro.countPlan(at:0)
     guard abs(pickup.target-1.18)<1e-8,pickup.events.map({$0.number})==[1,2,3,4,1,2,3,4],
           abs(pickup.events.last!.time-pickup.lead-0.56)<1e-8 else{throw StudioError("Quatre absent du décompte en levée")}

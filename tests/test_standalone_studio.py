@@ -211,8 +211,11 @@ def test_native_ui_commands_and_project_binding(tmp_path,windows):
                 expect(page.locator('#stageBeat')).to_have_text(label)
             page.evaluate('window.studioReceive({type:"transport",position:2.5,rate:1,mode:"mix"})')
             assert page.locator('.drum-row').last.locator('.drum-cell').first.get_attribute('class').find('hit')>=0
-            project['settings']['firstBeat']=6.5 # Another downbeat on the same phase leaves numbering stable.
+            # Moving the first measure preserves pulse phase, but earlier bars become pickups.
+            project['settings']['firstBeat']=6.5
             page.evaluate('p=>window.studioReceive({type:"state",project:p,duration:100,loaded:true,library:[],revision:4})',project)
+            expect(page.locator('#stageBeat')).to_have_text('Levée · temps 1 / 4')
+            page.evaluate('window.studioReceive({type:"transport",position:6.5,rate:1,mode:"mix"})')
             expect(page.locator('#stageBeat')).to_have_text('Mesure 1 · temps 1 / 4')
             assert page.locator('#importLink').count()==0 and page.locator('#linkEditor').count()==0
             page.locator('.rail [data-view=prompter]').click()

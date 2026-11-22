@@ -27,7 +27,7 @@ def song(first=2.68,period=.64,phase=0):
 @pytest.mark.parametrize('first,period,phase',[(2.68,.64,0),(.56,.62,1),(1.01,.54,3),(.26,.5,0),(12,.5,0)])
 def test_full_count_hands_over_at_first_downbeat_with_pickup_preserved(first,period,phase):
     p=song(first,period,phase);plan=count_plan(p)
-    assert plan['target']==pytest.approx(first+phase*period)
+    assert plan['target']==pytest.approx((first+phase*period)%(4*period))
     assert plan['end']-plan['lead']==pytest.approx(plan['target'])
     assert [e['number'] for e in plan['events']]==[1,2,3,4]*2
     assert plan['events'][-1]['end']==plan['end']
@@ -35,14 +35,14 @@ def test_full_count_hands_over_at_first_downbeat_with_pickup_preserved(first,per
     assert plan['lead']>=0 and plan['events'][0]['time']>=0
 
 
-def test_seek_uses_saved_variable_tempo_and_beat_phase():
+def test_seek_uses_constant_tempo_and_saved_downbeat_phase():
     p=song();p['beats']=[.2,.7,1.22,1.75,2.3,2.82,3.38,3.94,4.52,5.1];p['settings']['firstBeat']=.7
     plan=count_plan(p,3.8)
-    assert plan['target']==3.94
-    assert plan['events'][-1]['number']==2
-    assert plan['events'][-1]['end']-plan['events'][-1]['time']==pytest.approx(.56)
-    exact=count_plan(p,3.94)
-    assert exact['target']==3.94
+    assert plan['target']==pytest.approx(3.9)
+    assert plan['events'][-1]['number']==1
+    assert plan['events'][-1]['end']-plan['events'][-1]['time']==pytest.approx(.64)
+    exact=count_plan(p,3.9)
+    assert exact['target']==pytest.approx(3.9)
     p['settings']['countBars']=0
     assert count_plan(p,3.8)==dict(lead=0,end=0,target=3.8,events=[])
 
@@ -153,6 +153,6 @@ def test_reaper_count_overlaps_silent_head_and_keeps_source_position(tmp_path):
     p['beats']=[2.68+i*.64 for i in range(15)];p['bpm']=93.75
     snapshot=tmp_path/'snapshot.json';snapshot.write_text(json.dumps(p));out=tmp_path/'result.json'
     services.export_reaper(snapshot,out)
-    result=json.loads(out.read_text());assert result['preroll']==pytest.approx(2.44)
-    rpp=Path(result['path']);assert 'POSITION 2.440000000' in rpp.read_text()
+    result=json.loads(out.read_text());assert result['preroll']==pytest.approx(5.0)
+    rpp=Path(result['path']);assert 'POSITION 5.000000000' in rpp.read_text()
     count,sr=sf.read(rpp.parent/'Audio/count-in.wav');assert len(count)==pytest.approx(5.12*sr,abs=1)
