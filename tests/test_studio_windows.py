@@ -230,3 +230,118 @@ def test_setlist_keeps_working_after_a_listed_song_is_deleted(tmp_path):
     assert api.command(dict(command='setlist',args={**item,'name':'Concert samedi'},projectID=api._project['id']))['ok']
     assert api._setlists==[dict(id=item['id'],name='Concert samedi',paths=[str(kept.resolve())])]
     assert not api.command(dict(command='setlist',args={**item,'name':' '},projectID=api._project['id']))['ok']
+
+
+@pytest.mark.parametrize('name',['Kyo - Mon époque (Chap. II) [BsBRDkd5z7U]', 'Autre titre', 'Été [mix]'])
+@pytest.mark.parametrize('active',[True,False])
+def test_locked_song_removal_is_selective_persistent_and_restorable(tmp_path,monkeypatch,name,active):
+    import catalog
+    song=tmp_path/(name+'.bandstudio');p=fixture(song)
+    other=tmp_path/'Conserver.bandstudio';other_project=fixture(other)
+    original={f.relative_to(song):f.read_bytes() for f in song.rglob('*') if f.is_file()}
+    rename=Path.rename
+    def locked(path,target):
+        if path==song:raise PermissionError(13,'Windows refuses an open directory')
+        return rename(path,target)
+    monkeypatch.setattr(Path,'rename',locked)
+    api=Api(ENGINE,tmp_path);api._root=song if active else other;api._project=p if active else other_project
+    api._audio.load(api._project,api._root)
+    assert api.command(dict(command='deleteProject',args={'path':str(song)}))['ok']
+    assert api._root==(None if active else other)
+    assert [e['path'] for e in api._list()]==[str(other)]
+    assert catalog.trashed(tmp_path)==[song]
+    assert original=={f.relative_to(song):f.read_bytes() for f in song.rglob('*') if f.is_file()}
+    restarted=Api(ENGINE,tmp_path)
+    assert [e['path'] for e in restarted._list()]==[str(other)]
+    with pytest.raises(ValueError,match='corbeille'):restarted._load(song,prepare_guides=False)
+    catalog.remove(tmp_path,song)
+    assert len(catalog.trash_records(tmp_path))==1
+    assert restarted.command(dict(command='restoreProject'))['ok']
+    assert len(restarted._list())==2 and catalog.trashed(tmp_path)==[]
+    assert model.load(song)['id']==p['id']
+    assert model.load(other)['id']==other_project['id']
+    api._audio.close()
+
+
+def test_trash_receipt_never_hides_a_replacement_project(tmp_path,monkeypatch):
+    import catalog
+    song=tmp_path/'Reused.bandstudio';fixture(song)
+    def locked(*args):raise PermissionError('locked')
+    monkeypatch.setattr(Path,'rename',locked);catalog.remove(tmp_path,song)
+    assert catalog.entries(tmp_path)==[]
+    replacement=fixture(song)
+    assert len(catalog.entries(tmp_path))==1
+    assert model.load(song)['id']==replacement['id'] and not catalog.trashed(tmp_path)
+
+
+def test_trash_receipt_failure_leaves_the_project_visible(tmp_path,monkeypatch):
+    import catalog,services
+    song=tmp_path/'Keep.bandstudio';fixture(song)
+    def no_write(*args):raise PermissionError('library is read only')
+    monkeypatch.setattr(services,'atomic',no_write)
+    with pytest.raises(PermissionError):catalog.remove(tmp_path,song)
+    assert len(catalog.entries(tmp_path))==1 and not catalog.trashed(tmp_path)
+    assert (song/'Audio/source.wav').is_file()
+
+
+def test_mixed_physical_and_pending_trash_restore_in_order(tmp_path,monkeypatch):
+    import catalog
+    first=tmp_path/'First.bandstudio';fixture(first);catalog.remove(tmp_path,first)
+    second=tmp_path/'Second.bandstudio';fixture(second)
+    rename=Path.rename
+    def locked(path,target):
+        if path==second:raise PermissionError('locked')
+        return rename(path,target)
+    monkeypatch.setattr(Path,'rename',locked);catalog.remove(tmp_path,second)
+    assert catalog.trashed(tmp_path)[0]==second
+    assert Path(catalog.restore(tmp_path))==second
+    assert Path(catalog.restore(tmp_path))==first
+    assert not catalog.trashed(tmp_path) and len(catalog.entries(tmp_path))==2
+
+
+@pytest.mark.parametrize('name',['../Outside.bandstudio','..\\Outside.bandstudio','/Outside.bandstudio'])
+def test_trash_receipts_cannot_target_outside_the_library(tmp_path,name):
+    import catalog
+    root=tmp_path/'Songs';root.mkdir();outside=tmp_path/'Outside.bandstudio';p=fixture(outside)
+    receipt=root/'.Trash'/'entry';receipt.mkdir(parents=True)
+    (receipt/'removal.json').write_text(json.dumps(dict(name=name,projectID=p['id'])))
+    assert not catalog.trashed(root)
+    assert (outside/'Audio/source.wav').is_file()
+
+
+def test_audio_releases_mappings_on_reload_close_and_partial_load_failure(tmp_path,monkeypatch):
+    from windows import audio
+    p=fixture(tmp_path);a=Audio(ENGINE);a.load(p,tmp_path)
+    old=[x._mmap for x in a.data.values()]
+    a.load(p,tmp_path)
+    assert all(x.closed for x in old)
+    current=[x._mmap for x in a.data.values()];opened=[];read=audio.pcm
+    def failing(path):
+        if opened:raise OSError('unreadable second track')
+        data=read(path);opened.append(data._mmap);return data
+    monkeypatch.setattr(audio,'pcm',failing)
+    with pytest.raises(OSError):a.prepare()
+    assert not a.data and all(x.closed for x in current+opened)
+    monkeypatch.setattr(audio,'pcm',read);a.load(p,tmp_path)
+    current=[x._mmap for x in a.data.values()];a.close();a.close()
+    assert not a.data and all(x.closed for x in current)
+
+
+@pytest.mark.skipif(os.name!='nt',reason='Real Windows handle sharing semantics')
+def test_windows_external_audio_handle_cannot_block_library_removal(tmp_path):
+    import catalog,ctypes
+    from ctypes import wintypes
+    song=tmp_path/'Locked elsewhere.bandstudio';p=fixture(song)
+    kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+    kernel.CreateFileW.argtypes=[wintypes.LPCWSTR,wintypes.DWORD,wintypes.DWORD,ctypes.c_void_p,wintypes.DWORD,wintypes.DWORD,wintypes.HANDLE]
+    kernel.CreateFileW.restype=wintypes.HANDLE
+    kernel.CloseHandle.argtypes=[wintypes.HANDLE];kernel.CloseHandle.restype=wintypes.BOOL
+    # Allow reading/writing, but no FILE_SHARE_DELETE: just like another DAW.
+    handle=kernel.CreateFileW(str(song/'Audio/source.wav'),0x80000000,3,None,3,0,None)
+    assert handle!=wintypes.HANDLE(-1).value,ctypes.get_last_error()
+    try:
+        with pytest.raises(PermissionError):song.rename(tmp_path/'blocked.bandstudio')
+        catalog.remove(tmp_path,song)
+        assert not catalog.entries(tmp_path) and catalog.trashed(tmp_path)==[song]
+        assert Path(catalog.restore(tmp_path))==song and model.load(song)['id']==p['id']
+    finally:kernel.CloseHandle(handle)

@@ -7,10 +7,11 @@ import uuid
 from platform_tools import executable, creation_flags
 
 
-def member(library, path):
+def member(library, path, include_trashed=False):
     library=Path(library).resolve();path=Path(path)
     if path.is_symlink() or path.resolve().parent!=library or path.suffix!='.bandstudio' or not (path/'project.json').is_file():
         raise ValueError('Morceau hors de la bibliothèque.')
+    if not include_trashed and path.resolve() in pending(library):raise ValueError('Morceau dans la corbeille de la bibliothèque.')
     return path.resolve()
 
 
@@ -29,10 +30,11 @@ def entry(path):
 
 
 def entries(library):
-    result=[]
+    result=[];hidden=set(pending(library))
     for path in sorted(Path(library).glob('*.bandstudio')):
         try:
-            member(library,path)
+            if path.resolve() in hidden:continue
+            member(library,path,include_trashed=True)
             result.append(entry(path.resolve()))
         except (OSError,ValueError):continue
     return result
@@ -53,18 +55,60 @@ def extract(source, project, engine):
     finally:target.unlink(missing_ok=True)
 
 
-def trashed(library):
-    root=Path(library).resolve()/'.Trash'
+def trash_records(library):
+    """Physical trash plus reversible removals whose directory is still in use.
+
+    A receipt is committed before attempting the move. If Windows refuses it,
+    the receipt hides only that project ID, without touching any open media.
+    Old trash folders (without receipts) remain restorable.
+    """
+    library=Path(library).resolve()
+    root=library/'.Trash'
     if root.is_symlink():raise ValueError('Corbeille invalide.')
-    return sorted((p for p in root.glob('*/*.bandstudio') if not p.is_symlink() and not p.parent.is_symlink()
-                   and (p/'project.json').is_file()),key=lambda p:p.parent.stat().st_mtime_ns,reverse=True)
+    records=[]
+    for folder in root.glob('*'):
+        if folder.is_symlink() or not folder.is_dir():continue
+        stored=[p for p in folder.glob('*.bandstudio') if not p.is_symlink() and (p/'project.json').is_file()]
+        records.extend((folder,p,False) for p in stored)
+        if stored:continue
+        try:
+            receipt=folder/'removal.json'
+            if receipt.is_symlink():continue
+            item=json.loads(receipt.read_text(encoding='utf-8'));name=item['name']
+            if not isinstance(name,str) or '/' in name or '\\' in name or not name.endswith('.bandstudio'):continue
+            path=member(library,library/name,include_trashed=True)
+            project=json.loads((path/'project.json').read_text(encoding='utf-8'))
+            if isinstance(project,dict) and item.get('projectID') and project.get('id')==item['projectID']:records.append((folder,path,True))
+        except (OSError,ValueError,KeyError,TypeError):continue
+    return sorted(records,key=lambda r:r[0].stat().st_mtime_ns,reverse=True)
+
+
+def pending(library):
+    return [path for _,path,in_place in trash_records(library) if in_place]
+
+
+def trashed(library):
+    return [path for _,path,_ in trash_records(library)]
 
 
 def remove(library,path):
-    path=member(library,path);trashed(library) # Reject a redirected trash directory.
-    folder=Path(library)/'.Trash'/uuid.uuid4().hex;folder.mkdir(parents=True)
-    try:path.rename(folder/path.name)
-    except Exception:folder.rmdir();raise
+    path=member(library,path,include_trashed=True)
+    if path in pending(library):return str(path) # Repeated requests are idempotent.
+    project=json.loads((path/'project.json').read_text(encoding='utf-8'))
+    folder=Path(library).resolve()/'.Trash'/uuid.uuid4().hex;folder.mkdir(parents=True)
+    from services import atomic
+    try:
+        atomic(folder/'removal.json',dict(version=1,name=path.name,projectID=project.get('id')))
+        try:path.rename(folder/path.name)
+        except PermissionError:
+            # REAPER, an antivirus or another reader may retain a Windows handle.
+            # No copy/unlink fallback: audio must stay intact and restorable.
+            if not project.get('id'):raise ValueError('Le projet est verrouillé et son identifiant est manquant. Le morceau est conservé.')
+            return str(path)
+    except Exception:
+        (folder/'removal.json').unlink(missing_ok=True)
+        (folder/'removal.json.tmp').unlink(missing_ok=True)
+        folder.rmdir();raise
     return str(folder/path.name)
 
 
@@ -96,11 +140,15 @@ def rename(library,path,name):
 
 
 def restore(library):
-    items=trashed(library)
+    items=trash_records(library)
     if not items:raise ValueError('La corbeille BandStudio est vide.')
-    source=items[0];target=Path(library)/source.name
+    folder,source,in_place=items[0]
+    if in_place:
+        (folder/'removal.json').unlink();folder.rmdir();return str(source)
+    target=Path(library)/source.name
     if target.exists():target=target.with_name(target.stem+' restauré '+uuid.uuid4().hex[:6]+'.bandstudio')
-    source.rename(target);source.parent.rmdir();return str(target)
+    source.rename(target)
+    (folder/'removal.json').unlink(missing_ok=True);folder.rmdir();return str(target)
 
 
 if __name__=='__main__':

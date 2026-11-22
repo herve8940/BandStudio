@@ -362,7 +362,29 @@ extension StudioApp {
         guard p.terminationStatus==0 else {throw StudioError("La bibliothèque n’a pas pu être modifiée. Le projet est conservé.")}
         return try JSONSerialization.jsonObject(with:data,options:.fragmentsAllowed)
     }
+    func pendingTrashedProjects()->Set<URL> {
+        let fm=FileManager.default;let trash=library.appendingPathComponent(".Trash")
+        guard trash.resolvingSymlinksInPath()==trash.standardizedFileURL else{return []}
+        var hidden=Set<URL>()
+        for folder in (try? fm.contentsOfDirectory(at:trash,includingPropertiesForKeys:nil)) ?? [] {
+            let receipt=folder.appendingPathComponent("removal.json")
+            guard folder.resolvingSymlinksInPath()==folder.standardizedFileURL,
+                  receipt.resolvingSymlinksInPath()==receipt.standardizedFileURL,
+                  let data=try? Data(contentsOf:receipt),
+                  let item=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any],
+                  let name=item["name"] as? String, name.hasSuffix(".bandstudio"), !name.contains("/"), !name.contains("\\"),
+                  let id=item["projectID"] as? String, !id.isEmpty else{continue}
+            if fm.fileExists(atPath:folder.appendingPathComponent(name).path){continue}
+            let path=library.appendingPathComponent(name).standardizedFileURL
+            guard path.resolvingSymlinksInPath()==path,
+                  let data=try? Data(contentsOf:path.appendingPathComponent("project.json")),
+                  let project=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any], project["id"] as? String==id else{continue}
+            hidden.insert(path)
+        }
+        return hidden
+    }
     func hasTrashedProjects()->Bool {
+        if !pendingTrashedProjects().isEmpty{return true}
         let fm=FileManager.default
         let trash=library.appendingPathComponent(".Trash")
         return ((try? fm.contentsOfDirectory(at:trash,includingPropertiesForKeys:nil)) ?? []).contains{folder in
@@ -395,7 +417,7 @@ extension StudioApp {
             if active{audio.pause()}
             _ = try catalogCall(["remove",library.path,path])
             if active {project=StudioProject();try audio.load(project,root:library);root=nil;history=[];future=[];lastExport="";revision += 1;UserDefaults.standard.removeObject(forKey:"project")}
-            notice="Morceau déplacé dans la corbeille BandStudio. Tu peux le restaurer depuis Mes morceaux.";sendState();return
+            notice="Morceau retiré de la bibliothèque. Tu peux le restaurer depuis Mes morceaux.";sendState();return
         }
         let panel=NSOpenPanel();panel.allowedFileTypes=["jpg","jpeg","png","webp"];panel.message="Choisis la pochette du morceau."
         panel.beginSheetModal(for:window){answer in
