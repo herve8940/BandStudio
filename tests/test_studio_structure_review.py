@@ -131,7 +131,10 @@ def test_outdated_proposal_cannot_be_applied_or_exported(tmp_path,change):
     p=project(tmp_path);p['structureProposal']=proposal(p)
     if change=='section':p['sections'][0]['name']='Changed'
     if change=='chord':p['chords']=[dict(id='x',text='D',start=0,end=1,manual=True)]
-    if change=='media':(tmp_path/p['tracks'][0]['file']).touch()
+    if change=='media':
+        media=tmp_path/p['tracks'][0]['file'];stamp=media.stat()
+        # An immediate touch can keep the same modification time on Windows.
+        os.utime(media,ns=(stamp.st_atime_ns,stamp.st_mtime_ns+1_000_000_000))
     if change=='mix':p['tracks'][0]['gain']=.2
     if change=='rate':p['_rate']=.8
     if change=='reference':p['chordReference']={'selectedURL':'https://example.test/another-chart'}
