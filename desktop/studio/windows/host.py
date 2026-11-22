@@ -467,6 +467,19 @@ class Api:
             path=args['path']
             if path not in [x['path'] for x in self._list()]:raise ValueError('Morceau hors de la bibliothèque.')
             a.pause();self._op('Ouverture du morceau',lambda:self._load(Path(path)));return
+        if cmd=='renameProject':
+            path=catalog.member(self._library,args['path']);active=self._root is not None and path==self._root.resolve()
+            if active:self._save(invalidate=False)
+            name=catalog.rename(self._library,path,args.get('name'))
+            if active:
+                p['name']=name;a.project['name']=name
+                if 'preparation' in p:
+                    p['preparation']=json.loads((path/'project.json').read_text(encoding='utf-8')).get('preparation')
+                    a.project['preparation']=p['preparation']
+                for snapshot in self._history+self._future:
+                    snapshot['name']=name;snapshot.pop('preparation',None)
+                self._revision+=1
+            self._notice='Morceau renommé.';return
         if cmd=='deleteProject':
             path=catalog.member(self._library,args['path']);active=self._root is not None and path==self._root.resolve()
             if active:a.close();a.data.clear()

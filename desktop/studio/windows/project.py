@@ -106,14 +106,9 @@ def guide_key(p):
     for item in value['sections']+value['cues']:
         for key in ('reviewed','locked','origin'):item.pop(key,None)
     # Platform names prevent accidentally reusing Mac voice assets after editing on Windows.
-    return 'windows-guides-7:'+hashlib.sha256(json.dumps(value,sort_keys=True,allow_nan=False).encode()).hexdigest()
+    return 'windows-guides-8:'+hashlib.sha256(json.dumps(value,sort_keys=True,allow_nan=False).encode()).hexdigest()
 
 def period(p,at):
-    import bisect
-    beats=p['beats'];s=p['settings']
-    if s['gridMode']=='detected' and len(beats)>1:
-        i=max(1,min(len(beats)-1,bisect.bisect_right(beats,at)));delta=beats[i]-beats[i-1]
-        if .1<delta<3:return delta
     from musical_timing import pulse_bpm
     return 60/pulse_bpm(p)
 

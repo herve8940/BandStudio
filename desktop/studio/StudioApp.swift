@@ -373,7 +373,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 throw StudioError("BandStudio prépare les morceaux. L’enregistrement se poursuit dans REAPER.")
             }
             if command == "audioSettings" {NSWorkspace.shared.open(URL(string:"x-apple.systempreferences:com.apple.Sound-Settings.extension")!);return}
-            if ["deleteProject","restoreProject","projectArtwork"].contains(command) {try catalogCommand(command,args);return}
+            if ["renameProject","deleteProject","restoreProject","projectArtwork"].contains(command) {try catalogCommand(command,args);return}
             if command == "library" {
                 guard let path=args["path"] as? String,projectList().contains(where:{$0["path"] == path}) else{return}
                 try load(URL(fileURLWithPath:path));return

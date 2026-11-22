@@ -84,7 +84,7 @@ def test_calls_and_cues_anticipate_on_pulses_without_moving_offbeat_targets(tmp_
     result=generate(p,tmp_path,monkeypatch)
     for event,key in zip(result['events'],['calls','cues']):
         assert event['target'] in (8.07,10.12)
-        assert event['time'] in p['beats'] if lead else event['time']==event['target']
+        assert event['time'] in result['beats'] if lead else event['time']==event['target']
         wave,sr=sf.read(result['files'][key])
         assert wave[round(event['time']*sr),0]==pytest.approx(.25)
     assert p['sections'][0]['start']==8.07 and p['cues'][0]['time']==10.12
@@ -116,14 +116,14 @@ def test_pickup_count_clicks_keep_the_metronome_bar_accent(tmp_path,monkeypatch)
     (7.88,[],[6,6.5,7,7.5]),
     (8,[],[6,6.5,7,7.5]),
     (8.07,[0,.52,1.03,1.55,2.1,2.65,3.2,3.75,4.31,4.86,5.42,5.99,6.55,7.10,7.64,8.2,8.75,9.3,9.85,10.4,10.95,11.5],
-     [5.99,6.55,7.10,7.64]),
+     [16/3,6,20/3,22/3]),
 ])
 def test_offbeat_region_counts_land_on_audible_metronome_clicks(tmp_path,monkeypatch,target,grid,expected):
     p=project(tmp_path);p['sections']=[dict(id='region',name='Refrain',start=target,end=12,locked=True,origin='manual')]
     p['beats']=grid;p['settings'].update(gridMode='detected' if grid else 'fixed',countClick=False,leadBeats=0)
     result=generate(p,tmp_path,monkeypatch)
     click,sr=sf.read(result['files']['click']);counts,_=sf.read(result['files']['counts'])
-    assert [x['time'] for x in result['countEvents']]==expected
+    assert [x['time'] for x in result['countEvents']]==pytest.approx(expected)
     assert [x['number'] for x in result['countEvents']]==[1,2,3,4]
     starts=np.flatnonzero(np.diff(np.r_[False,counts[:,0]>.1].astype(int))==1)
     assert list(starts)==[round(at*sr) for at in expected]
@@ -142,10 +142,11 @@ def test_region_count_uses_only_available_beats_and_keeps_number_order():
 
 
 def test_manual_downbeat_accent_uses_the_chosen_beat_without_moving_pulses(tmp_path,monkeypatch):
-    p=project(tmp_path);p['beats']=[1+i*.5 for i in range(20)]
+    p=project(tmp_path);p['bpm']=120;p['beats']=[1+i*.5 for i in range(20)]
     p['settings'].update(gridMode='detected',firstBeat=6.5,subdivision=1)
     result=generate(p,tmp_path,monkeypatch);click,sr=sf.read(result['files']['click'])
-    assert result['beats']==p['beats']
+    assert result['beats']==[i*.5 for i in range(24)]
+    assert p['beats']==[1+i*.5 for i in range(20)]
     for i,beat in enumerate(p['beats']):
         at=round(beat*sr);pulse=click[at:at+int(sr*.035),0];t=np.arange(len(pulse))/sr
         low=abs(np.sum(pulse*np.exp(-2j*np.pi*1100*t)))

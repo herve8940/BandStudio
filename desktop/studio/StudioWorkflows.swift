@@ -375,6 +375,21 @@ extension StudioApp {
             _ = try catalogCall(["restore",library.path]);notice="Morceau restauré dans la bibliothèque.";sendState();return
         }
         guard let path=args["path"] as? String,projectList().contains(where:{$0["path"]==path}) else {throw StudioError("Morceau hors de la bibliothèque.")}
+        if command=="renameProject" {
+            guard let name=args["name"] as? String else{throw StudioError("Donne un nom au morceau.")}
+            let active=root?.standardizedFileURL.path==URL(fileURLWithPath:path).standardizedFileURL.path
+            if active{try save()}
+            guard let renamed=try catalogCall(["rename",library.path,path,name]) as? String else{throw StudioError("Nom du morceau invalide.")}
+            if active {
+                project.name=renamed;audio.project.name=renamed
+                project.preparation=try StudioProject.load(URL(fileURLWithPath:path)).preparation
+                audio.project.preparation=project.preparation
+                for i in history.indices{history[i].name=renamed;history[i].preparation=nil}
+                for i in future.indices{future[i].name=renamed;future[i].preparation=nil}
+                revision += 1
+            }
+            notice="Morceau renommé.";sendState();return
+        }
         if command=="deleteProject" {
             let active=root?.standardizedFileURL.path==URL(fileURLWithPath:path).standardizedFileURL.path
             if active{audio.pause()}

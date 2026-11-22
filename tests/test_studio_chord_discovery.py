@@ -198,12 +198,12 @@ def test_direct_requests_get_priority_over_fallbacks(monkeypatch):
         with lock:seen.append(url)
         raise HTTPError(url,404,'missing',{},None)
     def search(query):
-        with lock:assert len(seen)==5
+        with lock:assert len(seen)==8
         return '<div class="no-results"></div>'
     monkeypatch.setattr(web,'fetch',fetch)
     monkeypatch.setattr(web,'fetch_discovery',search)
     found=web._search('Song','Artist')
-    assert len(found)==5 and all(status=='not_found' for status,source in found.values())
+    assert len(found)==8 and all(status=='not_found' for status,source in found.values())
 
 
 @pytest.mark.parametrize('artist,slug,initial',[

@@ -1,8 +1,9 @@
 """A validation must bind the exact preparation, including portable rendered media."""
 import copy
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import sys
+import tempfile
 
 import numpy as np
 import pytest
@@ -11,7 +12,7 @@ import soundfile as sf
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'desktop/studio'))
 import preparation
-from services import atomic, read_rpp
+from services import atomic, read_rpp, reaper_filename, import_reaper
 from test_studio_services import project, generate, ENGINE
 
 
@@ -144,3 +145,54 @@ def test_opening_an_old_project_does_not_inherit_the_previous_song_speed(tmp_pat
     host._load(old)
     assert host._audio.rate == 1 and host._audio.pitch == 0 and host._audio.mode == 'original'
     host._audio.close()
+
+
+def test_reported_windows_export_keeps_project_audio_and_backups_below_path_limit():
+    name='Green Day - Wake Me Up When September Ends (Official Audio) [pGhwBFYtn1s]'
+    root=PureWindowsPath('C:/Users/pasca/Music/BandStudioDev')/(name+' f4ff40a9.bandstudio')
+    old=root/'Exports'/(name+'-20261122-141148-123abc')/(name+'.rpp')
+    assert len(str(old))==311
+    folder,filename=preparation.export_destination(root,name)
+    assert folder.parent==root/'Exports'
+    for relative in (filename,filename+'-bak','Audio/00000000-0000-0000-0000-000000000000.wav.reapeaks','bandstudio-project.json'):
+        assert len(str(folder/relative).encode('utf-16-le'))//2<=240
+
+
+def test_deep_song_folder_uses_shorter_library_export_and_rejects_impossible_paths():
+    library=PureWindowsPath('C:/Music/BandStudio')
+    root=library/('long song '*17+'.bandstudio')
+    folder,filename=preparation.export_destination(root,'Très long morceau 🎵 '*20)
+    assert folder.parent==library/'Exports'
+    assert len(str(folder/filename).encode('utf-16-le'))//2<=240
+    with pytest.raises(ValueError,match='dossier plus court'):
+        preparation.export_destination(PureWindowsPath('C:/')/('deep/'*60)/'song.bandstudio','Song')
+    assert reaper_filename('CON',folder).startswith('Morceau-CON')
+
+
+def test_long_unicode_export_is_portable_unique_and_keeps_original_title():
+    with tempfile.TemporaryDirectory(prefix='BS-export-') as directory:
+        base=Path(directory)
+        name='Green Day - Wake Me Up When September Ends (Official Audio) [pGhwBFYtn1s] · Été 🎵'
+        root=base/(name+' f4ff40a9.bandstudio');root.mkdir()
+        p=project(root);p['name']=name;p['settings'].update(exportGuides=False,exportCount=False)
+        p['sections'][0]['name']='Entrée 🎵'
+        original=(root/'Audio/source.wav').read_bytes()
+        snapshot=approve(p,root);out=base/'result.json'
+        preparation.export_validated(snapshot,out,ENGINE)
+        info=json.loads(out.read_text());rpp=Path(info['path'])
+        tree=read_rpp(rpp)
+        assert any('Entrée 🎵' in row for row in tree['lines'])
+        for track in (c for c in tree['children'] if c['kind']=='TRACK'):
+            for item in (c for c in track['children'] if c['kind']=='ITEM'):
+                media=rpp.parent/field(item['children'][0],'FILE')[0]
+                assert media.is_file() and sf.info(media).frames>0
+        assert all(len(str(f).encode('utf-16-le'))//2<=240 for f in rpp.parent.rglob('*'))
+        assert json.loads((rpp.parent/'bandstudio-project.json').read_text())['name']==name
+        imported=base/'import/result.json';import_reaper(rpp,imported,ENGINE,snapshot)
+        restored=Path(json.loads(imported.read_text())['project'])
+        assert json.loads((restored/'project.json').read_text())['name']==name
+        first=rpp.read_bytes()
+        preparation.export_validated(snapshot,out,ENGINE)
+        assert json.loads(out.read_text())['path']!=str(rpp) and rpp.read_bytes()==first
+        assert (root/'Audio/source.wav').read_bytes()==original
+        assert not list(rpp.parent.parent.glob('.export-*'))

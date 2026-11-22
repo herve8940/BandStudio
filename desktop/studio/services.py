@@ -15,7 +15,7 @@ import time
 import uuid
 from collections import Counter
 from platform_tools import executable, creation_flags
-from musical_timing import count_plan, pulse_bpm, pulse_scale
+from musical_timing import count_plan, pulse_bpm, pulse_scale, metronome_grid
 
 
 def import_settings(settings):
@@ -288,7 +288,7 @@ def guides(project_file,output):
     import soundfile as sf
     p=json.loads(Path(project_file).read_text());s=p['settings']
     root=Path(output).parent;cache=root/'voice';cache.mkdir(parents=True,exist_ok=True)
-    beats,duration=beat_grid(p);sr=44100
+    _,duration=beat_grid(p);beats=metronome_grid(p,duration);sr=44100
     # Memory-mapped timelines avoid allocating two whole stereo songs in RAM.
     shape=(max(1,math.ceil(duration*sr)),2)
     click=np.memmap(root/'click.raw',dtype='float32',mode='w+',shape=shape);click[:]=0
@@ -300,14 +300,18 @@ def guides(project_file,output):
         if start<0:data=data[-start:];start=0
         n=min(len(data),len(dest)-start)
         if n>0:dest[start:start+n]+=data[:n]
-    first=min(range(len(beats)),key=lambda i:abs(beats[i]-s['firstBeat'])) if beats else 0
-    for i,beat in enumerate(phase_items(beats,0,5,"Création du click")):
-        span=beats[i+1]-beat if i+1<len(beats) else (beats[-1]-beats[-2] if len(beats)>1 else 60/pulse_bpm(p))
-        for sub in range(1 if pulse_gap(beats,i) else s['subdivision']):
-            accented=sub==0 and (i-first)%s['beatsPerBar']==0
+    span=60/pulse_bpm(p)
+    first=round((s['firstBeat']-beats[0])/span) if beats else 0
+    click_beats=([beats[0]-span]+beats if beats and s['subdivision']>1 else beats)
+    for beat in phase_items(click_beats,0,5,"Création du click"):
+        index=round((beat-s['firstBeat'])/span)
+        for sub in range(s['subdivision']):
+            at=beat+sub*span/s['subdivision']
+            if at < -1e-9 or at>=duration:continue
+            accented=sub==0 and index%s['beatsPerBar']==0
             n=int(sr*.035);t=np.arange(n)/sr
             sound=np.sin(2*np.pi*(1760 if accented else 1100)*t)*np.exp(-t*130)*(0.8 if sub==0 else 0.35)
-            place(click,np.repeat(sound[:,None],2,axis=1),beat+sub*span/s['subdivision'])
+            place(click,np.repeat(sound[:,None],2,axis=1),max(0.,at))
     file_map={};events=[];count_events=[];announcements=[]
     count_plans={item['id']:region_count_beats(item['start'],s['regionCountBeats'],beats)
                  for item in p.get('sections',[]) if item.get('announce') is not False}
@@ -360,7 +364,7 @@ def guides(project_file,output):
     del data,click,calls,cues,counts
     for name in ['click','calls','cues','counts']:(root/(name+'.raw')).unlink()
     atomic(output,dict(files=file_map,events=events,countEvents=count_events,guideWarnings=warnings,
-                       beats=beats,duration=duration,generatorVersion=6))
+                       beats=beats,duration=duration,generatorVersion=7))
 
 
 def quote(value):
@@ -368,22 +372,30 @@ def quote(value):
     return '"'+str(value).replace('"',"'").replace('\r',' ').replace('\n',' ')+'"'
 
 
+def reaper_filename(name, folder):
+    """Leave room for Windows media, waveform caches and REAPER backups."""
+    def units(value):return len(str(value).encode('utf-16-le'))//2
+    budget=240-units(folder)-1
+    # Audio/<UUID>.wav.reapeaks is longer than our metadata filenames.
+    if budget<len('Audio/00000000-0000-0000-0000-000000000000.wav.reapeaks'):
+        raise ValueError('Chemin d’export trop long pour REAPER. Place le morceau dans un dossier plus court, puis relance l’export.')
+    stem=safe_name(name)
+    if re.match(r'^(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\.|$)',stem,re.I):stem='Morceau-'+stem
+    while units(stem)>min(60,budget-len('.rpp-bak')):stem=stem[:-1]
+    return (stem.rstrip(' .') or 'Morceau')+'.rpp'
+
+
 def export_reaper(project_file,output):
     p=json.loads(Path(project_file).read_text());root=Path(project_file).parent
     # Snapshots carry the real root explicitly; it is supplied by the native host.
-    root=Path(p.get('_root',root));s=p['settings'];target=Path(output).parent/'REAPER';target.mkdir(parents=True,exist_ok=True)
+    root=Path(p.get('_root',root));s=p['settings'];target=Path(output).parent/'REAPER'
+    filename=reaper_filename(p['name'],target);target.mkdir(parents=True,exist_ok=True)
     media=target/'Audio';media.mkdir(exist_ok=True)
-    beats,duration=beat_grid(p)
-    bpm=pulse_bpm(p);scale=pulse_scale(s);period=(beats[1]-beats[0]) if len(beats)>1 else 60/bpm
+    _,duration=beat_grid(p)
+    bpm=pulse_bpm(p);scale=pulse_scale(s);period=60/bpm
     numerator,denominator=(s['beatsPerBar']*3,8) if scale==1.5 else (s['beatsPerBar'],4)
     plan=count_plan(p);preroll=plan['lead'] if s['exportCount'] else 0
     lines=['<REAPER_PROJECT 0.1 7.0 1','  SAMPLERATE 44100',f'  TEMPO {bpm*scale:g} {numerator} {denominator}', '  MASTER_VOLUME 0.85']
-    if beats and s['gridMode']=='detected':
-        lines+=['  <TEMPOENVEX','    ACT 1 -1','    VIS 1 0 0','    ARM 1','    DEFSHAPE 1 -1 -1']
-        for i,b in enumerate(beats[:-1]):
-            dt=beats[i+1]-b
-            if dt>0.1:lines.append(f'    PT {b+preroll:.9f} {60*scale/dt:.9f} 1')
-        lines+=['  >']
     for i,section in enumerate(p['sections'],1):
         lines += [f'  MARKER {i} {section["start"]+preroll:.9f} {quote(section["name"])} 1',f'  MARKER {i} {section["end"]+preroll:.9f} "" 1']
     for i,cue in enumerate(p['cues'],len(p['sections'])+1):lines.append(f'  MARKER {i} {cue["time"]+preroll:.9f} {quote(cue["name"])} 0')
@@ -440,9 +452,9 @@ def export_reaper(project_file,output):
                     '      NAME '+quote(caption),'      IMGRESOURCEFLAGS 2',
                     '      <NOTES','        |'+caption.replace('\r',' ').replace('\n',' '),'      >','    >']
         lines+=['  >']
-    lines+=['>'];rpp=target/(safe_name(p['name'])+'.rpp');rpp.write_text('\n'.join(lines)+'\n')
+    lines+=['>'];rpp=target/filename;rpp.write_text('\n'.join(lines)+'\n',encoding='utf-8')
     # Bind detailed annotations to this exact export, including optional chord items.
-    metadata={key:p.get(key) for key in ['settings','notes','lyrics','lyricsReference','chords','drumHits','key','sourceURL','capo','downbeats','gridLocked','analysisNote']}
+    metadata={key:p.get(key) for key in ['name','settings','notes','lyrics','lyricsReference','chords','drumHits','key','sourceURL','capo','downbeats','gridLocked','analysisNote']}
     metadata.update(exportPreroll=preroll,rppSHA256=hashlib.sha256(rpp.read_bytes()).hexdigest(),trackRoles={str(uuid.uuid5(uuid.NAMESPACE_OID,t['id']))+'.wav':t['role'] for t in p['tracks']})
     atomic(target/'bandstudio-project.json',metadata)
     atomic(output,dict(path=str(rpp),folder=str(target),preroll=preroll))
@@ -488,7 +500,7 @@ def read_rpp(path):
     """Parse chunk boundaries; plugin state is data, never executable instructions."""
     import shlex
     stack=[];root=None
-    for line in Path(path).read_text(errors='replace').splitlines():
+    for line in Path(path).read_text(encoding='utf-8-sig',errors='replace').splitlines():
         line=line.strip()
         if not line:continue
         if line=='>':
@@ -595,6 +607,7 @@ def import_reaper(path,output,engine,snapshot):
         saved=json.loads(metadata.read_text())
         if saved.get('rppSHA256')==hashlib.sha256(source.read_bytes()).hexdigest():
             shift=saved.get('exportPreroll',0)
+            if isinstance(saved.get('name'),str) and saved['name'].strip():p['name']=saved['name']
             for kind in ['lyrics','chords']:
                 for item in saved.get(kind) or []:
                     entry={**item,'start':item['start']+shift,'end':item['end']+shift}
