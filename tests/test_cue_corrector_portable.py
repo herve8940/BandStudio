@@ -93,7 +93,7 @@ def test_update_contains_model_and_can_use_original_code_only_allowlist(tmp_path
         # The original updater permits top-level .py, but not arbitrary JSON/data folders.
         assert not any(p.startswith('engine/cue-corrector/') for p in z.namelist())
         extracted=tmp_path/'extracted';z.extractall(extracted)
-    result=subprocess.run([sys.executable,'-c','import chord_sources; assert len(chord_sources.PROVIDERS)==13'],
+    result=subprocess.run([sys.executable,'-c','import chord_sources; assert len(chord_sources.PROVIDERS)==22; assert sum(bool(p.get("template")) for p in chord_sources.PROVIDERS)==8'],
                           cwd=extracted/'engine',capture_output=True,text=True)
     assert result.returncode==0,result.stderr
 

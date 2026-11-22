@@ -31,13 +31,15 @@ def test_detected_gap_does_not_rewind_a_cue_to_a_previous_passage():
     assert [(e['number'],e['time']) for e in services.region_count_beats(8.5,4,beats)]==[(4,8)]
 
 
-def test_gap_has_no_fabricated_subdivision_clicks(tmp_path,monkeypatch):
-    p=project(tmp_path);p['sections']=[];p['cues']=[]
+def test_detected_gap_keeps_the_same_regular_subdivision_clicks(tmp_path,monkeypatch):
+    p=project(tmp_path);p['sections']=[];p['cues']=[];p['bpm']=120
     p['settings'].update(gridMode='detected',subdivision=4,countVoice=False)
     p['beats']=[0,.5,1,1.5,2,8,8.5,9,9.5,10]
     r=render(p,tmp_path,monkeypatch)
     x,sr=sf.read(r['files']['click'])
-    assert np.max(abs(x[round(2.1*sr):round(8*sr)]))==0
+    active=np.flatnonzero(abs(x[:,0])>1e-5)
+    starts=active[np.r_[True,np.diff(active)>sr*.02]]
+    np.testing.assert_allclose(starts/sr,np.arange(0,12,.125),atol=2/sr)
 
 
 def test_close_regions_and_long_announcements_never_mix_spoken_voices(tmp_path,monkeypatch):
