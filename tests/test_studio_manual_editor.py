@@ -1,6 +1,7 @@
 """Musical edits survive reload/undo and never schedule model inference."""
 import copy
 import functools
+import json
 import os
 from pathlib import Path
 import threading
@@ -198,3 +199,29 @@ def test_manual_analysis_buttons_request_recalculation_and_vocals_are_findable(m
     page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:2})',p)
     page.locator('#splitVocals').click()
     assert page.evaluate('sent.at(-1).args.kind')=='vocalsplit'
+
+
+def test_editor_sheet_and_stage_share_the_completed_recorded_clock(manual_page):
+    from musical_timing import BeatClock
+    page,_=manual_page
+    fixtures=json.loads((ROOT/'tests/fixtures/recorded_timing_grids.json').read_text())
+    for saved in fixtures:
+        p=model.fresh(saved['name']);settings=p['settings'];p.update(saved);p['settings']={**settings,**saved['settings']}
+        c=BeatClock(p);p['timingGrid']=c.payload();samples=[0,*c.beats[::17],p['sessionDuration']-.1]
+        values=page.evaluate('''({p,samples})=>{
+          studioReceive({type:'state',project:p,duration:p.sessionDuration,loaded:true,library:[],revision:1});
+          const editor=musicalGrid(p),sheet=bandStudioSheetGrid(p,p.sessionDuration);
+          return samples.map(time=>({editor:editor.coordinate(time),sheet:sheet.coordinate(time),
+            restored:sheet.at(editor.coordinate(time))}));
+        }''',dict(p=p,samples=samples))
+        for t,result in zip(samples,values):
+            assert result['editor']==pytest.approx(c.coordinate(t),abs=1e-8)
+            assert result['sheet']==pytest.approx(c.coordinate(t),abs=1e-8)
+            assert result['restored']==pytest.approx(t,abs=1e-8)
+        bar=c.at(4)
+        page.evaluate('t=>studioReceive({type:"transport",position:t,playing:false})',bar)
+        assert page.locator('#stageBeat').text_content()=='Mesure 2 · temps 1 / '+str(c.meter)
+    # Changing an input invalidates the cached completion immediately.
+    p['settings']['gridMode']='fixed';p['settings']['manualBPM']=120;p['settings']['pulseUnit']='quarter'
+    result=page.evaluate('p=>musicalGrid(p).at(4)-musicalGrid(p).at(0)',p)
+    assert result==pytest.approx(2)

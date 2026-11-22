@@ -186,6 +186,27 @@ def test_prepare_plan_preserves_existing_stems_and_locked_grid(tmp_path):
     assert not {'separate','grid','smartgrid'}.intersection(api._plan())
 
 
+def test_auto_import_preserves_the_new_song_if_a_later_analysis_fails(tmp_path,monkeypatch):
+    import shutil,artwork,catalog
+    source_root=tmp_path/'source';fixture(source_root)
+    api=Api(ENGINE,tmp_path/'library')
+    monkeypatch.setattr(api,'_decode',lambda source,target:shutil.copy2(source,target))
+    monkeypatch.setattr(catalog,'extract',lambda *a,**kw:None)
+    monkeypatch.setattr(artwork,'seed',lambda *a,**kw:None)
+    def prepare(args):
+        assert args=={}  # Keep the full-quality defaults, with no fast profile.
+        assert api._root.is_dir() and api._project['tracks'][0]['role']=='source'
+        api._project['notes']='Première étape terminée';api._save()
+        raise RuntimeError('Étape suivante indisponible')
+    monkeypatch.setattr(api,'_prepare_all',prepare)
+    with pytest.raises(RuntimeError,match='indisponible'):
+        api._import([str(source_root/'Audio/source.wav')],prepare=True)
+    saved=model.load(api._root)
+    assert saved['notes']=='Première étape terminée'
+    assert (api._root/saved['tracks'][0]['file']).is_file()
+    api._audio.close()
+
+
 def test_catalog_extracts_embedded_artwork_and_keeps_existing_cover_on_failure(tmp_path):
     import catalog
     from platform_tools import executable

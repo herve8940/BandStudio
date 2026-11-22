@@ -37,6 +37,12 @@ def test_pipeline_order_and_resume_without_duplicate_chords(tmp_path):
         p['tracks'].append({**p['tracks'][0],'id':role,'role':role})
     p.update(analysesCompleted=['grid','structure','lyrics'],key='A',lyricsReference={'status':'not_found'},structureProposal={'status':'prepared'})
     p['guideKey']=model.guide_key(p)
+    assert api._plan()==['prepareReview','guides']
+    p['structureProposal']['sectionTimingVersion']=1
+    assert api._plan()==[]
+    p['chordReference']={'status':'unavailable','sources':[],'checks':[{'id':'publisher','status':'unavailable'}]}
+    assert api._plan()==['chords']
+    p['chordReference']['retryAfter']=float('inf')
     assert api._plan()==[]
     # A manual edit invalidates only final review and affected guides.
     p.pop('structureProposal');assert api._plan()==['prepareReview','guides']
@@ -46,6 +52,22 @@ def test_missing_optional_models_do_not_claim_separations(tmp_path):
     engine=tmp_path/'engine';engine.mkdir();p=project(tmp_path)
     api=Api(engine,tmp_path/'library');api._project=p;api._root=tmp_path
     assert api._plan()==['key','prepareReview','guides']
+
+
+def test_batch_preserves_each_lyric_timing_warning(tmp_path):
+    p=project(tmp_path)
+    edited=dict(id='protected',text='My line',start=2,end=2.5,manual=True)
+    p['lyrics']=[edited];model.save(p,tmp_path)
+    job=tmp_path/'job';job.mkdir()
+    (job/'result.json').write_text(json.dumps(dict(segments=[
+        dict(t=.2,end=.7,text='uncertain',timingReview=True,confidence=.8,words=[dict(w='uncertain',t=.2,end=.7,timingReview=True)]),
+        dict(t=1,end=1.5,text='aligned',timingReview=False,confidence=.8),
+        dict(t=2,end=2.3,text='overlapping guess')])))
+    result=batch_project.apply(dict(id='clean',title='Example'),'lyrics',tmp_path,job,tmp_path.parent)
+    assert [row['timingReview'] for row in result['lyrics'][:2]]==[True,False]
+    saved=model.load(tmp_path)['lyrics']
+    assert saved[0]['words'][0]['timingReview'] and saved==result['lyrics']
+    assert len(saved)==3 and saved[-1]==edited
 
 
 @pytest.mark.parametrize('kind,parent_role,roles',[
@@ -86,6 +108,9 @@ def test_automatic_final_review_keeps_manual_work_and_has_honest_receipt(tmp_pat
     for key in ('tracks','cues','chords','settings','beats'):assert after[key]==p[key]
     assert 'validatedAt' not in after['preparation']
     receipt=after['structureProposal'];assert receipt['status']=='prepared'
+    from musical_timing import prepare_clock
+    clock,correction=prepare_clock(after)
+    assert correction is None and after['timingGrid']==clock.payload()
     assert receipt['beforeSections']==p['sections'] and receipt['sections']==after['sections']
     assert receipt['fingerprint']==review.fingerprint(after)
     event=json.loads(next((tmp_path/'Learning/structure-reviews').glob('*.json')).read_text())
@@ -117,6 +142,31 @@ def test_chart_choice_prioritizes_recording_and_keeps_explicit_choice():
     picked,reason=chord_choice.choose({},[wrong,right],features)
     assert picked==right and 'concordance' in reason and 'populaire' not in reason
     assert chord_choice.choose({'chordReference':dict(selectedURL='wrong',selectionMode='manual')},[wrong,right],features)[0]==wrong
+
+
+def test_chart_in_another_key_requires_agreement_throughout_the_recording():
+    from chord_alignment import tones
+    from musical_patterns import ROLES
+    from chord_sources import transposed_chart
+    source=dict(url='written',chords=['C/E','Am','F','G'],transitions=[['F','G']],
+                sectionSequences=[dict(kind='verse',chords=['C/E','Am'],repeat=2)])
+    original=copy.deepcopy(source)
+    sounding=transposed_chart(source,3)
+    h=np.zeros((160,12));b=np.zeros_like(h)
+    for i in range(len(h)):
+        pcs,root=tones(sounding['chords'][(i//5)%4])
+        h[i,pcs]=1/np.sqrt(len(pcs));b[i,root]=1
+    on=np.ones(len(h),dtype=bool)
+    f=dict(harmony=h,bass=b,harmonyEnergy=on,bassEnergy=on,harmonyCoverage=on,bassCoverage=on,
+           roles=[r in ('other','bass') for r in ROLES])
+    picked,_=chord_choice.choose({},[source],f)
+    assert picked['recordingTranspose']==3 and picked['chords']==['D#/G','Cm','G#','A#']
+    assert picked['transitions']==[['G#','A#']] and picked['sectionSequences'][0]['chords']==['D#/G','Cm']
+    assert original==source
+    assert chord_choice.choose({},[source,{**sounding,'url':'original'}],f)[0]['url']=='original'
+    assert 'recordingTranspose' not in chord_choice.choose({},[source],{**f,'bassCoverage':~on})[0]
+    h[:40]=np.roll(h[:40],-3,axis=1);b[:40]=np.roll(b[:40],-3,axis=1)
+    assert 'recordingTranspose' not in chord_choice.choose({},[source],f)[0]
 
 
 @pytest.mark.parametrize('name,value,count,expected',[

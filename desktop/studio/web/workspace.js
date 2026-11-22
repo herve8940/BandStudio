@@ -26,7 +26,7 @@
  const workspace=$('workspace'),arrangement=document.querySelector('.arrangement');
  let mode='tracks',filter='all',query='',compact=false,lastProject='';
  const heading=node('div','workspace-heading');
- heading.innerHTML='<div><div class="eyebrow">ATELIER DU MORCEAU</div><h2>Pistes & structure</h2></div><div id="workspaceMetrics" class="workspace-metrics"></div>';
+ heading.innerHTML='<div><div class="eyebrow">ATELIER DU MORCEAU</div><h2>Éditeur du morceau</h2></div><div id="workspaceMetrics" class="workspace-metrics"></div>';
  workspace.prepend(heading);
  const navigation=document.querySelector('.navigation-tools');
  heading.querySelector('h2').after($('prepareAllStructure'));
@@ -35,7 +35,7 @@
  heading.append(navigationMenu);
  const controls=node('div','workspace-controls');
  const tabs=node('div','segmented workspace-tabs');tabs.setAttribute('role','group');tabs.setAttribute('aria-label','Vue de travail');
- for(const [key,label] of [['tracks','Pistes'],['structure','Structure']]){
+ for(const [key,label] of [['tracks','Pistes'],['structure','Sections'],['lyrics','Paroles'],['chords','Accords'],['rhythm','Métronome']]){
   const b=button(label,()=>{mode=key;renderWorkspace();requestAnimationFrame(drawWaves);});b.dataset.workspaceMode=key;tabs.append(b);
  }
  const search=node('input');search.type='search';search.id='workspaceSearch';search.placeholder='Rechercher une piste…';search.setAttribute('aria-label','Rechercher dans la vue de travail');
@@ -57,6 +57,30 @@
  table.setAttribute('role','table');table.setAttribute('aria-label','Sections du morceau');
  $('tracks').after(table);
  const noTracks=node('p','workspace-empty');noTracks.textContent='Aucune piste ne correspond à ce filtre.';noTracks.hidden=true;$('tracks').after(noTracks);
+
+ // Move the existing controls into one workshop. There is no second form,
+ // document copy, or independent save path in the sheet and prompter.
+ const textEditor=node('section','workspace-editor-panel');textEditor.id='editorAnnotations';textEditor.hidden=true;
+ const annotationTools=$('addAnnotation').closest('.annotation-toolbar');
+ textEditor.append($('songKey').closest('.annotation-toolbar'),$('chordReferencePrompter'),annotationTools,$('annotations'));
+ table.after(textEditor);
+ $('annotationKind').hidden=true;
+ annotationTools.querySelectorAll('[data-action]').forEach(b=>$('view-tools').querySelector('.page-heading').append(b));
+ const drumEditor=node('details','workspace-editor-panel');drumEditor.id='editorDrums';
+ drumEditor.append(node('summary','','Batterie · mesure à la tête de lecture'),$('drumGrid'));
+ $('tracks').after(drumEditor);
+ const rhythmEditor=node('section','workspace-editor-panel');rhythmEditor.id='editorRhythm';rhythmEditor.hidden=true;
+ rhythmEditor.append($('view-guides').querySelector('.callout'),$('guideForm'));textEditor.after(rhythmEditor);
+ const keyTools=$('songKey').closest('.annotation-toolbar');keyTools.id='editorHarmonySettings';
+ const prompterHeading=$('view-prompter').querySelector('.page-heading');
+ prompterHeading.querySelector('h2').textContent='Prompteur';
+ prompterHeading.append(node('p','','Les paroles et les accords suivent les corrections enregistrées dans l’éditeur.'),button('Modifier dans l’éditeur',()=>window.openStudioEditor('lyrics')));
+ window.openStudioEditor=function(kind='tracks'){
+  mode=['tracks','structure','lyrics','chords','rhythm'].includes(kind)?kind:'tracks';
+  view('studio');renderWorkspace();requestAnimationFrame(redrawTimeline);
+ };
+ const annotationsChanged=$('annotationKind').onchange;
+ $('annotationKind').onchange=()=>{mode=$('annotationKind').value;annotationsChanged();renderWorkspace();};
 
  const selectionZoom=button('Sélection',()=>{
   const s=state.project.sections.find(s=>s.id===selected)||focusMarker()?.item;
@@ -128,6 +152,16 @@
   workspace.classList.toggle('compact-tracks',compact);density.setAttribute('aria-pressed',String(compact));
   tabs.querySelectorAll('button').forEach(b=>{const active=b.dataset.workspaceMode===mode;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});
   $('tracks').hidden=mode!=='tracks';table.hidden=mode!=='structure';role.hidden=density.hidden=mode!=='tracks';search.placeholder=mode==='tracks'?'Rechercher une piste…':'Rechercher une section…';
+  drumEditor.hidden=mode!=='tracks'||!(p.drumHits||[]).length;
+  const textMode=mode==='lyrics'||mode==='chords';textEditor.hidden=!textMode;rhythmEditor.hidden=mode!=='rhythm';
+  search.hidden=mode!=='tracks'&&mode!=='structure';
+  if(textMode){$('annotationKind').value=mode;$('addAnnotation').textContent=mode==='lyrics'?'＋ Ajouter une ligne':'＋ Ajouter un accord';renderAnnotations();}
+  focus.hidden=mode!=='tracks'&&mode!=='structure';
+  workspace.classList.toggle('contextual-editor',mode!=='tracks'&&mode!=='structure');
+  keyTools.hidden=mode!=='chords';$('chordReferencePrompter').hidden=mode!=='chords';
+  if($('lyricsTools'))$('lyricsTools').hidden=mode!=='lyrics';
+  workspace.dataset.editor=mode;
+  arrangement.querySelector('.arrangement-top>span').textContent=({tracks:'Pistes audio',structure:'Sections et repères',lyrics:'Paroles synchronisées',chords:'Accords du morceau',rhythm:'Métronome et décomptes'})[mode];
   selectionZoom.disabled=!!state.busy||!p.sections.some(s=>s.id===selected);
   renderWorkspaceContent();renderOverview();
  }
@@ -135,12 +169,16 @@
  renderSections=function(){originalSections();selectionZoom.disabled=!!state.busy||!state.project.sections.some(s=>s.id===selected);renderOverview();if(mode==='structure')renderWorkspaceContent();};
  const originalReceive=window.studioReceive;
  window.studioReceive=function(data){
-  if(data.type==='state'&&data.project.id!==lastProject){lastProject=data.project.id;query='';search.value='';}
+  if(data.type==='state'&&data.project.id!==lastProject){lastProject=data.project.id;query='';search.value='';mode='tracks';}
   originalReceive(data);
   if(data.type==='state'){document.body.classList.toggle('workspace-open',state.loaded&&!$('view-studio').hidden);renderWorkspace();}
  };
  const originalView=view;
- view=function(name){originalView(name);document.body.classList.toggle('workspace-open',name==='studio'&&state.loaded);};
+ view=function(name){
+  if(name==='guides'){mode='rhythm';name='studio';}
+  originalView(name);document.body.classList.toggle('workspace-open',name==='studio'&&state.loaded);
+  if(name==='studio')renderWorkspace();
+ };
  const originalSelect=selectSection;
  selectSection=function(section){originalSelect(section);selectionZoom.disabled=!!state.busy;document.querySelectorAll('.structure-row[data-id]').forEach(row=>row.classList.toggle('selected',row.dataset.id===section.id));};
  document.addEventListener('keydown',e=>{

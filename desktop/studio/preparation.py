@@ -11,6 +11,7 @@ import uuid
 
 import soundfile as sf
 
+from musical_timing import tempo_info
 from platform_tools import executable
 from services import atomic, export_reaper, reaper_filename, run
 
@@ -37,7 +38,8 @@ def playback(p):
 def fingerprint(p):
     root = Path(p['_root'])
     content = {k: p.get(k) for k in ('id', 'name', 'sections', 'cues', 'bpm', 'beats', 'settings',
-                                    'lyrics', 'chords', 'drumHits', 'key', 'capo', 'notes', 'downbeats')}
+                                    'lyrics', 'chords', 'drumHits', 'key', 'capo', 'notes', 'downbeats', 'gridLocked')}
+    content['timingVersion']=1
     content['playback'] = playback(p)
     guide_mix = sorted((t['role'], bool(t.get('muted')), bool(t.get('solo'))) for t in p['tracks']
                        if t['role'].startswith('guide_') and (t.get('muted') or t.get('solo')))
@@ -66,13 +68,10 @@ def review(p):
     duration = max(t['offset'] + t['duration'] for t in tracks)
     settings = p['settings']
     beats = p.get('beats', [])
-    if settings['gridMode'] == 'fixed':
-        bpm = float(settings['manualBPM'])
-    else:
+    if settings['gridMode'] != 'fixed':
         if len(beats) < 2 or any(not math.isfinite(b) for b in beats) or any(b <= a for a, b in zip(beats, beats[1:])):
             raise ValueError('Détecte les temps ou choisis un tempo fixe dans Click & cues avant de valider.')
-        from musical_timing import pulse_scale
-        bpm = 60 * pulse_scale(settings) / (beats[1] - beats[0])
+    bpm=tempo_info(p)['estimatedBPM']
     if not math.isfinite(bpm) or not 20 <= bpm <= 400:
         raise ValueError('Vérifie le tempo du morceau dans Click & cues.')
     end = 0
@@ -116,6 +115,11 @@ def transformed(p, folder, engine):
     result = copy.deepcopy(p)
     root = Path(p['_root'])
     rate, pitch, _ = playback(p)
+    # Imported media are already PCM WAV. Let the exporter copy them once,
+    # byte for byte, instead of making an identical intermediate audio tree.
+    media=[t['file'] for t in p['tracks']]+list(p.get('guideFiles',{}).values())
+    if rate==1 and pitch==0 and all(Path(path).suffix.lower()=='.wav' for path in media):
+        return result
     folder.mkdir(parents=True, exist_ok=True)
     converted = {}
     available = run([str(executable(engine, 'ffmpeg')), '-hide_banner', '-filters'])
@@ -174,6 +178,8 @@ def transformed(p, folder, engine):
     result['settings']['manualBPM'] *= rate
     if result['settings'].get('referenceBPM'):result['settings']['referenceBPM'] *= rate
     result['settings']['firstBeat'] /= rate
+    if result.get('sessionDuration'):result['sessionDuration']/=rate
+    result.pop('timingGrid',None)
     result['key'] = transpose(result.get('key', ''), pitch)
     result['_root'] = str(folder)
     return result
@@ -181,18 +187,25 @@ def transformed(p, folder, engine):
 
 def export_destination(root, name):
     """Do not repeat a long song title in every level of the export path."""
-    folder='REAPER-'+datetime.now().strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex[:6]
+    unique=uuid.uuid4().hex
+    dated='REAPER-'+datetime.now().strftime('%Y%m%d-%H%M%S')+'-'+unique[:6]
     for exports in (root/'Exports',root.parent/'Exports'):
-        target=exports/folder
-        try:return target,reaper_filename(name,target)
-        except ValueError:continue
+        for folder in (dated,'R-'+unique[:10]):
+            target=exports/folder
+            try:return target,reaper_filename(name,target)
+            except ValueError:continue
     raise ValueError('Chemin d’export trop long pour REAPER. Place le morceau dans un dossier plus court, puis relance l’export.')
 
 
-def export_validated(snapshot, output, engine):
+def export_validated(snapshot, output, engine, *, preflight=False):
     p = json.loads(Path(snapshot).read_text())
     approval = p.get('preparation') or {}
     signature = fingerprint(p)
+    if preflight:
+        rate,pitch,mode=playback(p)
+        # This is a technical check, never a claim of human listening approval.
+        approval=dict(rate=rate,pitch=pitch,mode=mode,fingerprint=signature,
+                      validatedAt=datetime.now(timezone.utc).isoformat(),kind='technical')
     if not approval.get('validatedAt') or approval.get('fingerprint') != signature:
         raise ValueError('Le morceau a changé ou n’a pas été validé. Ouvre Valider & envoyer avant l’export.')
     summary = review(p)
@@ -206,7 +219,7 @@ def export_validated(snapshot, output, engine):
         prepared = work / 'prepared.json'
         atomic(prepared, scaled)
         temporary = work / 'export-result.json'
-        export_reaper(prepared, temporary)
+        export_reaper(prepared, temporary, final_folder=target)
         info = json.loads(temporary.read_text())
         staged = Path(info['folder'])
         if fingerprint(p) != signature:

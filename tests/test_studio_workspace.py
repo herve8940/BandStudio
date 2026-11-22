@@ -95,8 +95,10 @@ def test_sidebar_collapses_persists_and_restores_without_changing_section(manual
     page.reload()
     assert not page.locator('.rail').is_visible()
     page.locator('#sidebarToggle').click()
-    page.locator('.rail [data-view=guides]').click()
-    assert page.locator('#view-guides').is_visible()
+    page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:2})',p)
+    page.locator('.rail [data-view=studio]').click()
+    page.locator('[data-workspace-mode=rhythm]').click()
+    assert page.locator('#editorRhythm').is_visible()
     assert page.locator('#sidebarToggle').is_visible()
 
 
@@ -109,3 +111,151 @@ def test_online_lyric_correction_is_available_from_the_sheet(manual_page):
     page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:3,busy:true})',p)
     assert page.locator('#correctLyrics').is_disabled()
     assert page.locator('#lyricsReferenceStatus').inner_text()=='Deux lignes recalées. Sources : LRCLIB'
+
+
+def test_editor_is_the_only_home_for_song_controls(manual_page):
+    page,p=manual_page
+    page.locator('[data-workspace-mode=lyrics]').click()
+    assert page.locator('#editorAnnotations').is_visible()
+    assert page.locator('#editorAnnotations #lyricsTools').count()==1
+    assert page.locator('#view-prompter input,#view-prompter select,#view-prompter .annotation-row').count()==0
+    page.locator('[data-workspace-mode=chords]').click()
+    assert page.locator('#editorHarmonySettings').is_visible()
+    page.locator('[data-workspace-mode=rhythm]').click()
+    assert page.locator('#editorRhythm #guideForm').is_visible()
+    assert page.locator('#guideForm').count()==1
+    page.evaluate("view('prompter')")
+    page.get_by_role('button',name='Modifier dans l’éditeur',exact=True).click()
+    assert page.locator('#workspace').get_attribute('data-editor')=='lyrics'
+
+
+def test_guide_draft_merges_latest_mix_and_cannot_leak_to_another_song(manual_page):
+    page,p=manual_page
+    page.locator('[data-workspace-mode=rhythm]').click()
+    page.locator('#setting-leadBeats').fill('6')
+    p['settings']['clickGain']=.17
+    page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:2})',p)
+    assert page.locator('#setting-leadBeats').input_value()=='6'
+    assert page.locator('#setting-clickGain').input_value()=='0.17'
+    page.locator('#guideForm button[type=submit]').click()
+    sent=page.evaluate('sent.at(-1)')
+    assert sent['args']['value']['clickGain']==.17
+    assert sent['args']['value']['leadBeats']==6
+    page.locator('#setting-manualBPM').fill('90')
+    p.update(id='another');p['settings']['manualBPM']=110
+    page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:3})',p)
+    assert page.evaluate('guideDirty') is False
+    assert page.locator('#setting-manualBPM').input_value()=='110'
+
+
+def test_import_starts_full_quality_preparation_and_export_runs_preflight(manual_page):
+    page,p=manual_page
+    page.locator('[data-action=import]').first.click()
+    assert page.evaluate('sent.at(-1).args')==dict(prepare=True)
+    page.locator('#workflowExport').click()
+    assert page.locator('#validationForm').is_hidden()
+    page.locator('#saveReaper').click()
+    assert page.evaluate('sent.at(-1)')==dict(command='reaper',projectID='manual',args=dict(open=False,preflight=True))
+
+
+def test_full_preparation_opens_review_with_no_web_chords_and_no_approval(manual_page):
+    page,p=manual_page
+    p['chordReference']=dict(status='unavailable',sources=[],message='Indisponible')
+    p['chords']=[]
+    def update(busy,task=''):
+        page.evaluate('s=>studioReceive(s)',dict(type='state',project=p,duration=32,loaded=True,library=[],
+            revision=3,busy=busy,jobTask=task,jobPlan=['prepareReview','guides'] if busy else [],analysisPlan=[]))
+    page.locator('.rail [data-view=prepare]').click()
+    update(True,'guides')
+    assert page.locator('#prepareAllStructure').get_attribute('aria-current')=='step'
+    page.evaluate("studioReceive({type:'preparationFinished',projectID:'manual'})")
+    assert page.locator('#view-prepare').is_visible()
+    update(False)
+    assert page.locator('#view-studio').is_visible() and page.locator('#structureTable').is_visible()
+    review=page.locator('#workflowReview')
+    assert review.is_enabled() and review.get_attribute('aria-current')=='step'
+    assert page.locator('#prepareAllStructure').get_attribute('aria-current') is None
+    assert not page.evaluate("sent.some(m=>['play','reviewMarker','validateProject'].includes(m.command))")
+    page.locator('.rail [data-view=delivery]').click()
+    page.evaluate("studioReceive({type:'preparationFinished',projectID:'different-project'})")
+    update(False)
+    assert page.locator('#view-delivery').is_visible()
+
+
+def test_partial_preparation_can_be_reviewed_without_waiting_for_missing_results(manual_page):
+    page,p=manual_page
+    p.update(beats=[],sections=[],chords=[],lyrics=[])
+    page.evaluate("p=>studioReceive({type:'state',project:p,duration:32,loaded:true,library:[],analysisPlan:['prepareReview'],revision:2})",p)
+    assert page.locator('#prepareAllStructure').get_attribute('aria-current')=='step'
+    page.locator('#workflowReview').click()
+    assert page.locator('#workflowReview').get_attribute('aria-current')=='step'
+    assert page.locator('#workspace').get_attribute('data-editor')=='tracks'
+
+
+def test_word_warning_focuses_a_short_context_inside_a_long_line(manual_page):
+    page,p=manual_page
+    p['lyrics']=[dict(id='phrase',start=2,end=13,text='Hold the note',timingReview=True,words=[
+        dict(text='Hold',start=2,end=4),dict(text='the',start=7,end=7.4,timingReview=True),
+        dict(text='note',start=8,end=13)])]
+    page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:2})',p)
+    page.locator('#songReviewListen').click()
+    assert page.evaluate('sent.at(-1).args')==dict(start=5.5,end=8.9)
+    page.locator('#songReviewEdit').click()
+    assert page.locator('#wordRows .word-timing-review').input_value()=='the'
+
+
+def test_targeted_lyric_listening_needs_no_structure_proposal_and_restores_loop(manual_page):
+    page,p=manual_page
+    p['lyrics']=[dict(id='uncertain',start=2,end=4,text='Line to check',manual=False,timingReview=True,confidence=.9),
+                 dict(id='aligned',start=6,end=8,text='Aligned line',manual=False,timingReview=False,confidence=0),
+                 dict(id='manual',start=10,end=12,text='Protected',manual=True,timingReview=True)]
+    page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:2})',p)
+    assert page.locator('#songReviewCount').inner_text()=='1 passage signalé'
+    page.evaluate('studioReceive({type:"transport",position:9,playing:false,rate:1,pitch:0,mode:"original",loop:true,loopStart:8,loopEnd:12})')
+    page.locator('#songReviewListen').click()
+    assert page.evaluate('sent.at(-1)')==dict(command='audition',projectID='manual',args=dict(start=.5,end=5.5))
+    assert page.locator('#workspace').get_attribute('data-editor')=='lyrics'
+    page.evaluate('studioReceive({type:"transport",position:1,playing:true,rate:1,pitch:0,mode:"original",loop:true,loopStart:.5,loopEnd:5.5})')
+    page.evaluate('studioReceive({type:"transport",position:5.4,playing:true,rate:1,pitch:0,mode:"original",loop:true,loopStart:.5,loopEnd:5.5})')
+    assert page.evaluate('sent.at(-1)')==dict(command='loop',projectID='manual',args=dict(on=True,start=8,end=12))
+    assert page.locator('#songReviewListen').inner_text()=='Écouter ce passage'
+    assert page.locator('#songReviewCount').inner_text()=='1 passage signalé'
+    assert page.evaluate('state.project.lyrics')==p['lyrics']
+    assert page.locator('#annotations .annotation-row small').first.inner_text()=='Auto · calage incertain'
+    page.evaluate("view('sheet')")
+    assert page.locator('#songSheet .sheet-entry[data-annotation=uncertain].uncertain').count()>0
+    assert page.locator('#songSheet .sheet-entry[data-annotation=aligned].uncertain').count()==0
+    page.evaluate("view('studio')")
+    page.locator('#songReviewEdit').click()
+    assert page.locator('#annotationEditor').is_visible()
+    assert page.locator('#annotationText').input_value()=='Line to check'
+    page.locator('#annotationText').fill('Corrected line')
+    page.locator('#annotationForm button[type=submit]').click()
+    assert page.evaluate('sent.at(-1).command')=='annotation'
+    assert page.evaluate('sent.at(-1).args.id')=='uncertain'
+
+
+def test_review_navigation_uses_current_project_and_clears_corrected_warnings(manual_page):
+    page,p=manual_page
+    p['lyrics']=[dict(id='line',start=2,end=4,text='<img src=x onerror=alert(1)>',manual=False,timingReview=True)]
+    p['chords']=[dict(id='chord',start=15,end=16,text='Am',manual=False,confidence=.2)]
+    page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:2})',p)
+    assert page.locator('#songReview img').count()==0
+    assert page.locator('#songReviewChoice option').count()==2
+    page.locator('#songReviewNext').click()
+    assert page.locator('#workspace').get_attribute('data-editor')=='chords'
+    assert page.evaluate('sent.at(-1).args.time')==13.5
+    page.locator('#songReviewEdit').click()
+    assert page.locator('#annotationText').input_value()=='Am'
+    page.locator('[data-close=annotationEditor]').click()
+    p['chords'][0]['manual']=True
+    page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:3})',p)
+    assert page.locator('#songReviewChoice option').count()==1
+    page.locator('[data-workspace-mode=rhythm]').click()
+    page.locator('#setting-leadBeats').fill('6')
+    assert page.locator('#songReviewListen').is_disabled()
+    assert page.locator('#songReviewEdit').is_disabled()
+    p.update(id='new-song',lyrics=[],chords=[])
+    page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:4})',p)
+    assert page.locator('#songReview').is_hidden()
+    assert not page.locator('#annotationEditor').is_visible()

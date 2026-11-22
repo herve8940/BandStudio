@@ -172,6 +172,9 @@ def analyze(audio, output, mode, engine, project_file=None, *, reanalyze=False):
     if project and project.get('beats'):
         from musical_timing import align_intro_sections,cached_audio_entry
         proposed=align_intro_sections({**project,'sections':proposed},cached_audio_entry(audio,project,engine))['sections']
+    if project and (project.get('beats') or project.get('settings',{}).get('gridMode')=='fixed'):
+        from section_evidence import align_bar_arrivals
+        proposed,_=align_bar_arrivals({**project,'sections':proposed})
     write(output, dict(sections=proposed, engine='SongFormer',cacheHit=cached is not None,cueCorrection=correction))
 
 
@@ -185,6 +188,7 @@ def main():
     p.add_argument('--language',default='auto')
     p.add_argument('--quality',choices=['fast','standard','careful'],default='standard')
     p.add_argument('--reanalyze',action='store_true',help='Recompute explicitly instead of reusing a previous result')
+    p.add_argument('--preflight',action='store_true',help='Check the current media and timeline before a local REAPER export')
     p.add_argument('--chord-source',default='',help='Use a matching saved web chart for local chord alignment')
     p.add_argument('--output', required=True)
     p.add_argument('--engine', required=True)
@@ -247,7 +251,7 @@ def execute(a):
             from song_memory import remember
             try:remember(json.loads(Path(a.project).read_text()),accepted=True)
             except (OSError,ValueError):pass
-        else:export_validated(a.project,a.output,engine)
+        else:export_validated(a.project,a.output,engine,preflight=getattr(a,'preflight',False))
         return
     if a.command=='rpp':import_reaper(a.input,a.output,engine,a.project);return
     if a.command in ('lyrics','lyricscorrect'):
@@ -260,10 +264,10 @@ def execute(a):
                 backup.parent.mkdir(parents=True,exist_ok=True);backup.write_bytes(original.read_bytes())
         track=next((t for role in ('vocal_lead','vocals','source') for t in project['tracks'] if t['role']==role),{})
         offset=track.get('offset',0)
-        if a.command=='lyrics':
+        if a.command=='lyrics' or not project.get('lyrics'):
             print('Transcription locale du chant et alignement des mots…',flush=True)
             import reacue_transcribe
-            with legacy_status(reacue_transcribe):
+            with legacy_status(reacue_transcribe, phases=3):
                 if reacue_transcribe.transcribe(a.input,a.output,lang=a.language,model_name=reacue_transcribe.selected_model())!=0:raise RuntimeError('La transcription des paroles a échoué.')
             transcription=json.loads(Path(a.output).read_text())
             for row in transcription.get('segments',[]):

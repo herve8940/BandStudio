@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 import pytest
 import chord_sources as web
 
@@ -10,8 +9,25 @@ def test_tagged_artist_resolves_title_artist_in_either_order(tmp_path,title):
     assert web.identity(dict(name=title+' [sElE_BfQ67s]',_root=str(tmp_path)))==('Apocalypse','Cigarettes After Sex')
 
 
-def test_catalog_and_fallback_have_the_same_sources():
-    assert json.loads((Path(web.__file__).parent/'chord-providers.json').read_text())==web.PROVIDERS
+def test_catalog_domains_and_ids_are_unique():
+    for field in ('id','domain','publisher'):
+        assert len({p[field] for p in web.PROVIDERS})==len(web.PROVIDERS)
+
+
+def test_topaccords_uses_only_published_concert_chords_and_checks_identity(monkeypatch):
+    provider=next(p for p in web.PROVIDERS if p['id']=='topaccords')
+    url=web.provider_url(provider,'Titre inventé','Artiste témoin')
+    assert url.endswith('/partition/artiste-temoin/titre-invente')
+    tag=lambda name,extra='':f'<span class="chords {extra}" data-chords="{name}" data-display-chords="Gb"></span>'
+    page=('<title>Titre inventé - Artiste témoin - Tab et accords</title>'+tag('B')+
+          '<div class="partition-content"><div class="capo" data-value="2"></div>'+
+          '<div class="paroles"><div class="lyrics-line">'+tag('Am')+tag('C/G')+tag('D','copie')+
+          tag('invalid')+'</div></div>'+tag('F')+'</div>')
+    monkeypatch.setattr(web,'fetch',lambda url:(page,url))
+    _,status,source=web._read_chart(provider,'Titre inventé','Artiste témoin',url)
+    assert status=='found' and source['chords']==['Am','C/G'] and source['transitions']==[['Am','C/G']]
+    assert not source['chordSequence']  # Inferred repetitions do not form a complete written arrangement.
+    assert web._read_chart(provider,'Titre inventé','Autre artiste',url)[1]=='not_found'
 
 
 def test_ukulele_index_resolves_exact_song_and_validates_identity(monkeypatch):

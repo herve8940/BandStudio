@@ -8,8 +8,12 @@ import plistlib
 import platform
 import shutil
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'desktop/studio'))
+from chord_provider_defaults import write_catalog
+
 BUILD = ROOT / 'desktop-build' / 'standalone'
 
 
@@ -65,7 +69,7 @@ def build(source, prepare=False):
     if prepare:
         prepare_runtime(source, engine)
     if engine.exists():
-        shutil.copy2(ROOT/'desktop/studio/chord-providers.json',engine/'chord-providers.json')
+        write_catalog(engine)
         for name in ('rhythm-quality.json','rhythm-adapter.json'):
             calibration=ROOT/'desktop/studio'/name
             if calibration.is_file():shutil.copy2(calibration,engine/calibration.name)
@@ -83,7 +87,7 @@ def build(source, prepare=False):
     contents=app / 'Contents'
     mac=contents / 'MacOS';mac.mkdir(parents=True,exist_ok=True)
     resources=contents / 'Resources';resources.mkdir(exist_ok=True)
-    shutil.copy2(ROOT/'desktop/studio/chord-providers.json',resources/'chord-providers.json')
+    write_catalog(resources)
     if (resources / 'web').exists():shutil.rmtree(resources / 'web')
     shutil.copytree(ROOT / 'desktop/studio/web', resources / 'web')
     shutil.copy2(ROOT/'desktop/studio/assets/BandStudio.icns',resources/'BandStudio.icns')

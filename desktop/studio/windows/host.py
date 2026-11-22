@@ -54,13 +54,25 @@ class Api:
         if not self._project.get('key'):steps.append('key')
         if available['lyrics']:steps.append('lyricscorrect' if model.analysis_done(self._project,'lyrics') else 'lyrics')
         steps=[kind for kind in steps if not model.analysis_done(self._project,kind)]
-        if 'source' in roles and (steps or (self._project.get('structureProposal') or {}).get('status')!='prepared'):steps.append('prepareReview')
-        return steps+(['guides'] if steps or not self._ready_guides() else [])
+        review=self._project.get('structureProposal') or {}
+        if 'source' in roles and (steps or review.get('status')!='prepared' or not review.get('sectionTimingVersion')):steps.append('prepareReview')
+        needs_guides=bool(steps) or not self._ready_guides()
+        ref=self._project.get('chordReference') or {}
+        if (not steps and 'source' in roles and not model.analysis_done(self._project,'chords') and
+                ref.get('checks') and not ref.get('sources') and time.time()>=(ref.get('retryAfter') or 0)):
+            steps.append('chords')
+        return steps+(['guides'] if needs_guides else [])
     def _ready_guides(self):
         return bool(self._root and self._project['guideKey']==model.guide_key(self._project) and all(model.relative_file(self._root,p).is_file() for p in self._project['guideFiles'].values()))
     def _state(self):
         from chord_sources import public_catalog
-        self._send(dict(type='state',project=self._project,duration=model.duration(self._project),loaded=self._root is not None,library=self._list(),trashAvailable=bool(catalog.trashed(self._library)),analysisPlan=self._plan(),setlists=self._setlists,busy=self._busy,job=self._job_name,jobTask=getattr(self,'_job_kind',''),jobID=str(self._job_log or ''),jobPlan=getattr(self,'_job_plan',[]),jobPlanIndex=getattr(self,'_job_plan_index',0),notice=self._notice,undo=bool(self._history),redo=bool(self._future),revision=self._revision,lastExport=self._last_export,guidesReady=self._ready_guides(),platform='windows',components={k:python_for(self._engine,v).is_file() for k,v in ENVIRONMENTS.items()},chordProviders=public_catalog()))
+        display=self._project
+        if self._root and self._project['settings']['gridMode']=='detected' and len(self._project.get('beats',[]))>=2:
+            from musical_timing import BeatClock, timing_basis
+            saved=self._project.get('timingGrid') or {}
+            if saved.get('version')!=1 or saved.get('basis')!=timing_basis(self._project):
+                display={**self._project,'timingGrid':BeatClock(self._project).payload()}
+        self._send(dict(type='state',project=display,duration=model.duration(self._project),loaded=self._root is not None,library=self._list(),trashAvailable=bool(catalog.trashed(self._library)),analysisPlan=self._plan(),setlists=self._setlists,busy=self._busy,job=self._job_name,jobTask=getattr(self,'_job_kind',''),jobID=str(self._job_log or ''),jobPlan=getattr(self,'_job_plan',[]),jobPlanIndex=getattr(self,'_job_plan_index',0),notice=self._notice,undo=bool(self._history),redo=bool(self._future),revision=self._revision,lastExport=self._last_export,guidesReady=self._ready_guides(),platform='windows',components={k:python_for(self._engine,v).is_file() for k,v in ENVIRONMENTS.items()},chordProviders=public_catalog()))
         self._transport()
     def _transport(self):
         a=self._audio
@@ -204,6 +216,9 @@ class Api:
     def _guides(self,force=False):
         if not force and self._ready_guides():return
         result,obj=self._work('guides');folder=self._root/'Guides'/model.ident();folder.mkdir(parents=True)
+        timing_changed=((self._project.get('timingGrid') or {}).get('version')!=1 or
+                        (not self._project.get('gridLocked') and obj.get('firstBeatCorrection') is not None and
+                         obj['firstBeatCorrection']!=self._project['settings']['firstBeat']))
         mapping={}
         for key,value in obj['files'].items():
             file=Path(value).resolve()
@@ -212,14 +227,15 @@ class Api:
         previous_guides=self._project['tracks']
         self._project['tracks']=[t for t in previous_guides if not t['role'].startswith('guide_')]
         for key,name,role in [('click','Métronome','guide_click'),('calls','Appels de régions','guide_voice'),('cues','Cues','guide_cue'),('counts','Décompte des régions','guide_count')]:self._project['tracks'].append(model.guide_track(self._root/mapping[key],self._root,name,role,previous_guides))
-        self._project['guideFiles']=mapping;self._project['guideKey']=model.guide_key(self._project);self._reload();self._save(invalidate=False);self._notice='Appels, décomptes et métronome prêts.'
+        if not self._project.get('gridLocked') and obj.get('firstBeatCorrection') is not None:self._project['settings']['firstBeat']=obj['firstBeatCorrection']
+        self._project['timingGrid']=obj.get('timingGrid');self._project['guideFiles']=mapping;self._project['guideKey']=model.guide_key(self._project);self._reload();self._save(invalidate=timing_changed);self._notice='Appels, décomptes et métronome prêts.'
         if obj.get('guideWarnings'):
             self._notice=f"Guides prêts · {len(obj['guideWarnings'])} annonce(s) sans place avant l’entrée : raccourcis le texte ou le décompte."
     def _decode(self,source,target):
         args=[str(executable(self._engine,'ffmpeg')),'-nostdin','-hide_banner','-loglevel','error','-y','-protocol_whitelist','file,pipe,crypto,data','-i',str(source),'-map','0:a:0','-vn','-ac','2','-ar','44100','-c:a','pcm_f32le',str(target)]
         r=subprocess.run(args,capture_output=True,creationflags=creation_flags(),timeout=1800)
         if r.returncode:raise ValueError('Fichier audio illisible : '+r.stderr.decode(errors='replace')[-700:])
-    def _import(self,files,new=True,title=None,url='',artwork=None,metadata=None):
+    def _import(self,files,new=True,title=None,url='',artwork=None,metadata=None,prepare=False):
         if new:
             p=model.fresh(title or Path(files[0]).stem)
             try:p['settings'].update(json.loads((self._library/'defaults.json').read_text()))
@@ -243,7 +259,9 @@ class Api:
             from artwork import seed
             seed(root,files[0],self._engine,metadata)
         self._load(root,prepare_guides=not new)
-        if new:
+        if new and prepare:
+            self._prepare_all({})
+        elif new:
             from windows.advanced_host import advanced_task
             if 'smartgrid' in self._plan():advanced_task(self,'smartgrid',{})
             else:self._analysis('grid',{})
@@ -293,17 +311,10 @@ class Api:
             apply(self._project,obj)
         elif kind in ('lyrics','lyricscorrect'):
             kind='lyrics'
-            self._project['lyricsReference']=obj.get('lyricsReference')
-            entries=[];manual=[x for x in self._project[kind] if x.get('manual')]
-            for row in obj['segments']:
-                start=row.get('start',row.get('t',0));end=min(model.duration(self._project),row['end'])
-                if end<=start or any(x['start']<end and x['end']>start for x in manual):continue
-                entry=dict(id=model.ident(),start=start,end=end,text=row.get('text',row.get('label','')),manual=False,sourceURL=row.get('sourceURL'),confidence=row.get('confidence'))
-                if kind=='lyrics':entry['words']=[dict(start=w['t'],end=w['end'],text=w['w']) for w in row.get('words',[]) if start<=w['t']<w['end']<=end+.1]
-                entries.append(entry)
-            self._project[kind]=sorted(manual+entries,key=lambda x:x['start'])
+            model.apply_lyrics(self._project,obj)
         model.analysis_completed(self._project,kind)
-        self._save();self._notice=obj['reference']['message'] if kind=='chords' else obj['lyricsReference']['message'] if kind=='lyrics' and obj.get('lyricsReference') else 'Analyse ajoutée. Vérifie et corrige les propositions dans l’atelier ou le prompteur.'
+        self._save(invalidate=kind!='chords' or bool(obj['segments']) or (self._project.get('structureProposal') or {}).get('status')=='proposed')
+        self._notice=obj['reference']['message'] if kind=='chords' else obj['lyricsReference']['message'] if kind=='lyrics' and obj.get('lyricsReference') else 'Analyse ajoutée. Vérifie et corrige les propositions dans l’atelier ou le prompteur.'
     def _set_rate(self,rate,pitch,resume=False):
         self._audio.pause();self._audio.rate=model.number(rate,.5,1.5);self._audio.pitch=model.number(pitch,-12,12);self._audio.prepare()
         if resume:self._audio.play()
@@ -331,7 +342,9 @@ class Api:
             except Exception as error:
                 self._project=before;self._reload();self._save(invalidate=False)
                 raise RuntimeError(f'Arrêt à l’étape {index}/{len(steps)} ({kind}). Les étapes terminées sont conservées. {error}') from error
-        self._notice='Morceau préparé. Les améliorations sont visibles dans Pistes & structure ; écoute les passages signalés.'
+        if only is None:
+            self._notice='Ton morceau est prêt à écouter.'
+            self._send(dict(type='preparationFinished',projectID=self._project['id']))
     def _dialog(self,kind,**options):
         import webview
         return self._window.create_file_dialog(getattr(webview.FileDialog,kind),**options)
@@ -458,7 +471,7 @@ class Api:
             raise ValueError('BandStudio prépare les morceaux. L’enregistrement se poursuit dans REAPER.')
         if cmd in ('import','addTracks'):
             paths=self._dialog('OPEN',allow_multiple=cmd=='addTracks',file_types=('Audio et vidéos (*.*)',))
-            if paths:a.pause();self._op('Import du morceau',lambda:self._import(paths,cmd=='import'))
+            if paths:a.pause();self._op('Import du morceau',lambda:self._import(paths,cmd=='import',prepare=args.get('prepare',True) is True),rollback=False)
             return
         if cmd in ('open','openRPP'):
             paths=self._dialog('FOLDER' if cmd=='open' else 'OPEN',file_types=('Projet REAPER (*.rpp)',) if cmd=='openRPP' else ())
@@ -669,7 +682,7 @@ class Api:
         if cmd in ('reaper','midi'):
             def exported():
                 if cmd=='reaper':self._guides()
-                _,obj=self._work(cmd);self._last_export=obj['path'];self._notice='Export terminé. Afficher l’export permet de le retrouver.'
+                _,obj=self._work(cmd,arguments=['--preflight']) if cmd=='reaper' and args.get('preflight') is True else self._work(cmd);self._last_export=obj['path'];self._notice='Export terminé. Afficher l’export permet de le retrouver.'
                 if cmd=='reaper' and args.get('open'):
                     candidates=[Path(os.environ.get('ProgramFiles','C:/Program Files'))/'REAPER (x64)/reaper.exe',Path(os.environ.get('ProgramFiles','C:/Program Files'))/'REAPER/reaper.exe',Path(os.environ.get('LOCALAPPDATA',str(Path.home()/'AppData/Local')))/'Programs/REAPER (x64)/reaper.exe']
                     app=next((x for x in candidates if x.is_file()),None)

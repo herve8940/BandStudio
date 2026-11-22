@@ -36,6 +36,40 @@ def ensemble(root,*,offset=0,shift=0,stereo=False,change='piano',missing=()):
     return p
 
 
+@pytest.mark.parametrize('meter,unit,at', [(4,'quarter',8.),(3,'quarter',7.5),(2,'dottedQuarter',8.)])
+def test_late_bar_arrival_uses_local_attack_without_moving_pickups_or_protected_edges(tmp_path,meter,unit,at):
+    p=ensemble(tmp_path);p['settings'].update(beatsPerBar=meter,pulseUnit=unit)
+    p['downbeats']=p['beats'][::meter]
+    p['lyrics']=[]
+    p['sections'][0]['end']=p['sections'][1]['start']=at+.17
+    original=copy.deepcopy(p)
+    rows,changes=evidence.align_bar_arrivals(p)
+    assert p==original and len(changes)==1 and rows[0]['end']==rows[1]['start']==at
+    assert evidence.align_bar_arrivals({**p,'sections':rows})[0]==rows
+    for field in ('locked','reviewed','origin'):
+        q=copy.deepcopy(p);q['sections'][0][field]='manual' if field=='origin' else True
+        assert evidence.align_bar_arrivals(q)[0]==q['sections']
+    for old in (at-.17,at+.6):
+        q=copy.deepcopy(p);q['sections'][0]['end']=q['sections'][1]['start']=old
+        assert evidence.align_bar_arrivals(q)[0]==q['sections']
+    # A reliable line beginning precisely at the later marker can be a musical offbeat.
+    p['lyrics']=[dict(words=[dict(start=at+.17)])]
+    assert evidence.align_bar_arrivals(p)[0]==p['sections']
+    p['lyrics']=[];p['downbeats']=[]
+    assert evidence.align_bar_arrivals(p)[0]==p['sections']
+
+
+def test_section_arrival_needs_evidence_and_a_full_measure_on_both_sides(tmp_path):
+    p=ensemble(tmp_path);p['settings'].update(beatsPerBar=4)
+    p['downbeats']=p['beats'][::4];p['tracks']=[dict(role='source',duration=16,offset=0)]
+    p['lyrics']=[];p['sections'][0]['end']=p['sections'][1]['start']=8.18
+    assert evidence.align_bar_arrivals(p)[0]==p['sections']
+    p['lyrics']=[dict(words=[dict(start=8.01)])]
+    assert evidence.align_bar_arrivals(p)[0][1]['start']==8
+    p['sections'][0]['start']=7.9
+    assert evidence.align_bar_arrivals(p)[0]==p['sections']
+
+
 @pytest.mark.parametrize('shift',[0,3,7])
 def test_piano_arrival_hidden_by_held_guitar_is_used_with_bass(tmp_path,shift):
     p=ensemble(tmp_path,shift=shift);f=patterns.describe(p)

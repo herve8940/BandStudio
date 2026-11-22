@@ -1,10 +1,18 @@
 # BandStudio · guide de préparation
 
-1. **Importer** un fichier audio de ton ordinateur. Le fichier original est conservé.
-2. Dans **Pistes & structure**, cliquer sur **Tout préparer**. Les moteurs installés préparent les pistes, sous-pistes, paroles, accords, sections et guides. **Préparation détaillée** permet de relancer une étape.
-3. **Pistes & structure** : choisir **Mon instrument**, écouter en solo ou sans cette partie ; modifier volumes, panoramiques, sections et repères. Play et Espace déclenchent la même commande. Les sous-pistes chant/batterie remplacent leur piste parente dans le mix pour éviter un doublage.
-4. **Click & repères** : vérifier le premier temps, la mesure et le tempo. Régler click, annonces et décompte. **Paroles & accords** permet de corriger le texte, les horaires, la tonalité et le capo.
-5. **Valider & envoyer** : écouter les passages importants, confirmer les trois points de validation, puis exporter/ouvrir le projet dans REAPER. Changer le mix, la vitesse, la hauteur ou les repères annule la validation précédente.
+Sur un morceau déjà importé, **Préparer** vérifie les départs de section avec la grille et les attaques de l’enregistrement. Les repères corrigés à la main restent prioritaires. Quand une section entre avant la mesure suivante, la fiche affiche ses premiers accords et ses premiers mots sur une ligne **Entrée**, avec le numéro de mesure et le temps exact.
+
+Dans **Éditeur du morceau → Accords**, tu peux ouvrir une grille publiée, comparer les accords à jouer et choisir celle à utiliser. La palette suit la transposition du lecteur et le capo. Quand tu places un accord, l’éditeur affiche sa valeur d’origine et l’accord à jouer. La fiche et le prompteur suivent le même réglage.
+
+Pour les paroles, BandStudio essaie le titre du fichier puis une forme simplifiée, par exemple « Mon époque » pour un clip intitulé « Mon époque (Chap. II) ». Après LRCLIB et lyrics.ovh, la recherche peut consulter Paroles.net et Paroles2Chansons, retrouver le morceau dans le catalogue de l’artiste ou chercher sa page sur le Web. BandStudio compare le texte au chant et recale les mots sur l’enregistrement. Quand plusieurs passages concordent avec une édition synchronisée, ses repères aident à retrouver les répétitions. **Écoute ciblée** permet de réécouter les mots dont le placement reste incertain. Si un site est indisponible, BandStudio peut réutiliser sa référence déjà enregistrée pour ce morceau.
+
+1. **Importer** un fichier audio. La préparation complète démarre automatiquement avec les moteurs installés, sans diminuer leur qualité. L’option peut être désactivée dans **Mes morceaux**. Le fichier original est conservé.
+2. **Éditeur du morceau** regroupe les pistes, sections, paroles, accords et réglages du métronome. Une correction utilise le même document et le même historique d’annulation partout. La fiche et le prompteur renvoient vers cet éditeur.
+3. **Écouter et corriger** : **Écoute ciblée** rassemble les mesures incertaines, sections ajustées, lignes de paroles à recaler et accords signalés. Choisir un passage ouvre le bon onglet ; **Écouter** joue son extrait puis restaure la boucle précédente ; **Modifier** ouvre l’éditeur existant. Écouter ne marque jamais automatiquement un passage comme validé. Les alertes de paroles sont conservées par ligne sur Mac, Windows et dans la préparation par lots, avec la même règle d’affichage dans l’éditeur et la fiche. **Préparer** reprend les étapes manquantes ; **Préparation détaillée** permet de relancer une analyse précise.
+4. **Métronome** : la grille détectée suit les pulsations de l’enregistrement, complète les trous et prolonge les débuts/fins. Le tempo fixe reste un choix explicite. Lecture, décompte, mesures, fiche et REAPER utilisent cette même grille. Les pulsations extrapolées restent des estimations, à écouter lorsque l’enregistrement est ambigu.
+5. **Exporter vers REAPER** : un clic vérifie les médias et la préparation actuelle, puis exporte ou ouvre le projet. Aucun export ne prétend avoir été validé à l’oreille automatiquement. La liste de vérification personnelle reste disponible. Chaque export crée un dossier distinct.
+
+Sans changement de vitesse ni de hauteur, l’export conserve les WAV à l’identique et évite la copie audio intermédiaire. Les annonces vocales identiques sont réutilisées entre traitements ; un cache absent ou endommagé est reconstruit. Les réglages de qualité des moteurs restent inchangés. Les modifications non appliquées doivent être enregistrées avant une préparation ou un export.
 
 ## Nouveautés du 21 novembre 2026
 
@@ -60,6 +68,20 @@ Dans **Réglages → Analyses locales**, installer/vérifier **Séparer les stem
 L’erreur `numpy.core.multiarray failed to import` peut venir de NumPy 2 avec soxr 0.3.7 dans l’environnement rythmique. Après la mise à jour de BandStudio, relancer **Installer / vérifier → Rythme avancé** remet NumPy 1.26.4, vérifie les imports et conserve les modèles et les morceaux. Attendre la fin d’une installation et fermer sa fenêtre avant d’en lancer une autre. Les nouveaux environnements de séparation utilisent aussi cette version compatible de NumPy.
 
 ## macOS
+
+### Évaluer les analyses sans corrections manuelles
+
+`tools/check_studio_automatic.py` rejoue les analyses dans une **nouvelle bibliothèque isolée**. Il copie les fichiers audio et l’identité titre/artiste, puis recrée un document vierge : aucun tempo corrigé, décalage de piste, repère, parole, accord, réglage de morceau, référence choisie, cache d’analyse ou validation n’est repris. Les pistes séparées existantes sont réutilisées ; ce contrôle ne mesure donc pas la qualité de séparation. Les originaux sont contrôlés par SHA-256 avant et après l’essai.
+
+Exemple avec un moteur local déjà préparé et son Python disposant de NumPy et SoundFile :
+
+```sh
+python tools/check_studio_automatic.py --engine /chemin/Engine --library /chemin/BandStudio --output /chemin/nouvel-essai --song Apocalypse --song Hysteria --song Tostaky
+```
+
+Le dossier de sortie doit être nouveau. Chaque étape utilise le vrai worker ; les modèles restent locaux et les recherches de références Internet utilisent le titre et l’artiste. L’option `--reuse-raw-structure` autorise uniquement les segments bruts SongFormer dont la clé audio/modèles/code/environnement/paramètres et le checksum sont identiques. Elle ne reprend aucune section du document : toutes les corrections et comparaisons ultérieures sont rejouées. La réutilisation est déclarée dans le rapport ; une incompatibilité déclenche une nouvelle inférence.
+
+`report.json` conserve les durées, erreurs, avertissements, provenance audio et résultats techniques. Sans annotations de référence indépendantes ou écoute comparative, ces résultats ne constituent pas une mesure de précision musicale. Les tests sur des projets corrigés restent utiles pour vérifier la conservation des modifications, mais ne servent pas de vérité terrain aux analyses automatiques.
 
 Pour une installation de développement disposant déjà d’un moteur ReaCue local et de ses environnements Python, depuis la racine du dépôt :
 

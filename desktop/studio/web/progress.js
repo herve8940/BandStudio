@@ -27,7 +27,7 @@ document.querySelectorAll('[data-analysis],[data-studio-task]').forEach(b=>addAn
 for(const [selector,task] of [['#splitVocals','vocalsplit'],['[data-action="guides"]','guides'],['#exportSheet','sheet']])addAnalysisMeter(document.querySelector(selector),task);
 function analysisDone(task){
  const project=state.project,completed=project.analysesCompleted||[];
- if(task==='chords')return !!project.chordReference||!!project.preparation?.fingerprint||(project.chords||[]).some(c=>c.manual);
+ if(task==='chords')return !!project.preparation?.fingerprint||(project.chords||[]).some(c=>c.manual||(c.sourceURL&&project.chordReference?.sources?.length));
  if(completed.includes(task))return true;
  if(task==='separate')return project.tracks.some(t=>['drums','bass','vocals','other','guitar','piano'].includes(t.role));
  if(task==='guides')return !!state.guidesReady;
@@ -35,6 +35,10 @@ function analysisDone(task){
 }
 function taskProgress(task){
  const data=analysisHistory[task];
+ if(task==='chords'&&!state.busy&&!analysisDone(task)){
+  const status=state.project.chordReference?.status;
+  if(status==='unavailable'||status==='not_found')return {value:0,text:status==='unavailable'?'Sources indisponibles':'Aucune grille trouvée'};
+ }
  if(data?.failed)return {value:data.progress||0,text:'Interrompu · '+Math.floor(data.progress||0)+' %'};
  if(data?.finished||(!data&&analysisDone(task)))return {value:100,text:'Terminé · 100 %'};
  if(data){
@@ -44,7 +48,7 @@ function taskProgress(task){
  return {value:0,text:'En attente · 0 %'};
 }
 function renderAnalysisProgress(){
- for(const [task,meters] of analysisMeters){const p=taskProgress(task);for(const meter of meters)updateMeter(meter,p.value,p.text,p.waiting);}
+ for(const [task,meters] of analysisMeters){const p=taskProgress(task);for(const meter of meters){updateMeter(meter,p.value,p.text,p.waiting);meter.classList.toggle('idle',!analysisHistory[task]&&!analysisDone(task));}}
  const data=analysisCurrent||{},p=taskProgress(data.task);
  updateMeter(currentMeter,p.value,p.text,p.waiting);
  overallMeter.hidden=analysisPlan.length<2;

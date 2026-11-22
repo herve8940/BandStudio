@@ -140,6 +140,7 @@ extension StudioApp {
         guard let root=root else{return}
         let obj=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
         guard let mapping=obj["files"] as? [String:String],mapping["click"] != nil,mapping["calls"] != nil else {throw StudioError("Les pistes de guidage n’ont pas été créées.")}
+        let timingChanged=project.timingGrid?.version != 1 || (!project.gridLocked && (obj["firstBeatCorrection"] as? Double).map{$0 != project.settings.firstBeat} == true)
         let prefix="Guides/"+UUID().uuidString,folder=root.appendingPathComponent(prefix)
         try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
         var paths:[String:String]=[:]
@@ -159,8 +160,10 @@ extension StudioApp {
             }
             project.tracks.append(track)
         }
-        project.guideFiles=paths;project.guideKey=key
-        try reloadAudio();try changed(invalidate:false);notice="Click, appels et décompte prêts."
+        if !project.gridLocked,let first=obj["firstBeatCorrection"] as? Double {project.settings.firstBeat=first}
+        if let grid=obj["timingGrid"] {project.timingGrid=try JSONDecoder().decode(TimingGrid.self,from:JSONSerialization.data(withJSONObject:grid))}
+        project.guideFiles=paths;project.guideKey=project.desiredGuideKey()
+        try reloadAudio();try changed(invalidate:timingChanged);notice="Click, appels et décompte prêts."
         if let warnings=obj["guideWarnings"] as? [[String:Any]], !warnings.isEmpty {
             notice="Guides prêts · \(warnings.count) annonce(s) sans place avant l’entrée : raccourcis le texte ou le décompte."
         }
@@ -196,12 +199,12 @@ extension StudioApp {
             }
         }
     }
-    func exportRPP(open:Bool=false) throws {
+    func exportRPP(open:Bool=false,preflight:Bool=false) throws {
         try requireIdle()
-        guard project.preparation?.fingerprint != nil else {throw StudioError("Valide d’abord le morceau dans Valider & envoyer.")}
+        guard preflight || project.preparation?.fingerprint != nil else {throw StudioError("Valide d’abord le morceau dans Valider & envoyer.")}
         audio.pause()
         try withGuides {
-            try self.startJob("reaper") {result in
+            try self.startJob("reaper",arguments:preflight ? ["--preflight"] : []) {result in
                 let obj=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
                 guard let path=obj["path"] as? String else {throw StudioError("Le projet REAPER n’a pas été créé.")}
                 self.lastExport=path
@@ -248,7 +251,9 @@ extension StudioApp {
             }
             remember();project.chordReference=value
             if !(obj["segments"] as? [[String:Any]] ?? []).isEmpty {project.chords=(manual+entries).sorted{$0.start<$1.start}}
-            project.analysisCompleted(kind);try changed();notice=value.message;return
+            project.analysisCompleted(kind)
+            try changed(invalidate:!(obj["segments"] as? [[String:Any]] ?? []).isEmpty || project.structureProposal?.status == "proposed")
+            notice=value.message;return
         }
         remember()
         if kind == "drums" {
@@ -266,9 +271,10 @@ extension StudioApp {
                 if b>a && a>=0 {
                     var item=TimedText(start:a,end:b,text:text,sourceURL:row["sourceURL"] as? String,confidence:row["confidence"] as? Double)
                     if kind == "lyrics" {
+                        item.timingReview=row["timingReview"] as? Bool
                         item.words=(row["words"] as? [[String:Any]] ?? []).compactMap{w in
                             guard let t=w["t"] as? Double,let end=w["end"] as? Double,let word=w["w"] as? String,t>=a,end>t,end<=b+0.1 else{return nil}
-                            return TimedWord(start:t,end:end,text:word)
+                            return TimedWord(start:t,end:end,text:word,timingReview:w["timingReview"] as? Bool)
                         }
                     }
                     result.append(item)
@@ -448,8 +454,12 @@ extension StudioApp {
         steps=steps.filter{!project.analysisDone($0)}
         // The final pass discovers and aligns chords once, after the sections.
         // Existing choices remain editable and no human validation is invented.
-        if project.tracks.contains(where:{$0.role=="source"}),!steps.isEmpty || project.structureProposal?.status != "prepared" {steps.append("prepareReview")}
-        if !steps.isEmpty || project.guideKey != project.desiredGuideKey(){steps.append("guides")}
+        if project.tracks.contains(where:{$0.role=="source"}),!steps.isEmpty || project.structureProposal?.status != "prepared" || (project.structureProposal?.sectionTimingVersion ?? 0)<1 {steps.append("prepareReview")}
+        let needsGuides = !steps.isEmpty || project.guideKey != project.desiredGuideKey()
+        if steps.isEmpty,project.tracks.contains(where:{$0.role=="source"}),!project.analysisDone("chords"),
+           let ref=project.chordReference,ref.sources.isEmpty,ref.checks?.isEmpty == false,
+           Date().timeIntervalSince1970 >= (ref.retryAfter ?? 0) {steps.append("chords")}
+        if needsGuides {steps.append("guides")}
         return steps
     }
     func calibrateImportedSong() throws {
@@ -472,7 +482,13 @@ extension StudioApp {
         let steps=analysisPlan().filter{only?.contains($0) ?? true},identity=project.id,generation=transportGeneration
         func next(_ index:Int) throws {
             guard self.project.id==identity,self.transportGeneration==generation else{return}
-            if index==steps.count {if let completion=completion {try completion();return};self.notice="Morceau préparé. Les améliorations sont visibles dans Pistes & structure ; écoute les passages signalés.";self.sendState();return}
+            if index==steps.count {
+                if let completion=completion {try completion();return}
+                self.notice="Ton morceau est prêt à écouter."
+                self.sendState()
+                self.send(["type":"preparationFinished","projectID":identity])
+                return
+            }
             let kind=steps[index]
             let finish:()throws->Void = {try next(index+1)}
             if kind=="guides" {try self.withGuides(finish)}

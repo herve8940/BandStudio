@@ -5,11 +5,20 @@ function preparationApproved(){
  const p=state.project.preparation;
  return !!(p?.fingerprint&&p?.validatedAt&&Math.abs(p.rate-(transport.rate||1))<.00001&&Math.abs(p.pitch-(transport.pitch||0))<.00001&&p.mode===transport.mode);
 }
+function songPreparationState(){
+ const p=state.project;
+ const prepared=p.structureProposal?.status==='prepared'||!!p.preparation?.fingerprint;
+ const audio=!!state.loaded&&p.tracks.some(t=>!t.role.startsWith('guide_'));
+ const preparing=!!state.busy&&(!!state.jobPlan?.length||state.jobTask==='prepareReview');
+ const reviewable=audio&&(prepared||!!(p.sections?.length||p.lyrics?.length||p.chords?.length||p.beats?.length));
+ return {audio,prepared,preparing,reviewable};
+}
 function renderPreparation(){
  const p=state.project,s={...guideDefaults,...p.settings},ready=preparationApproved(),loaded=state.loaded;
  const identity=p.id+':'+state.revision;
  if(identity!==reviewIdentity){reviewIdentity=identity;for(const id of ['reviewAudio','reviewGrid','reviewGuides'])$(id).checked=ready;}
- $('preparationBadge').textContent=!loaded?'Aucun morceau ouvert':ready?'✓ Morceau validé':p.structureProposal?.status==='prepared'?'✓ Morceau préparé':'Préparation en cours';
+ const phase=songPreparationState();
+ $('preparationBadge').textContent=!loaded?'Aucun morceau ouvert':ready?'✓ Morceau validé':phase.preparing?'Préparation en cours':phase.reviewable?'Prêt à écouter':'À préparer';
  $('preparationBadge').classList.toggle('approved',ready);
  $('deliveryStatus').textContent=ready?'✓ Validé pour REAPER':loaded?'À vérifier':'Importe un morceau';
  $('deliveryStatus').classList.toggle('approved',ready);
@@ -22,8 +31,9 @@ function renderPreparation(){
  const modes={original:'Original',mix:'Mix des pistes'};const [kind,target]=listenMode(transport.mode);if(target)modes[transport.mode]=(kind==='minus'?'Sans ':'Solo · ')+instruments[target];
  $('deliveryOptions').textContent='Écoute : '+(modes[transport.mode]||'Mix des pistes')+' · Guides '+(s.exportGuides?'inclus':'exclus')+' · Décompte initial '+(s.exportCount?s.countBars+' mesure(s)':'exclu');
  $('validateProject').disabled=!loaded||state.busy||ready;
- $('sendReaper').disabled=$('saveReaper').disabled=!loaded||state.busy||!ready;
- $('validationHint').textContent=ready?'La préparation est enregistrée et validée.':!loaded?'Importe ou ouvre un morceau pour commencer.':'Toute modification des pistes, du mix ou des repères demande une nouvelle validation.';
+ const unsaved=guideDirty||$('notes').value!==(p.notes||'');
+ $('sendReaper').disabled=$('saveReaper').disabled=!loaded||state.busy||unsaved;
+ $('validationHint').textContent=ready?'La préparation est enregistrée et validée.':!loaded?'Importe ou ouvre un morceau pour commencer.':unsaved?'Enregistre les modifications en cours avant d’exporter.':'Les médias et le calage seront vérifiés automatiquement avant chaque export.';
  document.querySelectorAll('#validationForm input').forEach(e=>e.disabled=!loaded||state.busy||ready);
  document.querySelectorAll('[data-action=export],[data-action=addTracks],[data-action=save],[data-action=reveal]').forEach(e=>e.disabled=!loaded||state.busy);
  $('splitVocals').disabled=!loaded||state.busy||!p.tracks.some(t=>t.role==='vocals');
@@ -33,12 +43,12 @@ function renderPreparation(){
 }
 $('validationForm').onsubmit=e=>{
  e.preventDefault();
- if(guideDirty){$('validationHint').textContent='Applique d’abord les réglages modifiés dans Click & cues.';return;}
+ if(guideDirty){$('validationHint').textContent='Applique d’abord les réglages modifiés dans Éditeur du morceau → Métronome.';return;}
  if($('notes').value!==(state.project.notes||'')){$('validationHint').textContent='Enregistre d’abord tes notes dans Pistes & structure.';return;}
  send('validateProject',{reviewed:true});
 };
-$('sendReaper').onclick=()=>send('reaper',{open:true});
-$('saveReaper').onclick=()=>send('reaper',{open:false});
+$('sendReaper').onclick=()=>send('reaper',{open:true,preflight:true});
+$('saveReaper').onclick=()=>send('reaper',{open:false,preflight:true});
 const previousPreparationFeatures=renderFeatures;
 renderFeatures=function(){previousPreparationFeatures();renderPreparation();};
 let preparationTransport='';
@@ -48,9 +58,9 @@ renderTransport=function(){previousPreparationTransport();const key=[state.proje
 const navigation=node('div','navigation-tools');
 function navigate(direction){
  const at=transport.position||0,s={...guideDefaults,...state.project.settings};
- const period=60/pulseTempo(state.project);
+ const clock=musicalGrid(state.project);
  const marks=[...state.project.sections.map(x=>x.start),...state.project.cues.map(x=>x.time)].sort((a,b)=>a-b);
- const target=direction==='start'?0:direction==='end'?state.duration:direction==='back'?at-period*s.beatsPerBar:direction==='forward'?at+period*s.beatsPerBar:direction==='previous'?[...marks].reverse().find(x=>x<at-.05)??0:marks.find(x=>x>at+.05)??state.duration;
+ const target=direction==='start'?0:direction==='end'?state.duration:direction==='back'?clock.at(clock.coordinate(at)-s.beatsPerBar):direction==='forward'?clock.at(clock.coordinate(at)+s.beatsPerBar):direction==='previous'?[...marks].reverse().find(x=>x<at-.05)??0:marks.find(x=>x>at+.05)??state.duration;
  send('seek',{time:Math.max(0,Math.min(state.duration,target))});
 }
 for(const [action,label] of [['start','|◀ Début'],['previous','◀ Repère'],['back','−1 mesure'],['forward','+1 mesure'],['next','Repère ▶']])navigation.append(button(label,()=>navigate(action)));
@@ -68,7 +78,7 @@ $('restoreProject').onclick=()=>send('restoreProject');
 const preparePanel=node('article','prepare-all');
 preparePanel.append(node('h3','','Préparer le morceau en un clic'),node('p','','Instruments, batterie détaillée, chant et chœurs, paroles recalées, accords Internet et sections vérifiées. Un seul parcours, avec les moteurs installés ; les corrections manuelles sont conservées.'));
 const planText=node('small');planText.id='analysisPlan';
-function prepareAll(){send('prepareAll',{model:$('model').value,quality:$('separationQuality').value,language:$('lyricsLanguage').value});}
+function prepareAll(){if(guideDirty){openStudioEditor('rhythm');return;}if($('notes').value!==(state.project.notes||'')){openStudioEditor('tracks');$('notes').focus();return;}send('prepareAll',{model:$('model').value,quality:$('separationQuality').value,language:$('lyricsLanguage').value});}
 const prepareButton=button('✧ Tout préparer',prepareAll,'primary');prepareButton.id='prepareAll';
 preparePanel.append(planText,prepareButton,button('Installer les analyses manquantes',()=>view('settings')));
 $('view-prepare').querySelector('.page-heading').after(preparePanel);

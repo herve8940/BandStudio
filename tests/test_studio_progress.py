@@ -62,6 +62,20 @@ def test_missing_result_cannot_finish(tmp_path):
     assert status(out)['progress']==99 and status(out)['failed']
 
 
+def test_real_whisper_fallback_reports_its_pass_without_advancing_the_clip(tmp_path):
+    import reacue_transcribe as recognizer
+    class Model:
+        def decode(self,mel,options):return (mel,options.temperature)
+    model=Model();out=tmp_path/'result.json'
+    with progress.reporting(out,'lyrics'),progress.legacy_status(recognizer,phases=3):
+        with recognizer.report_decode_attempts(model,(0.,.2,.4,.6),None,5,10):
+            assert model.decode('same frames',SimpleNamespace(temperature=.2))==('same frames',.2)
+            assert status(out)['progress']==pytest.approx(100/6)
+            assert 'Extrait 6 sur 10 · lecture vocale 2 sur 4' in status(out)['progressLabel']
+        assert 'decode' not in vars(model)
+        out.write_text('{}')
+
+
 def test_legacy_engine_status_is_translated_without_diagnostic_text(tmp_path):
     calls=[];module=SimpleNamespace(_write_status=lambda *a,**k:calls.append((a,k)))
     original=module._write_status;out=tmp_path/'result.json'
@@ -149,7 +163,7 @@ def test_progress_ui_passes_cards_plan_queue_and_cancel(tmp_path):
             page.locator('#view-prepare [data-studio-task=smartgrid]').click()
             assert page.evaluate('window.sent.at(-1).args.options.reanalyze') is True
             page.locator('#editTempo').click()
-            expect(page.locator('#view-guides')).to_be_visible()
+            expect(page.locator('#editorRhythm')).to_be_visible()
             expect(page.locator('#setting-referenceBPM')).to_be_focused()
             project.update(bpm=75,beats=[.18,.98,1.78,2.58,3.38,4.18],settings=dict(
                 gridMode='detected',manualBPM=113,pulseUnit='dottedQuarter',referenceBPM=113,

@@ -334,6 +334,7 @@ def ui_proposal(p):
 
 def test_optional_workspace_review_keeps_old_flow_and_exports_in_one_action(manual_page):
     page,p=manual_page
+    page.evaluate("openStudioEditor('structure')")
     assert page.locator('#prepareAllStructure').is_visible()
     assert page.locator('#reviewStructure').is_visible()
     page.locator('#reviewStructure').click()
@@ -348,7 +349,9 @@ def test_optional_workspace_review_keeps_old_flow_and_exports_in_one_action(manu
 
 
 def test_review_ui_rejects_stale_preview_and_unsaved_edits_and_escapes_source_text(manual_page):
-    page,p=manual_page;p['structureProposal']=ui_proposal(p)
+    page,p=manual_page
+    page.locator('[data-workspace-mode=structure]').click()
+    p['structureProposal']=ui_proposal(p)
     p['structureProposal']['changes'][0]['after']='<img src=x onerror=alert(1)>'
     page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:2})',p)
     page.locator('#structureReview').get_by_text('Voir les changements',exact=True).click()
@@ -363,7 +366,9 @@ def test_review_ui_rejects_stale_preview_and_unsaved_edits_and_escapes_source_te
 
 
 def test_empty_review_reports_no_improvement_and_exports_current_preparation(manual_page):
-    page,p=manual_page;p['structureProposal']={**ui_proposal(p),'changes':[],'chordUpdate':False}
+    page,p=manual_page
+    page.locator('[data-workspace-mode=structure]').click()
+    p['structureProposal']={**ui_proposal(p),'changes':[],'chordUpdate':False}
     page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:2})',p)
     assert page.locator('#structureReviewSummary').inner_text()=='Aucune amélioration proposée — préparation actuelle conservée.'
     assert page.locator('#exportStructure').inner_text()=='Exporter la préparation actuelle vers REAPER'
@@ -376,7 +381,9 @@ def test_empty_review_reports_no_improvement_and_exports_current_preparation(man
 
 
 def test_available_chords_are_distinct_from_missing_timestamps_in_old_reviews(manual_page):
-    page,p=manual_page;p['structureProposal']=ui_proposal(p)
+    page,p=manual_page
+    page.locator('[data-workspace-mode=structure]').click()
+    p['structureProposal']=ui_proposal(p)
     p['structureProposal'].update(chordReference=dict(sources=[dict(publisher='Cifra Club'),dict(publisher='E-Chords')]),
         sources=[dict(publisher='Cifra Club',format='types',sectionNames=['Intro'])],anchors=0,
         warnings=['Aucune structure Internet exploitable trouvée : comparaison à partir des autres sources disponibles.'])
@@ -390,7 +397,9 @@ def test_available_chords_are_distinct_from_missing_timestamps_in_old_reviews(ma
 
 
 def test_review_listening_uses_real_transport_and_stops_after_last_excerpt(manual_page):
-    page,p=manual_page;p['structureProposal']=ui_proposal(p)
+    page,p=manual_page
+    page.locator('[data-workspace-mode=structure]').click()
+    p['structureProposal']=ui_proposal(p)
     page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:2})',p)
     page.locator('#listenStructure').click()
     assert page.evaluate('sent.at(-1).command')=='audition'
@@ -402,13 +411,16 @@ def test_review_listening_uses_real_transport_and_stops_after_last_excerpt(manua
 
 
 def test_hysteria_workspace_remains_readable_and_the_existing_navigation_is_unchanged(manual_page):
-    page,p=manual_page;local,ref=hysteria()
+    page,p=manual_page
+    page.locator('[data-workspace-mode=structure]').click()
+    local,ref=hysteria()
     sections,changes,warnings,anchors=review.complete_sections(local,ref)
     p.update(id='hysteria-ui',bpm=local['bpm'],cues=[],name='Muse - Hysteria',sections=local['sections'],beats=local['beats'],downbeats=local['downbeats'],settings=local['settings'])
     p['tracks'][0]['duration']=226.56873015873015
     p['structureProposal']={**ui_proposal(p), 'changes':changes,'warnings':warnings,'anchors':anchors,'chordUpdate':False,
                            'sources':[dict(publisher='DRUMY',title='Hysteria — Muse',url=URL)]}
     page.evaluate('p=>studioReceive({type:"state",project:p,duration:226.56873015873015,loaded:true,library:[],revision:2})',p)
+    page.locator('[data-workspace-mode=structure]').click()
     for width in (1360,1024,960):
         page.set_viewport_size(dict(width=width,height=1000))
         assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
@@ -479,7 +491,9 @@ def test_windows_local_application_is_saved_and_can_be_undone(tmp_path,monkeypat
 
 
 def test_local_apply_button_uses_preview_identity_and_existing_edit_guards(manual_page):
-    page,p=manual_page;p['structureProposal']=ui_proposal(p)
+    page,p=manual_page
+    page.locator('[data-workspace-mode=structure]').click()
+    p['structureProposal']=ui_proposal(p)
     p['structureProposal']['audioEvidence']=['guitare','piano','basse','batterie','chant']
     page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:2})',p)
     page.locator('#structureReviewSources summary').click()

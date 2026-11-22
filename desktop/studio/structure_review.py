@@ -266,8 +266,10 @@ def measures(project):
     from services import beat_grid
     grid, length = beat_grid(project)
     saved = project.get('downbeats', [])
-    if project.get('settings', {}).get('gridMode') == 'fixed':
-        saved = grid[::int(project['settings']['beatsPerBar'])]
+    from musical_timing import BeatClock
+    clock=BeatClock(project,length)
+    if not clock.detected or project.get('gridLocked') or clock.confidence>=.85:
+        saved=[t for t in grid if round(clock.coordinate(t))%clock.meter==0]
     # A beat list alone does not establish the phase of the measures.
     if len(saved) < 3 or any(not math.isfinite(t) for t in saved): return [], length
     if any(b <= a for a, b in zip(saved, saved[1:])): return [], length
@@ -490,13 +492,15 @@ def propose(project, reference=None):
     else:
         sources,checks=chart_references(project.get('chordReference'))
         sources.insert(0,{**reference,'format':'timed'});source_note=''
-    from section_evidence import refine
+    from section_evidence import align_bar_arrivals, refine
     from musical_patterns import describe,used_roles,ROLE_LABELS
     features=None
     try:
         features=describe(proposed)
         proposed['sections'],adjustments=refine(proposed,features)
     except (OSError,ValueError):adjustments=[]
+    proposed['sections'],arrivals=align_bar_arrivals(proposed)
+    adjustments.extend(arrivals)
     sections,changes,warnings,anchors=combine_references(proposed,reference,sources)
     from section_functions import analyse as functions
     functional=functions(proposed,features,reference,sections)
@@ -620,12 +624,15 @@ def finish_preparation(snapshot,output,engine):
     signature=fingerprint(original)
     proposal=propose(original)
     result=apply_proposal({**original,'structureProposal':proposal})
+    from musical_timing import prepare_clock
+    clock,_=prepare_clock(result)
+    result['timingGrid']=clock.payload()
     fixed={s['id'] for s in original['sections'] if protected(s)}
     # Automatic refinements must remain refinable on a later preparation.
     for section in result['sections']:
         if section['id'] not in fixed and section.get('origin')=='reference':
             section.update(locked=False,reviewed=False,origin='automatic-review')
-    proposal.update(status='prepared',beforeSections=copy.deepcopy(original['sections']),sections=copy.deepcopy(result['sections']),
+    proposal.update(status='prepared',sectionTimingVersion=1,beforeSections=copy.deepcopy(original['sections']),sections=copy.deepcopy(result['sections']),
                     message='Préparation terminée. Les améliorations sont appliquées ; les passages signalés restent à écouter.')
     roles={t['role'] for t in result['tracks']}
     for names,label in (({'drum_kick','drum_snare','drum_toms','drum_cymbals'},'Éléments de batterie'),({'vocal_lead','vocal_backing'},'Chant principal et chœurs')):

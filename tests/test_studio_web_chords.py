@@ -192,6 +192,18 @@ def test_preparation_migrates_old_model_results_but_preserves_validated_work():
     p['preparation']=dict(fingerprint='approved')
     assert model.analysis_done(p,'chords')
 
+
+def test_failed_lookup_and_unplaced_chart_can_be_retried(monkeypatch):
+    p=song();monkeypatch.setattr(web,'_search',lambda *args,**kwargs:{})
+    p['chordReference']=web.lookup(p)['reference']
+    assert p['chordReference']['retryAfter']>p['chordReference']['checkedAt']
+    p['analysesCompleted']=['chords']
+    assert not model.analysis_done(p,'chords')
+    p['chordReference'].update(status='found',sources=[dict(url=URL)])
+    assert not model.analysis_done(p,'chords')
+    p['chords']=[dict(start=0,end=1,text='C',sourceURL=URL,manual=False)]
+    assert model.analysis_done(p,'chords')
+
 def test_worker_routes_chords_to_web_without_importing_the_legacy_model(tmp_path,monkeypatch):
     from types import SimpleNamespace
     import worker
@@ -211,13 +223,14 @@ def test_reference_ui_opens_source_and_places_manual_chord_on_grid(manual_page):
     p['chords']=[dict(id='c',start=.5,end=2,text='C',manual=False,sourceURL=URL,confidence=.2)]
     page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:2})',p)
     page.locator('[data-view="prompter"]').first.click()
+    page.evaluate('transport.position=1.13;renderStage()')
+    assert page.locator('#stageChordStatus').inner_text()=='Accord proposé · calage incertain'
+    page.get_by_role('button',name='Modifier dans l’éditeur',exact=True).click()
+    page.locator('[data-workspace-mode=chords]').click()
     panel=page.locator('#chordReferencePrompter')
     assert panel.locator('script').count()==0
     panel.get_by_role('button',name='Ouvrir la grille',exact=True).click()
     assert page.evaluate('sent.at(-1)')==dict(command='chordSourceOpen',projectID='manual',args=dict(url=URL))
-    page.evaluate('transport.position=1.13')
-    page.evaluate('renderStage()')
-    assert page.locator('#stageChordStatus').inner_text()=='Accord proposé · calage incertain'
     panel.get_by_role('button',name='C',exact=True).click()
     assert float(page.locator('#annotationStart').input_value())==1.25
     assert float(page.locator('#annotationEnd').input_value())==1.75

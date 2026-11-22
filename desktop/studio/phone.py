@@ -12,7 +12,7 @@ import secrets
 import socket
 import time
 from services import atomic
-from musical_timing import pulse_bpm, pulse_scale
+from musical_timing import BeatClock, pulse_bpm, pulse_scale
 
 
 def transpose(text, steps):
@@ -22,13 +22,9 @@ def transpose(text, steps):
 
 
 def public_state(p, t):
-    at=t.get('position',0);s=p.get('settings',{});beats=p.get('beats',[]);meter=s.get('beatsPerBar',4)
-    first=s.get('firstBeat',0);bpm=pulse_bpm(p)
-    period=60/max(20,bpm);anchor=0
-    if s.get('gridMode')=='detected' and len(beats)>1:
-        index=max(0,bisect.bisect_right(beats,at)-1);anchor=min(range(len(beats)),key=lambda i:abs(beats[i]-first))%meter
-        if index+1<len(beats):period=beats[index+1]-beats[index]
-    else:index=max(0,math.floor((at-first)/period))
+    at=t.get('position',0);s=p.get('settings',{});meter=s.get('beatsPerBar',4)
+    clock=BeatClock(p);index=math.floor(clock.coordinate(at)+1e-9);anchor=0
+    period=clock.period_at(at)
     current=lambda kind:next((x for x in p.get(kind,[]) if x['start']<=at<x['end']),None)
     section=current('sections');lyric=current('lyrics');chord=current('chords')
     next_section=next((x for x in p.get('sections',[]) if x['start']>at),None)

@@ -4,3 +4,21 @@
 @media(max-width:1300px){.rail{width:180px;padding-left:9px;padding-right:9px}.rail .nav{font-size:10px;gap:8px;padding:8px}.workspace-heading{flex-wrap:wrap;gap:14px}.workspace-heading .workspace-metrics{margin-left:auto}.workspace-quick-prepare{margin-left:0}.workspace-navigation{margin-left:auto}.workspace-quick-prepare>small{display:none}.workspace-metrics{gap:14px}.structure-review{padding:17px}.structure-review-actions #exportStructure{margin-left:auto}}
 @media(max-width:1000px){.rail{width:161px}.rail .nav{font-size:10px;gap:7px}.nav-icon{width:15px;height:15px}.rail .brand{margin-left:3px;margin-right:0}.header-actions [data-action=open]{display:none}header{padding:13px 18px!important}main{padding-left:18px;padding-right:18px}.structure-review-heading>div{flex-basis:auto}.structure-review-heading strong{font-size:16px}.structure-review-heading{gap:12px}.structure-review-heading #reviewStructure{font-size:10px}.structure-review-actions{gap:6px}.structure-review-actions .primary{margin-left:auto}.workspace-heading h2{font-size:23px}.workspace-heading .workspace-metrics{display:none}}
 @media(max-width:760px){.rail{width:150px}.rail .nav{font-size:10px}.header-actions button{font-size:9px}.header-actions [data-action=import]{max-width:110px;white-space:normal}.sidebar-toggle span{display:none}header h1{font-size:15px!important}.header-start{gap:8px}.workspace-heading{flex-direction:row;align-items:center}.workspace-navigation{display:none}.structure-review{padding:13px}.structure-review-heading>div{flex-basis:100%}.structure-review-heading #reviewStructure{padding:7px 10px}.structure-review-actions .primary{margin-left:0}.structure-review-actions #exportStructure{margin-left:0;white-space:normal;text-align:left}main{padding-left:12px;padding-right:12px}}
+
+.song-workflow{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px;padding:12px;background:#15243a;border:1px solid #36516d;border-radius:12px}
+.song-workflow>button{flex:1;min-width:160px;text-align:left;padding:11px 14px}
+.song-workflow>button:last-of-type{color:#b6efd8;border-color:#48786b}
+.song-review-links{display:flex;flex-wrap:wrap;gap:7px;flex-basis:100%}
+.song-review-links:empty{display:none}.song-review-links button{font-size:11px;color:#ebce9e;background:transparent;border-color:#6a5a40}
+.listening-checklist{margin:12px 0}.listening-checklist>summary{cursor:pointer;color:#b2c5df;font-size:12px;padding:8px 0}
+.import-preparation{margin-top:16px;font-size:12px;color:#b6cbe3}
+
+.workflow{display:none}
+.song-review{margin:0 0 20px;padding:15px 17px;border:1px solid #445775;border-radius:12px;background:#162339}
+.song-review-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.song-review-heading strong{font-size:14px}.song-review-heading span{font-size:11px;color:#e8c896}
+.song-review-controls{display:flex;align-items:flex-end;flex-wrap:wrap;gap:8px}
+.song-review-controls label{flex:1 1 280px;min-width:0;font-size:10px;color:var(--muted)}
+.song-review-controls select{display:block;width:100%;max-width:100%;margin-top:5px;font-size:12px;text-overflow:ellipsis}
+.song-review-controls button{font-size:11px;padding:9px 12px}.song-review>small{display:block;color:var(--muted);font-size:11px;margin-top:10px}
+@media(max-width:1000px){.song-review-controls label{flex-basis:100%}}

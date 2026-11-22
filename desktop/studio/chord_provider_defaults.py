@@ -1,4 +1,8 @@
-"""Catalog fallback for installations using the original code-only updater."""
+"""Chord publishers shared by workers, native installers and code-only updates."""
+import json
+from pathlib import Path
+
+CATALOG_VERSION = 10
 PROVIDERS = [{'id': 'cifraclub',
   'publisher': 'Cifra Club',
   'domain': 'cifraclub.com',
@@ -11,6 +15,10 @@ PROVIDERS = [{'id': 'cifraclub',
   'publisher': 'GuitarTabsExplorer',
   'domain': 'guitartabsexplorer.com',
   'template': 'https://www.guitartabsexplorer.com/{artist}/{title}-chords'},
+ {'id': 'topaccords',
+  'publisher': 'TopAccords',
+  'domain': 'topaccords.com',
+  'template': 'https://www.topaccords.com/partition/{artist}/{title}'},
  {'id': 'acordesweb',
   'publisher': 'AcordesWeb',
   'domain': 'acordesweb.com',
@@ -45,3 +53,9 @@ PROVIDERS = [{'id': 'cifraclub',
  {'id': 'guitartabs', 'publisher': 'GuitarTabs.cc', 'domain': 'guitartabs.cc'},
  {'id': 'azchords', 'publisher': 'AZChords', 'domain': 'azchords.com'},
  {'id': '911tabs', 'publisher': '911Tabs', 'domain': '911tabs.com'}]
+
+
+def write_catalog(folder):
+    path = Path(folder) / 'chord-providers.json'
+    path.write_text(json.dumps(PROVIDERS, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    return path

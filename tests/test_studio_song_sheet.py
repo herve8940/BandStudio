@@ -64,12 +64,15 @@ def test_sheet_moves_line_with_words_and_adds_chord(sheet_page):
     assert sent['command'] == 'annotation' and sent['projectID'] == project['id']
     assert sent['args']['start'] == 9 and sent['args']['end'] == 10
     assert sent['args']['words'] == [dict(text='Paroles',start=9,end=9.4),dict(text='test',start=9.5,end=10)]
+    assert page.locator('#workspace').get_attribute('data-editor')=='lyrics'
+    page.locator('.rail [data-view=sheet]').click()
     page.locator('.sheet-bar[data-bar="2"] [data-add=chords]').click()
     page.locator('#annotationText').fill('Bbsus4')
     page.locator('#annotationForm button[type=submit]').click()
     args = page.evaluate('window.sent.at(-1).args')
     assert args.pop('id',None) is None
     assert args == dict(kind='chords',text='Bbsus4',start=2.5,end=4.5,replaceRange=True)
+    page.locator('.rail [data-view=sheet]').click()
     # The export receives the original project and the player's transposition.
     page.evaluate('window.studioReceive({type:"transport",position:3,rate:1,pitch:2,mode:"mix"})')
     assert page.locator('[data-annotation=chord]').first.inner_text().startswith('Gm')
@@ -125,6 +128,7 @@ def test_sheet_rejects_out_of_range_move_and_binds_to_each_song(sheet_page):
     next_song.update(id='second-song',name='Deuxième morceau',lyrics=[],chords=[],sections=[])
     page.evaluate('p=>window.studioReceive({type:"state",project:p,duration:20,loaded:true,library:[],revision:2})',next_song)
     assert not page.locator('#annotationEditor').is_visible()
+    page.locator('.rail [data-view=sheet]').click()
     assert 'Deuxième morceau' in page.locator('#sheetMeta').inner_text()
     assert page.locator('[data-annotation]').count() == 0
     assert 'Aucune parole' in page.locator('#sheetHint').inner_text()
@@ -134,6 +138,7 @@ def test_sheet_rejects_out_of_range_move_and_binds_to_each_song(sheet_page):
     assert page.evaluate('window.sent.at(-1).projectID') == 'second-song'
     page.evaluate('p=>window.studioReceive({type:"state",project:p,duration:20,loaded:true,library:[],revision:3,busy:true})',next_song)
     assert page.locator('#sheetExport').is_disabled()
+    page.locator('.rail [data-view=sheet]').click()
     assert page.locator('[data-add=lyrics]').first.is_disabled()
 
 
@@ -199,13 +204,20 @@ def test_manual_lyrics_button_nudges_words_auditions_and_saves(sheet_page):
     assert saved['args']['words'][1]['start']==pytest.approx(1.7)
 
 
-def test_section_inside_measure_does_not_duplicate_bar_or_held_chord(sheet_page):
+def test_section_pickup_plays_and_shows_only_the_incoming_section(sheet_page):
     page,p=sheet_page
     p['sections'][0]['end']=p['sections'][1]['start']=4.31
+    p['lyrics']=[dict(id='pickup',start=4.31,end=5,text='Mon refrain',words=[
+        dict(start=4.31,end=4.7,text='Mon'),dict(start=4.8,end=5,text='refrain')])]
     page.evaluate('p=>studioReceive({type:"state",project:p,duration:20,loaded:true,revision:2})',p)
-    assert page.locator('.sheet-bar[data-bar="2"]').count()==1
-    assert page.locator('.sheet-bar[data-bar="2"] [data-annotation=chord]').count()==1
-    assert page.locator('.sheet-bar[data-bar="2"] .sheet-boundary').inner_text().startswith('Couplet')
-    assert page.locator('.sheet-partial').count()==0
+    assert page.locator('.sheet-bars [data-bar="2"]').count()==1
+    assert page.locator('[data-section=intro] [data-annotation=pickup]').count()==0
+    entry=page.locator('[data-section=verse] .sheet-entry-fragment')
+    assert entry.get_attribute('data-start')=='4.31' and entry.get_attribute('data-end')=='4.5'
+    assert entry.locator('[data-annotation=pickup] .sheet-entry-text').inner_text()=='Mon'
+    entry.locator('.sheet-bar-heading button').click()
+    assert page.evaluate('sent.at(-1).args')==dict(time=4.31)
+    whole=page.locator('[data-section=verse]').inner_text()
     page.locator('#sheetSection').select_option('verse')
     assert page.locator('.sheet-bar[data-bar="2"]').count()==1
+    assert page.locator('[data-section=verse]').inner_text()==whole

@@ -15,7 +15,7 @@ import time
 import uuid
 from collections import Counter
 from platform_tools import executable, creation_flags
-from musical_timing import count_plan, pulse_bpm, pulse_scale, metronome_grid
+from musical_timing import BeatClock, count_plan, pulse_bpm, pulse_scale, metronome_grid, prepare_clock, tempo_envelope
 
 
 def import_settings(settings):
@@ -126,14 +126,8 @@ def decode(source,target,engine,*,start=None,duration=None,channels=2):
 
 
 def beat_grid(project):
-    settings=project['settings'];duration=max(t['offset']+t['duration'] for t in project['tracks'] if not t['role'].startswith('guide_'))
-    beats=sorted({float(x) for x in project.get('beats',[]) if math.isfinite(x) and 0<=x<=duration})
-    bpm=pulse_bpm(project)
-    if settings['gridMode']=='fixed' or len(beats)<2:
-        dt=60/bpm;first=settings['firstBeat']
-        while first<0:first+=dt
-        beats=[first+i*dt for i in range(max(0,int((duration-first)/dt)+1))]
-    return beats,duration
+    clock=BeatClock(project)
+    return list(clock.beats),clock.basis['duration']
 
 
 def local_pulse(beats,index,fallback=.5):
@@ -239,13 +233,49 @@ def plan_announcements(entries,count_plans,beats,bpm,settings):
     return sorted(scheduled,key=lambda e:(e['target'],e['id'])),warnings
 
 
+def voice_key(text,settings):
+    return hashlib.sha256(json.dumps(['speech-v4',os.name,settings['language'],settings['voice'],
+                                      settings['speechRate'],str(text).strip()[:240]],ensure_ascii=False).encode()).hexdigest()[:24]
+
+
+def reusable_voice(text,folder,settings,project_root=None):
+    """Reuse identical speech between jobs; exports still receive private files."""
+    import numpy as np
+    import soundfile as sf
+    stored=None;key=voice_key(text,settings)
+    try:
+        if project_root:
+            base=Path(project_root).resolve();candidate=base/'Cache/guide-voices'
+            if candidate.resolve().is_relative_to(base):stored=candidate/(key+'.wav')
+        if stored and stored.is_file() and not stored.is_symlink():
+            info=sf.info(stored)
+            if info.samplerate==44100 and info.channels==2 and 0<info.frames<=44100*120:
+                samples,_=sf.read(stored,dtype='float32',always_2d=True)
+                if len(samples)==info.frames and np.isfinite(samples).all() and np.max(np.abs(samples))>1e-6:
+                    target=folder/(key+'.wav');shutil.copy2(stored,target);return target
+    except (OSError,RuntimeError,ValueError):pass
+    result=voice_wav(text,folder,settings)
+    if stored and result:
+        temporary=None
+        try:
+            stored.parent.mkdir(parents=True,exist_ok=True)
+            temporary=stored.with_name(key+'.'+uuid.uuid4().hex+'.tmp')
+            shutil.copy2(result,temporary);os.replace(temporary,stored)
+        except OSError:pass  # A read-only cache must never prevent guide creation.
+        finally:
+            if temporary:
+                try:temporary.unlink(missing_ok=True)
+                except OSError:pass
+    return result
+
+
 def voice_wav(text,folder,settings):
     import numpy as np
     import soundfile as sf
     import scipy.signal
     text=str(text).strip()[:240]
     if not text:return None
-    digest=hashlib.sha256(('speech-v4:'+str(os.name)+settings['language']+settings['voice']+str(settings['speechRate'])+text).encode()).hexdigest()[:24]
+    digest=voice_key(text,settings)
     target=folder/(digest+'.wav')
     if target.exists():return target
     raw=folder/(digest+('.speech.wav' if os.name=='nt' else '.aiff'))
@@ -288,7 +318,8 @@ def guides(project_file,output):
     import soundfile as sf
     p=json.loads(Path(project_file).read_text());s=p['settings']
     root=Path(output).parent;cache=root/'voice';cache.mkdir(parents=True,exist_ok=True)
-    _,duration=beat_grid(p);beats=metronome_grid(p,duration);sr=44100
+    clock,correction=prepare_clock(p)
+    duration=clock.basis['duration'];beats=list(clock.beats);sr=44100
     # Memory-mapped timelines avoid allocating two whole stereo songs in RAM.
     shape=(max(1,math.ceil(duration*sr)),2)
     click=np.memmap(root/'click.raw',dtype='float32',mode='w+',shape=shape);click[:]=0
@@ -300,11 +331,9 @@ def guides(project_file,output):
         if start<0:data=data[-start:];start=0
         n=min(len(data),len(dest)-start)
         if n>0:dest[start:start+n]+=data[:n]
-    span=60/pulse_bpm(p)
-    first=round((s['firstBeat']-beats[0])/span) if beats else 0
-    click_beats=([beats[0]-span]+beats if beats and s['subdivision']>1 else beats)
+    click_beats=([clock.at(clock.coordinate(beats[0])-1)]+beats if beats and s['subdivision']>1 else beats)
     for beat in phase_items(click_beats,0,5,"Création du click"):
-        index=round((beat-s['firstBeat'])/span)
+        index=round(clock.coordinate(beat));span=clock.at(index+1)-clock.at(index)
         for sub in range(s['subdivision']):
             at=beat+sub*span/s['subdivision']
             if at < -1e-9 or at>=duration:continue
@@ -325,7 +354,7 @@ def guides(project_file,output):
     for item in phase_items(p.get('sections',[])+p.get('cues',[]),1,5,'Annonces des passages'):
         if item.get('announce') is False:continue
         text=announcement_text(item,s['language']);target=item.get('start',item.get('time',0))
-        path=voice_wav(text,cache,s)
+        path=reusable_voice(text,cache,s,p.get('_root'))
         if path:
             file_map['call:'+item['id']]=str(path)
             x,_=sf.read(path,dtype='float32',always_2d=True)
@@ -340,7 +369,7 @@ def guides(project_file,output):
     words={'fr':['un','deux','trois','quatre','cinq','six','sept','huit','neuf','dix','onze','douze'],
            'en':['one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve']}
     if s['countVoice']:
-        for i,text in enumerate(phase_items(words[s['language']][:max(s['beatsPerBar'],s['regionCountBeats'])],2,5,'Voix du décompte')):file_map['number:'+str(i+1)]=str(voice_wav(text,cache,s))
+        for i,text in enumerate(phase_items(words[s['language']][:max(s['beatsPerBar'],s['regionCountBeats'])],2,5,'Voix du décompte')):file_map['number:'+str(i+1)]=str(reusable_voice(text,cache,s,p.get('_root')))
     for item in phase_items(p.get('sections',[]),3,5,'Placement des décomptes'):
         if item.get('announce') is False:continue
         for event in count_plans[item['id']]:
@@ -352,7 +381,7 @@ def guides(project_file,output):
             if s['countClick']:
                 # A pickup can start on any beat. Counting "one" must not
                 # introduce a competing bar accent over the main metronome.
-                accented=(bisect.bisect_left(beats,at)-first)%s['beatsPerBar']==0
+                accented=round(clock.coordinate(at))%s['beatsPerBar']==0
                 t=np.arange(int(sr*.035))/sr;wave=.65*np.sin(2*np.pi*(1760 if accented else 1100)*t)*np.exp(-t*130)
                 place(counts,np.repeat(wave[:,None],2,axis=1),at)
     for name,data in phase_items([('click',click),('calls',calls),('cues',cues),('counts',counts)],4,5,'Enregistrement des guides'):
@@ -364,7 +393,7 @@ def guides(project_file,output):
     del data,click,calls,cues,counts
     for name in ['click','calls','cues','counts']:(root/(name+'.raw')).unlink()
     atomic(output,dict(files=file_map,events=events,countEvents=count_events,guideWarnings=warnings,
-                       beats=beats,duration=duration,generatorVersion=7))
+                       beats=beats,duration=duration,generatorVersion=8,timingGrid=clock.payload(),firstBeatCorrection=correction))
 
 
 def quote(value):
@@ -385,17 +414,24 @@ def reaper_filename(name, folder):
     return (stem.rstrip(' .') or 'Morceau')+'.rpp'
 
 
-def export_reaper(project_file,output):
+def export_reaper(project_file,output,*,final_folder=None):
     p=json.loads(Path(project_file).read_text());root=Path(project_file).parent
     # Snapshots carry the real root explicitly; it is supplied by the native host.
     root=Path(p.get('_root',root));s=p['settings'];target=Path(output).parent/'REAPER'
-    filename=reaper_filename(p['name'],target);target.mkdir(parents=True,exist_ok=True)
+    filename=reaper_filename(p['name'],final_folder or target);target.mkdir(parents=True,exist_ok=True)
     media=target/'Audio';media.mkdir(exist_ok=True)
     _,duration=beat_grid(p)
     bpm=pulse_bpm(p);scale=pulse_scale(s);period=60/bpm
     numerator,denominator=(s['beatsPerBar']*3,8) if scale==1.5 else (s['beatsPerBar'],4)
     plan=count_plan(p);preroll=plan['lead'] if s['exportCount'] else 0
     lines=['<REAPER_PROJECT 0.1 7.0 1','  SAMPLERATE 44100',f'  TEMPO {bpm*scale:g} {numerator} {denominator}', '  MASTER_VOLUME 0.85']
+    points=tempo_envelope(p,preroll)
+    lines+=['  TIMELOCKMODE 0','  <TEMPOENVEX','    ACT 1 -1','    DEFSHAPE 1 -1 -1']
+    for point in points:
+        signature=point['numerator']+(point['denominator']<<16)
+        suffix=f' {signature} 0 {point["flags"]}' if point['flags'] else ''
+        lines.append(f'    PT {point["time"]:.12f} {point["bpm"]:.12f} 1'+suffix)
+    lines+=['  >']
     for i,section in enumerate(p['sections'],1):
         lines += [f'  MARKER {i} {section["start"]+preroll:.9f} {quote(section["name"])} 1',f'  MARKER {i} {section["end"]+preroll:.9f} "" 1']
     for i,cue in enumerate(p['cues'],len(p['sections'])+1):lines.append(f'  MARKER {i} {cue["time"]+preroll:.9f} {quote(cue["name"])} 0')
@@ -455,6 +491,9 @@ def export_reaper(project_file,output):
     lines+=['>'];rpp=target/filename;rpp.write_text('\n'.join(lines)+'\n',encoding='utf-8')
     # Bind detailed annotations to this exact export, including optional chord items.
     metadata={key:p.get(key) for key in ['name','settings','notes','lyrics','lyricsReference','chords','drumHits','key','sourceURL','capo','downbeats','gridLocked','analysisNote']}
+    clock=BeatClock(p)
+    metadata.update(beats=list(clock.beats),bpm=p.get('bpm',0),timingVersion=1)
+    metadata['settings']={**s,'firstBeat':clock.at(0)}
     metadata.update(exportPreroll=preroll,rppSHA256=hashlib.sha256(rpp.read_bytes()).hexdigest(),trackRoles={str(uuid.uuid5(uuid.NAMESPACE_OID,t['id']))+'.wav':t['role'] for t in p['tracks']})
     atomic(target/'bandstudio-project.json',metadata)
     atomic(output,dict(path=str(rpp),folder=str(target),preroll=preroll))
@@ -617,7 +656,12 @@ def import_reaper(path,output,engine,snapshot):
             p['key']=saved.get('key') or '';p['sourceURL']=saved.get('sourceURL') or ''
             p['lyricsReference']=saved.get('lyricsReference');p['capo']=saved.get('capo') or 0;p['gridLocked']=saved.get('gridLocked',True);p['analysisNote']=saved.get('analysisNote') or ''
             p['downbeats']=[t+shift for t in saved.get('downbeats') or []]
-            if saved.get('settings'):p['settings']={**saved['settings'],'countBars':0}
+            if saved.get('settings'):
+                p['settings']={**saved['settings'],'countBars':0,
+                               'firstBeat':saved['settings'].get('firstBeat',0)+shift}
+            if saved.get('timingVersion')==1:
+                p['beats']=[t+shift for t in saved.get('beats') or []]
+                p['bpm']=saved.get('bpm',p['bpm'])
         else:warnings.append('Le RPP a été modifié : les anciennes annotations de paroles et d’accords doivent être resynchronisées.')
     p['notes']='Import audio du projet REAPER. Les régions et repères gardent leurs temps d’origine.\n'+'\n'.join(dict.fromkeys(warnings))
     atomic(folder/'project.json',p);atomic(output,dict(project=str(folder),warnings=list(dict.fromkeys(warnings))))
