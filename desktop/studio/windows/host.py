@@ -671,7 +671,8 @@ class Api:
                 if cmd=='reaper' and args.get('open'):
                     candidates=[Path(os.environ.get('ProgramFiles','C:/Program Files'))/'REAPER (x64)/reaper.exe',Path(os.environ.get('ProgramFiles','C:/Program Files'))/'REAPER/reaper.exe',Path(os.environ.get('LOCALAPPDATA',str(Path.home()/'AppData/Local')))/'Programs/REAPER (x64)/reaper.exe']
                     app=next((x for x in candidates if x.is_file()),None)
-                    if app:subprocess.Popen([str(app),'-newinst',str(self._last_export)],creationflags=creation_flags())
+                    # Reuse the running REAPER; its project-tab preference still applies.
+                    if app:subprocess.Popen([str(app),'-nonewinst',str(self._last_export)],creationflags=creation_flags())
                     else:
                         try:os.startfile(str(self._last_export))
                         except OSError:self._notice='Projet exporté. Installe REAPER puis ouvre le fichier avec Afficher l’export.'

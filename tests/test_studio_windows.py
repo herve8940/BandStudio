@@ -63,6 +63,43 @@ def test_installer_paths_are_not_the_users_reaper_directory():
     assert 'js_api=api' in (ROOT/'desktop/studio/windows/launcher.py').read_text()
 
 
+@pytest.mark.parametrize('installation',['x64','standard','user'])
+@pytest.mark.parametrize('open_reaper',[True,False])
+def test_send_export_reuses_reaper_and_preserves_the_complete_path(tmp_path,monkeypatch,installation,open_reaper):
+    from windows import host
+    program_files=tmp_path/'Program Files';local=tmp_path/'Local AppData'
+    monkeypatch.setenv('ProgramFiles',str(program_files));monkeypatch.setenv('LOCALAPPDATA',str(local))
+    app={'x64':program_files/'REAPER (x64)/reaper.exe',
+         'standard':program_files/'REAPER/reaper.exe',
+         'user':local/'Programs/REAPER (x64)/reaper.exe'}[installation]
+    app.parent.mkdir(parents=True);app.touch()
+    song=tmp_path/'song.bandstudio';p=fixture(song)
+    api=Api(ENGINE,tmp_path);api._root=song;api._project=p;api._audio.project=p
+    exported=tmp_path/'Exports/Été & répétition [live].rpp'
+    events=[];launches=[]
+    monkeypatch.setattr(api,'_op',lambda name,run:run())
+    monkeypatch.setattr(api,'_guides',lambda:events.append('guides'))
+    def export(kind):
+        events.append(kind);exported.parent.mkdir(exist_ok=True)
+        exported.write_text('<REAPER_PROJECT 0.1 7.0 1\n>\n',encoding='utf-8')
+        return None,{'path':str(exported)}
+    monkeypatch.setattr(api,'_work',export)
+    def launch(argv,**kwargs):
+        # Check the process boundary: the RPP exists and remains one argument.
+        assert Path(argv[-1]).is_file()
+        launches.append(argv)
+    monkeypatch.setattr(host.subprocess,'Popen',launch)
+    api._command(dict(command='reaper',args={'open':open_reaper},projectID=p['id']))
+    assert events==['guides','reaper'] and api._last_export==str(exported)
+    if open_reaper:
+        assert len(launches)==1
+        argv=launches[0]
+        assert argv[0]==str(app) and argv[-1]==str(exported)
+        assert '-nonewinst' in argv and '-newinst' not in argv
+        assert len(argv)==3
+    else:assert not launches
+
+
 def test_second_play_during_guide_preparation_does_not_start_another_job(tmp_path,monkeypatch):
     p=fixture(tmp_path/'song.bandstudio');api=Api(ENGINE,tmp_path)
     api._project=p;api._root=tmp_path/'song.bandstudio';api._audio.load(p,api._root)
