@@ -188,8 +188,8 @@ class Api:
         pos,mode=self._audio.position,self._audio.mode;self._audio.load(self._project,self._root);self._audio.position=min(pos,model.duration(self._project));self._audio.mode=mode
     def _load(self,root,prepare_guides=True):
         p=model.load(root)
-        from musical_timing import migrate_section_grid
-        migrate_section_grid(p,root)
+        from section_grid_rollback import rollback_section_grid
+        rollback_section_grid(p,root)
         prep=p.get('preparation') or {}
         model.save(p,root) # Persist repaired legacy waveforms.
         self._audio.loop=False;self._audio.rate=prep.get('rate',1);self._audio.pitch=prep.get('pitch',0)

@@ -85,7 +85,7 @@ def test_audio_changed_during_analysis_is_not_saved(tmp_path):
     assert cache.load() is None
 
 
-def test_cached_structure_realigns_to_current_grid_without_model_loading(tmp_path,monkeypatch):
+def test_cached_structure_avoids_model_loading_without_rewriting_boundaries(tmp_path,monkeypatch):
     monkeypatch.setattr(sys,'path',sys.path.copy())
     for key in ('REACUE_STRUCTURE_DIR','REAPER_RESOURCE_PATH','HF_HUB_OFFLINE','REACUE_CPU_THREADS'):
         monkeypatch.setenv(key,os.environ.get(key,''))
@@ -98,16 +98,13 @@ def test_cached_structure_realigns_to_current_grid_without_model_loading(tmp_pat
     monkeypatch.setitem(sys.modules,'reacue_structure',module)
     snap=tmp_path/'project.json';snap.write_text(json.dumps(p));output=tmp_path/'job1/result.json'
     worker.analyze(str(audio),output,'structure',engine,snap)
-    first=json.loads(output.read_text());assert not first['cacheHit'] and first['sections'][1]['start']==4
-    cache=analysis_cache.AnalysisCache.create(p,'structure',audio,engine,dict(window=420))
-    assert cache.load()['segments'][1]['start']==4.12  # Keep the raw evidence, before grid alignment.
+    first=json.loads(output.read_text());assert not first['cacheHit'] and first['sections'][1]['start']==4.12
     p['settings']['firstBeat']=.5
     snap.write_text(json.dumps(p));second=tmp_path/'job2/result.json'
     worker.analyze(str(audio),second,'structure',engine,snap)
     result=json.loads(second.read_text())
     assert result['cacheHit'] and calls==['load','inference']
-    assert result['sections'][1]['start']==4.5  # Reuse evidence, but apply the current grid.
-    assert cache.load()['segments'][1]['start']==4.12
+    assert result['sections'][1]['start']==4.12  # no stale alignment from the previous grid
     worker.analyze(str(audio),second,'structure',engine,snap,reanalyze=True)
     assert not json.loads(second.read_text())['cacheHit']
     assert calls==['load','inference','load','inference']
@@ -136,5 +133,4 @@ def test_structure_pipeline_aligns_new_intros_using_cached_analysis(tmp_path,mon
     worker.analyze(str(audio),out,'structure',engine,snap)
     result=json.loads(out.read_text());assert result['cacheHit'] is True
     assert [s['name'] for s in result['sections']]==['Avant départ','Intro','Couplet']
-    assert [s['start'] for s in result['sections']]==[0,.25,4.25]
-    assert cache.load()['segments'][-1]['start']==4.12
+    assert [s['start'] for s in result['sections']]==[0,.25,4.12]

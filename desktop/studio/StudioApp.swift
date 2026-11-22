@@ -173,12 +173,12 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     func load(_ url:URL,prepareGuides:Bool=true) throws {
         try requireIdle()
         var p=try StudioProject.load(url)
-        if (p.sectionGridVersion ?? 0)<1,p.sections.count>1,(p.settings.gridMode=="fixed" || p.beats.count>1) {
+        if p.sectionGridVersion==1 {
             let migration=Process();migration.executableURL=runtime.appendingPathComponent(".venv/bin/python")
-            migration.arguments=[runtime.appendingPathComponent("musical_timing.py").path,"--migrate",url.path]
+            migration.arguments=[runtime.appendingPathComponent("section_grid_rollback.py").path,"--rollback",url.path]
             migration.standardOutput=FileHandle.nullDevice;let errors=Pipe();migration.standardError=errors
             try migration.run();let detail=errors.fileHandleForReading.readDataToEndOfFile();migration.waitUntilExit()
-            guard migration.terminationStatus==0 else {throw StudioError("Calage automatique interrompu ; le morceau original est conservé. "+(String(data:detail,encoding:.utf8) ?? ""))}
+            guard migration.terminationStatus==0 else {throw StudioError("La restauration des sections n’a pas abouti. "+(String(data:detail,encoding:.utf8) ?? ""))}
             p=try StudioProject.load(url)
         }
         try audio.load(p,root:url);audio.loop=false
