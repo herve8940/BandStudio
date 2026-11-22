@@ -172,7 +172,9 @@ def analyze(audio, output, mode, engine, project_file=None, *, reanalyze=False):
     if project and project.get('beats'):
         from musical_timing import align_intro_sections,cached_audio_entry
         proposed=align_intro_sections({**project,'sections':proposed},cached_audio_entry(audio,project,engine))['sections']
-    write(output, dict(sections=proposed, engine='SongFormer',cacheHit=cached is not None,cueCorrection=correction))
+    from musical_timing import align_section_grid
+    proposed,alignment=align_section_grid({**project,'sections':proposed}) if project else (proposed,[])
+    write(output, dict(sections=proposed, engine='SongFormer',cacheHit=cached is not None,cueCorrection=correction,beatAlignment=alignment))
 
 
 def main():
@@ -251,8 +253,13 @@ def execute(a):
         return
     if a.command=='rpp':import_reaper(a.input,a.output,engine,a.project);return
     if a.command in ('lyrics','lyricscorrect'):
-        from lyrics_reference import correct, existing_transcription
+        from lyrics_reference import correct, existing_transcription, correction_audio
         project=json.loads(Path(a.project).read_text())
+        if a.command=='lyricscorrect' and project.get('_root'):
+            original=Path(project['_root'])/'project.json'
+            backup=original.parent/'Backups/lyrics-alignment-v1/project.json'
+            if original.is_file() and not backup.exists():
+                backup.parent.mkdir(parents=True,exist_ok=True);backup.write_bytes(original.read_bytes())
         track=next((t for role in ('vocal_lead','vocals','source') for t in project['tracks'] if t['role']==role),{})
         offset=track.get('offset',0)
         if a.command=='lyrics':
@@ -264,8 +271,16 @@ def execute(a):
             for row in transcription.get('segments',[]):
                 row['manual']=any(x.get('manual') and x['start']<row['end']+offset and x['end']>row['t']+offset for x in project.get('lyrics',[]))
         else:transcription=existing_transcription(project,offset,a.language)
+        reference_audio,reference_offset=correction_audio(project,a.input,offset)
+        # ASR may use the lead stem; full vocals retain the backing responses.
+        # Translate anchors to that stem's clock before forced alignment.
+        shift=offset-reference_offset
+        for row in transcription.get('segments',[]):
+            row['t']=row.get('t',row.get('start',0))+shift;row['end']+=shift
+            for word in row.get('words',[]):word['t']+=shift;word['end']+=shift
+        offset=reference_offset
         print('Comparaison des références Internet et recalage sur le chant…',flush=True)
-        result=correct(project,transcription,a.input,Path(a.output).parent)
+        result=correct(project,transcription,reference_audio,Path(a.output).parent)
         for row in result.get('segments',[]):
             row['t']=row.get('t',row.get('start',0))+offset;row['end']+=offset
             for word in row.get('words',[]):word['t']+=offset;word['end']+=offset

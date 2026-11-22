@@ -172,7 +172,15 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     }
     func load(_ url:URL,prepareGuides:Bool=true) throws {
         try requireIdle()
-        let p=try StudioProject.load(url)
+        var p=try StudioProject.load(url)
+        if (p.sectionGridVersion ?? 0)<1,p.sections.count>1,(p.settings.gridMode=="fixed" || p.beats.count>1) {
+            let migration=Process();migration.executableURL=runtime.appendingPathComponent(".venv/bin/python")
+            migration.arguments=[runtime.appendingPathComponent("musical_timing.py").path,"--migrate",url.path]
+            migration.standardOutput=FileHandle.nullDevice;let errors=Pipe();migration.standardError=errors
+            try migration.run();let detail=errors.fileHandleForReading.readDataToEndOfFile();migration.waitUntilExit()
+            guard migration.terminationStatus==0 else {throw StudioError("Calage automatique interrompu ; le morceau original est conservé. "+(String(data:detail,encoding:.utf8) ?? ""))}
+            p=try StudioProject.load(url)
+        }
         try audio.load(p,root:url);audio.loop=false
         project=p;root=url;history=[];future=[];notice="";lastExport="";revision += 1
         audio.rate=1;audio.pitch=0;audio.stretch.pitch=0
@@ -181,7 +189,12 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         let identity=project.id
         if prepareGuides {DispatchQueue.main.async {[weak self] in
             guard let self=self,self.project.id==identity,!self.busy,self.project.duration>0 else{return}
-            self.perform{try self.withGuides{self.sendState()}}
+            self.perform{try self.withGuides{
+                self.sendState()
+                if !self.project.analysisDone("lyricscorrect"),FileManager.default.fileExists(atPath:self.runtime.appendingPathComponent(".venv-words/bin/python").path) {
+                    try self.runAnalysis("lyricscorrect",model:"htdemucs",language:"auto")
+                }
+            }}
         }}
     }
     func safeName(_ raw:String)->String {

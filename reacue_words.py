@@ -45,6 +45,7 @@ ENGINE = "wav2vec2-ctc"
 MODELS = {
     "fr": "jonatasgrosman/wav2vec2-large-xlsr-53-french",
     "en": "jonatasgrosman/wav2vec2-large-xlsr-53-english",
+    "es": "jonatasgrosman/wav2vec2-large-xlsr-53-spanish",
 }
 REVISION = os.environ.get("REACUE_WORDS_REVISION") or "main"
 WEIGHTS = ("model.safetensors", "pytorch_model.bin")

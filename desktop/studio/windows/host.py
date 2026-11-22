@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import re
 import shutil
 import subprocess
 import sys
@@ -186,13 +187,19 @@ class Api:
     def _reload(self):
         pos,mode=self._audio.position,self._audio.mode;self._audio.load(self._project,self._root);self._audio.position=min(pos,model.duration(self._project));self._audio.mode=mode
     def _load(self,root,prepare_guides=True):
-        p=model.load(root);prep=p.get('preparation') or {}
+        p=model.load(root)
+        from musical_timing import migrate_section_grid
+        migrate_section_grid(p,root)
+        prep=p.get('preparation') or {}
         model.save(p,root) # Persist repaired legacy waveforms.
         self._audio.loop=False;self._audio.rate=prep.get('rate',1);self._audio.pitch=prep.get('pitch',0)
         self._audio.load(p,root)
         if prep:self._audio.mode=prep.get('mode','mix')
         self._project=p;self._root=root;self._history=[];self._future=[];self._last_export='';self._revision+=1;self._state()
-        if prepare_guides and model.duration(p)>0:self._guides()
+        if prepare_guides and model.duration(p)>0:
+            self._guides()
+            if not model.analysis_done(p,'lyricscorrect') and python_for(self._engine,'.venv-words').is_file():
+                self._analysis('lyricscorrect',{})
     def _guides(self,force=False):
         if not force and self._ready_guides():return
         result,obj=self._work('guides');folder=self._root/'Guides'/model.ident();folder.mkdir(parents=True)
@@ -574,7 +581,6 @@ class Api:
                 if int(value)!=value:raise ValueError('Position de capo entière attendue.')
                 p['capo']=int(value)
             if 'key' in args:
-                import re
                 if args['key'] and not re.fullmatch(r'[A-G](#|b)?m?',args['key']):raise ValueError('Tonalité invalide.')
                 p['key']=args['key']
             if 'gridLocked' in args:p['gridLocked']=bool(args['gridLocked'])

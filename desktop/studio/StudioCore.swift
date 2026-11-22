@@ -47,6 +47,7 @@ struct Preparation: Codable {
     var validatedAt:String? = nil
 }
 struct LyricsReference: Codable {
+    var alignmentVersion:Int? = nil
     var status:String
     var message:String
     var sources:[String]
@@ -56,6 +57,7 @@ struct LyricsReference: Codable {
     var language:String?
 }
 struct StudioProject: Codable {
+    var sectionGridVersion:Int? = 1
     var preparation:Preparation? = nil
     var sessionDuration=0.0
     var capture=CaptureSettings()
@@ -99,7 +101,7 @@ struct StudioProject: Codable {
         case "separate":return tracks.contains{["drums","bass","vocals","other","guitar","piano"].contains($0.role)}
         case "drumsep":return ["drum_kick","drum_snare","drum_toms","drum_cymbals"].allSatisfy{role in tracks.contains{$0.role==role}}
         case "vocalsplit":return ["vocal_lead","vocal_backing"].allSatisfy{role in tracks.contains{$0.role==role}}
-        case "lyricscorrect":return lyricsReference != nil || lyrics.isEmpty
+        case "lyricscorrect":return (lyricsReference?.alignmentVersion ?? 0)>=1 || !lyrics.contains{!$0.manual}
         default:return false
         }
     }

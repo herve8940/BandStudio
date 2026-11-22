@@ -36,16 +36,19 @@ def test_grid_preserves_words_once_and_splits_chords_without_mutating_song():
     assert practice_grid(p,dict(pitch=2))['groups'][0]['cells'][0]['chords'] == ['D/F#']
 
 
-def test_detected_grid_anchor_and_partial_sections_are_preserved():
+def test_detected_grid_keeps_whole_bars_and_marks_an_interior_change():
     p=song();p['settings'].update(gridMode='detected',firstBeat=2)
     p['beats']=[0,.5,1,1.5,2,2.6,3.2,3.8,4.4,5,5.6]
     p['sections']=[dict(name='A',start=0,end=3),dict(name='B',start=3,end=10.5)]
     data=practice_grid(p)
     a,b=data['groups']
     assert (a['cells'][0]['number'],a['cells'][0]['end']) == (1,2)
-    assert a['cells'][-1]['end'] == 3 and a['cells'][-1]['partial']
-    assert b['cells'][0]['start'] == 3 and b['cells'][0]['end'] == pytest.approx(4.4)
-    assert b['cells'][0]['number'] == 2
+    assert a['cells'][-1]['end'] == pytest.approx(4.4) and not a['cells'][-1]['partial']
+    assert a['cells'][-1]['cues']==['B · temps 2.67']
+    assert b['cells'][0]['start'] == pytest.approx(4.4)
+    assert b['cells'][0]['number'] == 3
+    numbers=[c['number'] for g in data['groups'] for c in g['cells']]
+    assert len(numbers)==len(set(numbers))
     assert ' '.join(c['lyrics'] for g in data['groups'] for c in g['cells']).split() == ['Un','mot','tenu']
 
 
