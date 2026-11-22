@@ -197,3 +197,15 @@ def test_manual_lyrics_button_nudges_words_auditions_and_saves(sheet_page):
     assert saved['command']=='annotation' and saved['args']['kind']=='lyrics'
     assert saved['args']['start']==pytest.approx(1.2)
     assert saved['args']['words'][1]['start']==pytest.approx(1.7)
+
+
+def test_section_inside_measure_does_not_duplicate_bar_or_held_chord(sheet_page):
+    page,p=sheet_page
+    p['sections'][0]['end']=p['sections'][1]['start']=4.31
+    page.evaluate('p=>studioReceive({type:"state",project:p,duration:20,loaded:true,revision:2})',p)
+    assert page.locator('.sheet-bar[data-bar="2"]').count()==1
+    assert page.locator('.sheet-bar[data-bar="2"] [data-annotation=chord]').count()==1
+    assert page.locator('.sheet-bar[data-bar="2"] .sheet-boundary').inner_text().startswith('Couplet')
+    assert page.locator('.sheet-partial').count()==0
+    page.locator('#sheetSection').select_option('verse')
+    assert page.locator('.sheet-bar[data-bar="2"]').count()==1

@@ -14,7 +14,7 @@ GUIDE_DEFAULTS.update(pulseUnit=None,referenceBPM=None)
 def ident():return str(uuid.uuid4())
 
 def fresh(name='Nouveau morceau'):
-    return dict(version=1,id=ident(),name=name,tracks=[],sections=[],cues=[],bpm=0,beats=[],notes='',settings=GUIDE_DEFAULTS.copy(),guideFiles={},guideKey='',lyrics=[],chords=[],drumHits=[],key='',sourceURL='',capo=0,analysesCompleted=[],gridLocked=False,downbeats=[],analysisNote='')
+    return dict(version=1,sectionGridVersion=1,id=ident(),name=name,tracks=[],sections=[],cues=[],bpm=0,beats=[],notes='',settings=GUIDE_DEFAULTS.copy(),guideFiles={},guideKey='',lyrics=[],chords=[],drumHits=[],key='',sourceURL='',capo=0,analysesCompleted=[],gridLocked=False,downbeats=[],analysisNote='')
 
 def duration(p):return max(p.get('sessionDuration',0),max((t['offset']+t['duration'] for t in p['tracks'] if not t['role'].startswith('guide_')),default=0))
 
@@ -68,7 +68,8 @@ def validate(p,root=None):
 def load(root):
     p=json.loads((Path(root)/'project.json').read_text(encoding='utf-8'));defaults=fresh()
     p.setdefault('gridLocked',bool(p.get('beats')))
-    for k,v in defaults.items():p.setdefault(k,v)
+    for k,v in defaults.items():
+        if k!='sectionGridVersion':p.setdefault(k,v)
     p['settings']={**GUIDE_DEFAULTS,**p['settings']};validate(p,root)
     for t in p['tracks']:
         info=sf.info(relative_file(root,t['file']))
@@ -142,7 +143,7 @@ def analysis_done(p,kind):
     if kind=='separate':return any(r in ('drums','bass','vocals','other','guitar','piano') for r in roles)
     if kind=='drumsep':return all(r in roles for r in ('drum_kick','drum_snare','drum_toms','drum_cymbals'))
     if kind=='vocalsplit':return all(r in roles for r in ('vocal_lead','vocal_backing'))
-    if kind=='lyricscorrect':return bool(p.get('lyricsReference')) or not p.get('lyrics')
+    if kind=='lyricscorrect':return (p.get('lyricsReference') or {}).get('alignmentVersion',0)>=1 or not any(not x.get('manual') for x in p.get('lyrics',[]))
     return False
 
 

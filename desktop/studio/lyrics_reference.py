@@ -1,7 +1,8 @@
 """Account-free lyric references, checked against local vocals before correction.
 
 Remote timestamps are never copied: different releases can have different edits.
-Only title/artist leave the machine. Unmatched lines and manual edits survive.
+Only title/artist leave the machine. Confirmed reference text replaces ASR guesses;
+manual edits survive, while text confidence and timing confidence stay separate.
 """
 import copy
 from difflib import SequenceMatcher
@@ -23,7 +24,7 @@ MAX_WORDS = 1800
 
 
 def tokens(text):
-    return re.findall(r"[^\W_]+(?:['’][^\W_]+)*", text, re.UNICODE)
+    return re.findall(r"[^\W_]+(?:['’−-][^\W_]+)*", text, re.UNICODE)
 
 
 def key(word):
@@ -74,8 +75,18 @@ def lookup(project, duration, fetcher=fetch, now=None):
     title, artist = identity(project)
     if not title or not artist:
         return [], 'Renseigne le titre et l’artiste pour chercher les paroles.'
+    # A reference explicitly chosen for this song is durable and works offline.
+    # Bind it to the musical identity, never merely the renamed folder.
+    if project.get('_root'):
+        try:
+            selected=json.loads((Path(project['_root'])/'References/lyrics-selected.json').read_text())
+            if (selected.get('confirmed') is True and key(selected.get('title',''))==key(title)
+                    and key(selected.get('artist',''))==key(artist) and clean_text(selected.get('text'))):
+                return [dict(publisher=selected.get('publisher','Référence choisie'),
+                             url=selected.get('url',''),text=clean_text(selected['text']),confirmed=True)], ''
+        except (OSError,ValueError,TypeError):pass
     now = time.time() if now is None else now
-    signature = hashlib.sha256(json.dumps([title, artist, round(duration, 1), 1]).encode()).hexdigest()
+    signature = hashlib.sha256(json.dumps([title, artist, round(duration, 1), 2]).encode()).hexdigest()
     cache = Path(project['_root'])/'Cache/lyrics-reference.json' if project.get('_root') else None
     if cache:
         try:
@@ -240,90 +251,89 @@ def existing_transcription(project, offset=0, language='auto'):
     return dict(language=language, segments=rows)
 
 
-def correct(project, transcription, audio, folder, *, fetcher=fetch, aligner=local_align):
+def select_reference(ranked, audio, segments, language, folder, scorer=None):
+    """Use the transcript as evidence, not as a ceiling on reference coverage."""
+    from lyrics_alignment import reference_scores
+    if ranked[0][1].get('confirmed'):return ranked[0],''
+    best=ranked[0][0]
+    candidates=[item for item in ranked if item[2]['confirmed'] and item[0]>=best-.10]
+    # Keep bounded acoustic work, favouring supported content over a ratio that
+    # can reward missing verses. Identical provider copies were deduplicated.
+    candidates=sorted(candidates,key=lambda item:(item[2]['supported'],item[0]),reverse=True)[:6]
+    if len(candidates)==1:return candidates[0],''
+    print(f'Comparaison de {len(candidates)} références avec la transcription et le chant…',flush=True)
+    try:
+        scores=(scorer or reference_scores)(audio,[item[2] for item in candidates],segments,language,folder)
+    except (OSError,ValueError,RuntimeError,ImportError):scores=[]
+    measured=[(float(score),item) for score,item in zip(scores,candidates)
+              if isinstance(score,(int,float)) and math.isfinite(score)]
+    if len(measured)==len(candidates):
+        measured.sort(key=lambda value:value[0],reverse=True)
+        if measured[0][0]-measured[1][0]>=.015:
+            return measured[0][1],'Référence sélectionnée automatiquement avec la transcription et le chant. '
+    # Even without a decisive acoustic score, matching references do not need
+    # to block text import. Prefer the one explaining the most recognised
+    # content; timing uncertainty is assessed independently below.
+    return candidates[0],'Référence sélectionnée automatiquement d’après les mots reconnus. '
+
+
+def correction_audio(project, audio, fallback_offset=0):
+    """Use the complete vocal stem for reference alignment, including backing vocals."""
+    root=Path(project['_root']).resolve() if project.get('_root') else None
+    current=Path(audio).resolve();matched={}
+    if root:
+        for track in project.get('tracks',[]):
+            path=(root/track.get('file','')).resolve()
+            if path.is_relative_to(root) and path==current:matched=track
+        for track in project.get('tracks',[]):
+            if track.get('role')!='vocals':continue
+            relative=Path(track.get('file',''))
+            if relative.is_absolute() or '..' in relative.parts:continue
+            path=(root/relative).resolve()
+            if path.is_relative_to(root) and path.is_file():return str(path),track.get('offset',0)
+    return str(current),matched.get('offset',fallback_offset)
+
+
+def correct(project, transcription, audio, folder, *, fetcher=fetch, aligner=None, reference_scorer=None):
+    from lyrics_alignment import plan, windows, reconstruct, align_reference
     result = copy.deepcopy(transcription)
     segments = result.get('segments', [])
-    reference = dict(status='unavailable', message='', sources=[], corrected=0, review=0, timingReview=0,
+    reference = dict(status='unavailable', message='', sources=[], corrected=0, review=0, timingReview=0, alignmentVersion=1,
                      language=result.get('language', 'auto'))
     result['lyricsReference'] = reference
     if not segments:
-        reference['message'] = 'Transcris d’abord le chant pour établir ses horaires.'
+        reference['message'] = 'Transcris d’abord le chant pour retrouver la version et ses points d’ancrage.'
         return result
     duration = max((t.get('duration', 0) for t in project.get('tracks', []) if t.get('role') == 'source'), default=0)
+    if duration <= 0:duration=max(s['end'] for s in segments)
     sources, message = lookup(project, duration, fetcher)
     ranked, seen = [], set()
     for source in sources:
         digest = hashlib.sha256(' '.join(map(key, tokens(source['text']))).encode()).hexdigest()
         if digest in seen:continue
         seen.add(digest)
-        jobs, agreement = proposals(segments, source['text'])
-        ranked.append((agreement, source, jobs))
-    ranked.sort(key=lambda item: item[0], reverse=True)
+        proposal=plan(segments,source['text'])
+        if not proposal['words'] or len(proposal['words'])>MAX_WORDS:continue
+        ranked.append((proposal['agreement'],source,proposal))
+    ranked=[item for item in ranked if item[2]['confirmed'] or item[1].get('confirmed')]
+    ranked.sort(key=lambda item:(bool(item[1].get('confirmed')),item[0]), reverse=True)
     reference['sources'] = list(dict.fromkeys(s['publisher'] for s in sources))
-    if not ranked or ranked[0][0] < .45:
-        reference['message'] = message or 'La référence ne correspond pas assez au chant détecté ; transcription conservée.'
+    if not ranked:
+        reference['message'] = (message or 'La référence ne peut pas être confirmée avec les mots reconnus.') + ' Transcription non vérifiée.'
         return result
-    agreement, source, jobs = ranked[0]
-    # Two endpoints can share the same upstream database. Agreement between
-    # them is not treated as independent musical validation.
-    reference.update(status='review', review=len(jobs))
-    if len(ranked)>1 and ranked[1][0]>=agreement-.025:
-        similarity=SequenceMatcher(None,list(map(key,tokens(source['text']))),
-                                   list(map(key,tokens(ranked[1][1]['text']))),autojunk=False).ratio()
-        if similarity<.9:
-            reference['message']='Les sources proposent des versions différentes. Transcription conservée, version à vérifier.'
-            return result
-    language = result.get('language')
-    if language not in ('fr', 'en'):
-        reference['message'] = 'Référence trouvée ; le recalage vocal local nécessite le modèle français ou anglais.'
-        return result
-    if not jobs:
-        reference.update(status='matched', message='Référence compatible trouvée ; aucune correction suffisamment sûre à appliquer.')
-        return result
-    corroborated=set()
-    for other in sources:
-        if other['publisher']==source['publisher']:continue
-        other_jobs,other_agreement=proposals(segments,other['text'])
-        if other_agreement<.45:continue
-        corroborated.update((j['id'],tuple(map(key,tokens(j['text'])))) for j in other_jobs)
+    (_,source,proposal),selection=select_reference(ranked,audio,segments,result.get('language','auto'),folder,reference_scorer)
+    reference['sources']=[source['publisher']]
+    jobs,position=windows(segments,proposal,duration)
     try:
-        comparisons=[]
-        for job in jobs:
-            comparisons.extend([job,{**job,'id':'original:'+job['id'],'text':segments[int(job['id'])]['text']}])
-        aligned = {str(row['id']): row for row in aligner(audio, comparisons, language, folder)}
+        if aligner is not None:aligned=aligner(audio,jobs,result.get('language','auto'),folder)
+        else:proposal,jobs,aligned,position=align_reference(audio,segments,proposal,duration,result.get('language','auto'),folder)
     except (OSError, ValueError, RuntimeError, ImportError):
-        reference['message'] = 'Référence trouvée, mais recalage vocal indisponible. Transcription conservée.'
-        return result
-    for job in jobs:
-        row = aligned.get(job['id'], {})
-        words = row.get('words', [])
-        # No uniform interpolation or forced acceptance of low-scoring words.
-        baseline=aligned.get('original:'+job['id'],{})
-        # CTC speech-model scores drop on sustained singing. Compare both texts
-        # against the SAME acoustic frames; a reference must explain them better.
-        if (row.get('error') or baseline.get('error') or not words or row.get('score', 0)<.12
-                or not math.isfinite(row.get('score',float('nan')))
-                or not math.isfinite(baseline.get('score',float('nan')))):
-            continue
-        improved=row['score']>=baseline['score']+.025
-        # Agreement between catalogs supports the text, not an independent
-        # acoustic proof. Accept a plausible alignment but explicitly mark it
-        # for timing review when the speech model prefers the previous spelling.
-        if not improved and (row['score']<.2 or (job['id'],tuple(map(key,tokens(job['text'])))) not in corroborated):continue
-        if list(map(key, [w.get('w', '') for w in words])) != list(map(key, tokens(job['text']))):
-            continue
-        if any(not all(math.isfinite(w.get(k, float('nan'))) for k in ('t', 'end', 'score')) or
-               not job['t0'] <= w['t'] < w['end'] <= job['t1']+.001 or w['score'] < .03 for w in words):
-            continue
-        if any(a['end'] > b['t'] for a, b in zip(words, words[1:])):
-            continue
-        target = segments[int(job['id'])]
-        target.update(text=job['text'], t=words[0]['t'], end=words[-1]['end'], words=words, sourceURL=source['url'],confidence=row['score'])
-        target.pop('start',None)
-        reference['corrected'] += 1
-        if not improved:reference['timingReview']+=1
-    reference['review'] -= reference['corrected']
-    reference['status'] = 'corrected' if reference['corrected'] else 'review'
-    reference['message'] = (f"{reference['corrected']} ligne(s) corrigée(s) avec recalage vocal, dont {reference['timingReview']} calage(s) à vérifier. "
-                            f"{reference['review']} correction(s) non confirmée(s) : transcription précédente conservée.")
+        aligned=[]
+    result['segments'],review=reconstruct(segments,proposal,jobs,aligned,position,source)
+    automatic=[s for s in result['segments'] if not s.get('manual')]
+    reference.update(status='corrected',corrected=len(automatic),review=0,timingReview=review)
+    reference['message']=(selection+f"Texte de référence appliqué : {len(automatic)} ligne(s). "
+        + ('Répétitions adaptées à cette version audio. ' if proposal.get('repeatAdjustments') else '')
+        + (f"{review} calage(s) à vérifier ; aucun horaire de mot inventé." if review
+           else 'Mots recalés sur la piste chant.'))
     return result

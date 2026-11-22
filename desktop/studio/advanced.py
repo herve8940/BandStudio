@@ -605,8 +605,8 @@ def practice_grid(p, options=None):
     for group in groups:
         cells = []
         for bar in bars:
-            a, b = max(bar['start'], group['start']), min(bar['end'], group['end'])
-            if b <= a+1e-7:
+            a, b = bar['start'], bar['end']
+            if not group['start']-1e-7 <= a < group['end']-1e-7:
                 continue
             names = []
             for chord in chords:
@@ -618,9 +618,10 @@ def practice_grid(p, options=None):
             text = ' '.join(x['text'] for x in lyrics if a <= x['start'] < b)
             text = re.sub(r'\s+([,.;!?])', r'\1', text)
             cues = [c.get('callText') or c.get('name', '') for c in p.get('cues', []) if a <= c['time'] < b]
+            cues += [g['name']+' · temps '+str(round(coordinate(g['start'])%meter+1,2))
+                     for g in groups if a+1e-7<g['start']<b-1e-7]
             cells.append(dict(number=bar['number'], start=a, end=b, chords=names, lyrics=text,
-                              cues=cues, partial=a > bar['start']+1e-7 or b < bar['end']-1e-7,
-                              continuation=a > bar['start']+1e-7))
+                              cues=cues, partial=False, continuation=False))
         group['cells'] = cells
     return dict(groups=groups, bpm=tempo_info(p)['bpm'], pulseBPM=bpm, meter=meter, timeSignature=f'{meter*3}/8' if pulse_scale(settings)==1.5 else f'{meter}/4', key=transpose(p.get('key') or '?', shift),
                 capo=capo, shift=shift, has_lyrics=bool(lyrics), duration=duration)

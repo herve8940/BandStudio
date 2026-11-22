@@ -36,6 +36,8 @@ body.sheet-open header h1{font-size:16px}
 .sheet-bar-heading button{padding:0;background:none;border:0;border-radius:0;color:#84907e;font-size:9px;line-height:1.2;letter-spacing:.3px}
 .sheet-bar-heading small{display:none;margin-left:auto;font-size:9px;color:#8b9185;font-variant-numeric:tabular-nums}.sheet-details .sheet-bar-heading small{display:block}
 .sheet-partial{font-size:8px;color:#ae9270;font-style:italic}
+.sheet-boundary{display:block;padding:5px 0;color:#655438;font-size:11px}
+.sheet-short-section{padding:10px 16px;color:#655438;font-size:12px}
 .sheet-lane{display:flex;flex-direction:column;gap:3px;min-width:0}
 .sheet-lane-chords{flex-direction:row;flex-wrap:wrap;align-items:stretch;gap:0;min-height:24px}
 .sheet-lane-lyrics.has-entries{margin-top:5px;border-top:1px solid #e4dbce;padding-top:6px}

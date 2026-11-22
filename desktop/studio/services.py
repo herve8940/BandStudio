@@ -374,15 +374,28 @@ def export_reaper(project_file,output):
     root=Path(p.get('_root',root));s=p['settings'];target=Path(output).parent/'REAPER';target.mkdir(parents=True,exist_ok=True)
     media=target/'Audio';media.mkdir(exist_ok=True)
     beats,duration=beat_grid(p)
-    bpm=pulse_bpm(p);scale=pulse_scale(s);period=(beats[1]-beats[0]) if len(beats)>1 else 60/bpm
+    bpm=pulse_bpm(p);scale=pulse_scale(s)
     numerator,denominator=(s['beatsPerBar']*3,8) if scale==1.5 else (s['beatsPerBar'],4)
     plan=count_plan(p);preroll=plan['lead'] if s['exportCount'] else 0
-    lines=['<REAPER_PROJECT 0.1 7.0 1','  SAMPLERATE 44100',f'  TEMPO {bpm*scale:g} {numerator} {denominator}', '  MASTER_VOLUME 0.85']
-    if beats and s['gridMode']=='detected':
+    from musical_timing import grid
+    at,_,anchor=grid(p)
+    initial=60*scale/(at(0)-at(-1))
+    downbeat=at(anchor)+preroll
+    lines=['<REAPER_PROJECT 0.1 7.0 1','  SAMPLERATE 44100',f'  TEMPO {initial:.15g} {numerator} {denominator}', '  MASTER_VOLUME 0.85']
+    if beats:
         lines+=['  <TEMPOENVEX','    ACT 1 -1','    VIS 1 0 0','    ARM 1','    DEFSHAPE 1 -1 -1']
-        for i,b in enumerate(beats[:-1]):
-            dt=beats[i+1]-b
-            if dt>0.1:lines.append(f'    PT {b+preroll:.9f} {60*scale/dt:.9f} 1')
+        points={0.:initial}
+        if s['gridMode']=='detected':
+            for i,b in enumerate(beats[:-1]):
+                dt=beats[i+1]-b
+                if dt>0:points[b+preroll]=60*scale/dt
+        # An explicit time-signature anchor keeps the saved first downbeat on
+        # a bar, including pickups and exports without the initial count-in.
+        if downbeat>=0:
+            points[downbeat]=60*scale/(at(anchor+1)-at(anchor))
+        for position,tempo in sorted(points.items()):
+            signature=f' {numerator+65536*denominator} 0 1' if abs(position-downbeat)<1e-7 else ''
+            lines.append(f'    PT {position:.12f} {tempo:.12f} 1{signature}')
         lines+=['  >']
     for i,section in enumerate(p['sections'],1):
         lines += [f'  MARKER {i} {section["start"]+preroll:.9f} {quote(section["name"])} 1',f'  MARKER {i} {section["end"]+preroll:.9f} "" 1']

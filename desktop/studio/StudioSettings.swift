@@ -168,10 +168,12 @@ extension StudioProject {
     }
 
     enum CodingKeys:String,CodingKey {
+        case sectionGridVersion
         case structureProposal,preparation,sessionDuration,capture,version,id,name,tracks,sections,cues,bpm,beats,notes,settings,guideFiles,guideKey,lyrics,lyricsReference,chords,chordReference,drumHits,key,sourceURL,capo,analysesCompleted,gridLocked,downbeats,analysisNote
     }
     init(from decoder:Decoder) throws {
         let d=try decoder.container(keyedBy:CodingKeys.self)
+        sectionGridVersion=try d.decodeIfPresent(Int.self,forKey:.sectionGridVersion)
         structureProposal=try d.decodeIfPresent(StructureProposal.self,forKey:.structureProposal)
         preparation=try d.decodeIfPresent(Preparation.self,forKey:.preparation)
         sessionDuration=try d.decodeIfPresent(Double.self,forKey:.sessionDuration) ?? 0

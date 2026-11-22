@@ -59,6 +59,76 @@ def count_plan(project,position=0):
     return dict(lead=lead,end=at(target)-position+lead,target=at(target),events=events)
 
 
+def align_section_grid(project, *, force=False, protected_ids=()):
+    """Whole bars, preferring even bar counts in simple duple/quadruple meter.
+
+    Never move opening pickups, silence, gaps, protected edits or outer edges.
+    The explicit legacy repair may include protected edits, with a backup.
+    """
+    rows=copy.deepcopy(project.get('sections',[]));changes=[]
+    settings=project['settings'];meter=settings['beatsPerBar']
+    beats=sorted(set(t for t in project.get('beats',[]) if math.isfinite(t) and t>=0))
+    detected=settings['gridMode']!='fixed'
+    if detected and len(beats)<2:return rows,changes
+    at,_,anchor=grid(project)
+    length=max((s['end'] for s in rows),default=0)
+    bars=[]
+    for n in range(20000):
+        t=at(anchor+n*meter)
+        if t>length or (detected and t>beats[-1]+1e-7):break
+        if t>=0:bars.append(t)
+    if not bars:return rows,changes
+    paired=meter in (2,4) and settings.get('pulseUnit')!='dottedQuarter'
+    protected_ids=set(protected_ids)
+    def protected(s):
+        return s['id'] in protected_ids or (not force and
+            (s.get('locked') or s.get('reviewed') or s.get('origin')=='manual'))
+    def nonmusical(s):
+        return s.get('announce') is False or s['name'].strip().casefold() in (
+            'silence','silence initial','avant départ','levée')
+    for previous,current in zip(rows,rows[1:]):
+        old=current['start']
+        if (protected(previous) or protected(current) or nonmusical(previous) or nonmusical(current)
+                or abs(previous['end']-old)>1e-7):continue
+        if detected and not beats[0]<=old<=beats[-1]:continue
+        near=min(range(len(bars)),key=lambda j:abs(bars[j]-old))
+        span=at(anchor+(near+1)*meter)-bars[near]
+        candidates=[j for j,t in enumerate(bars) if previous['start']+1e-7<t<current['end']-1e-7
+                    and abs(t-old)<=span+1e-7]
+        if not candidates:continue
+        previous_bar=min(range(len(bars)),key=lambda j:abs(bars[j]-previous['start']))
+        even=[j for j in candidates if (j-previous_bar)%2==0]
+        chosen=min(even if paired and even else candidates,key=lambda j:(round(abs(bars[j]-old),5),(j-previous_bar)%4!=0,j))
+        target=bars[chosen]
+        if abs(target-old)<1e-7:continue
+        previous['end']=current['start']=target
+        changes.append(dict(id=current['id'],before=old,after=target))
+    return rows,changes
+
+
+def migrate_section_grid(project, root):
+    """One-time, reversible legacy upgrade; never record as musician feedback."""
+    from pathlib import Path
+    from services import atomic
+    if project.get('sectionGridVersion',0)>=1:return False
+    if len(project.get('sections',[]))<2 or (project['settings']['gridMode']!='fixed' and len(project.get('beats',[]))<2):return False
+    rows,changes=align_section_grid(project,force=True)
+    backup=Path(root)/'Backups/section-grid-v1/project.json'
+    if not backup.exists():
+        backup.parent.mkdir(parents=True,exist_ok=True)
+        backup.write_bytes((Path(root)/'project.json').read_bytes())
+    project['sectionGridVersion']=1
+    if changes:
+        changed={c['id'] for c in changes}
+        for i,s in enumerate(rows):
+            if s['id'] in changed or (i+1<len(rows) and rows[i+1]['id'] in changed):s['reviewed']=False
+        project['sections']=rows;project['guideKey']='';project.pop('structureProposal',None)
+        if project.get('preparation'):
+            project['preparation'].pop('fingerprint',None);project['preparation'].pop('validatedAt',None)
+    atomic(Path(root)/'project.json',project)
+    return bool(changes)
+
+
 def audio_entry(audio):
     """Locate sustained sound, including quiet pickups; never crop the audio."""
     import numpy as np
@@ -123,3 +193,14 @@ def align_intro_sections(project,entry,force=False):
         rows.insert(0,dict(id=str(uuid.uuid4()),name='Avant départ',start=0,end=start,
                           origin='intro-calibration',locked=False,reviewed=False,announce=False))
     return p
+
+
+if __name__=='__main__':
+    import argparse
+    import json
+    from pathlib import Path
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--migrate',type=Path,required=True)
+    args=parser.parse_args()
+    project=json.loads((args.migrate/'project.json').read_text())
+    migrate_section_grid(project,args.migrate)

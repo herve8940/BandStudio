@@ -179,7 +179,9 @@
    const head=node('div','sheet-section-heading');
    const title=button(group.name,()=>send('seek',{time:group.start}),'sheet-section-title');
    title.title='Aller au début de '+group.name;
-   const groupBars=grid.bars.filter(b=>b.start<group.end-EPS&&b.end>group.start+EPS);
+   // One cell per measure. A deliberate pickup/break inside it is indicated
+   // in that cell, rather than duplicating its number and held chord.
+   const groupBars=grid.bars.filter(b=>(sections.value?b.end>group.start+EPS:b.start>=group.start-EPS)&&b.start<group.end-EPS);
    const range=groupBars.length?(groupBars[0].number===0?'Levée':'M. '+groupBars[0].number)+' – '+groupBars.at(-1).number:'';
    head.append(node('span','sheet-section-number',String(all.indexOf(group)+1).padStart(2,'0')),title,node('small','',range));
    head.title=positionLabel(grid,group.start)+' → '+time(group.end,true);
@@ -187,14 +189,15 @@
    if(originalSection) {const edit=button('Modifier la section',()=>openEditor('section',originalSection));edit.disabled=!!state.busy;head.append(edit);}
    const row=node('div','sheet-bars');
    for(const bar of groupBars) {
-    const start=Math.max(bar.start,group.start),end=Math.min(bar.end,group.end);
+    const start=bar.start,end=bar.end;
     const cell=node('div','sheet-bar');cell.dataset.start=start;cell.dataset.end=end;cell.dataset.bar=bar.number;
-    const partial=start>bar.start+EPS||end<bar.end-EPS;
     const top=node('div','sheet-bar-heading');const seek=button(bar.number?'M. '+bar.number:'Levée',()=>send('seek',{time:start}));
     seek.setAttribute('aria-label',bar.number?'Écouter la mesure '+bar.number:'Écouter la levée');
     seek.title='Écouter à partir de '+time(start,true);top.append(seek);
-    if(partial)top.append(node('span','sheet-partial',start>bar.start+EPS?'suite':'début'));
     top.append(node('small','',time(start,true)));cell.append(top);
+    for(const boundary of all.filter(s=>s.start>start+EPS&&s.start<end-EPS)) {
+     cell.append(node('small','sheet-boundary',boundary.name+' · '+positionLabel(grid,boundary.start)));
+    }
     for(const kind of ['chords','lyrics']) {
      const lane=node('div','sheet-lane sheet-lane-'+kind);lane.setAttribute('aria-label',kind==='chords'?'Accords':'Paroles');
      for(const item of (p[kind]||[]).filter(e=>e.start<end-EPS&&e.end>start+EPS).sort((a,b)=>a.start-b.start)) {
@@ -206,6 +209,7 @@
     }
     row.append(cell);
    }
+   if(!groupBars.length)row.append(node('p','sheet-short-section','Passage dans '+positionLabel(grid,group.start)+' · voir la mesure complète ci-dessus.'));
    article.append(head,row);content.append(article);
   }
   highlight();
