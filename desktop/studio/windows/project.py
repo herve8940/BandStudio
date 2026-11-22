@@ -14,7 +14,7 @@ GUIDE_DEFAULTS.update(pulseUnit=None,referenceBPM=None)
 def ident():return str(uuid.uuid4())
 
 def fresh(name='Nouveau morceau'):
-    return dict(version=1,sectionGridVersion=1,id=ident(),name=name,tracks=[],sections=[],cues=[],bpm=0,beats=[],notes='',settings=GUIDE_DEFAULTS.copy(),guideFiles={},guideKey='',lyrics=[],chords=[],drumHits=[],key='',sourceURL='',capo=0,analysesCompleted=[],gridLocked=False,downbeats=[],analysisNote='')
+    return dict(version=1,sectionGridVersion=2,id=ident(),name=name,tracks=[],sections=[],cues=[],bpm=0,beats=[],notes='',settings=GUIDE_DEFAULTS.copy(),guideFiles={},guideKey='',lyrics=[],chords=[],drumHits=[],key='',sourceURL='',capo=0,analysesCompleted=[],gridLocked=False,downbeats=[],analysisNote='')
 
 def duration(p):return max(p.get('sessionDuration',0),max((t['offset']+t['duration'] for t in p['tracks'] if not t['role'].startswith('guide_')),default=0))
 

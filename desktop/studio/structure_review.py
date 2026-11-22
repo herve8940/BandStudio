@@ -519,15 +519,6 @@ def propose(project, reference=None):
     except (OSError,ValueError):
         pattern=dict(groups=[],pairs=[])
         warnings.append('Comparaison audio des répétitions indisponible : aucune répétition supposée.')
-    from musical_timing import align_section_grid
-    sections,alignment=align_section_grid(proposed,force=True,
-        protected_ids=[s['id'] for s in project['sections'] if protected(s)])
-    proposed['sections']=sections
-    for change in alignment:
-        section=next(s for s in sections if s['id']==change['id'])
-        changes.append(dict(id=str(uuid.uuid4()),kind='adjust',time=change['after'],
-            before=section['name'],after=section['name'],
-            reason=f"Début calé sur une mesure entière : {change['before']:.3f} s → {change['after']:.3f} s."))
     chord_update = False
     # Reuse a successful chart; retry old failures without doing the same failed
     # request twice immediately after the existing "prepare all" pipeline.

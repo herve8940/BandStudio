@@ -57,7 +57,7 @@ struct LyricsReference: Codable {
     var language:String?
 }
 struct StudioProject: Codable {
-    var sectionGridVersion:Int? = 1
+    var sectionGridVersion:Int? = 2
     var preparation:Preparation? = nil
     var sessionDuration=0.0
     var capture=CaptureSettings()

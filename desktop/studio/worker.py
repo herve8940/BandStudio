@@ -172,9 +172,7 @@ def analyze(audio, output, mode, engine, project_file=None, *, reanalyze=False):
     if project and project.get('beats'):
         from musical_timing import align_intro_sections,cached_audio_entry
         proposed=align_intro_sections({**project,'sections':proposed},cached_audio_entry(audio,project,engine))['sections']
-    from musical_timing import align_section_grid
-    proposed,alignment=align_section_grid({**project,'sections':proposed}) if project else (proposed,[])
-    write(output, dict(sections=proposed, engine='SongFormer',cacheHit=cached is not None,cueCorrection=correction,beatAlignment=alignment))
+    write(output, dict(sections=proposed, engine='SongFormer',cacheHit=cached is not None,cueCorrection=correction))
 
 
 def main():
