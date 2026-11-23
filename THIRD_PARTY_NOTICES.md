@@ -121,7 +121,6 @@ dependencies follow their own licences (see PyPI).
 | Voix système : macOS `say`, Windows SAPI, Linux `espeak-ng` (GPL-3.0) | Celles du système / the system's | Appelées comme programmes externes, non fournies / called as external programs, not provided |
 | [js_ReaScriptAPI](https://github.com/juliansader/ReaExtensions) (facultatif, ReaPack) | Licence de son auteur (non vérifiée ici) / its author's licence (not checked here) | Utilisée seulement si l'utilisateur l'a installée lui-même / used only if the user installed it |
 | Claude / Claude Desktop (Anthropic) — mode MCP facultatif / optional | Conditions d'Anthropic / Anthropic's terms | ReaCue n'est ni affilié à Anthropic ni approuvé par Anthropic. / ReaCue is not affiliated with or endorsed by Anthropic. |
-| Moises (cité dans la doc / mentioned in docs) | — | Marque de son propriétaire ; aucun lien avec ReaCue / trademark of its owner; no relationship with ReaCue |
 
 ## Références / References
 
