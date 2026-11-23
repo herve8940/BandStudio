@@ -36,20 +36,32 @@ def test_grid_preserves_words_once_and_splits_chords_without_mutating_song():
     assert practice_grid(p,dict(pitch=2))['groups'][0]['cells'][0]['chords'] == ['D/F#']
 
 
-def test_detected_grid_keeps_whole_bars_and_marks_an_interior_change():
+def test_detected_grid_assigns_the_entrance_to_its_section_once():
     p=song();p['settings'].update(gridMode='detected',firstBeat=2)
     p['beats']=[0,.5,1,1.5,2,2.6,3.2,3.8,4.4,5,5.6]
     p['sections']=[dict(name='A',start=0,end=3),dict(name='B',start=3,end=10.5)]
     data=practice_grid(p)
     a,b=data['groups']
     assert (a['cells'][0]['number'],a['cells'][0]['end']) == (1,2)
-    assert a['cells'][-1]['end'] == pytest.approx(4.4) and not a['cells'][-1]['partial']
-    assert a['cells'][-1]['cues']==['B · temps 2.67']
-    assert b['cells'][0]['start'] == pytest.approx(4.4)
-    assert b['cells'][0]['number'] == 3
-    numbers=[c['number'] for g in data['groups'] for c in g['cells']]
+    assert a['cells'][-1]['end'] == 3 and a['cells'][-1]['partial']
+    entry=b['cells'][0]
+    assert entry['start']==3 and entry['end']==pytest.approx(4.4)
+    assert entry['continuation'] and entry['number']==2 and entry['startBeat']==pytest.approx(2+2/3)
+    assert entry['lyrics']=='mot' and a['cells'][-1]['lyrics']=='Un'
+    numbers=[c['number'] for g in data['groups'] for c in g['cells'] if not c['continuation']]
     assert len(numbers)==len(set(numbers))
     assert ' '.join(c['lyrics'] for g in data['groups'] for c in g['cells']).split() == ['Un','mot','tenu']
+
+
+def test_short_sections_share_only_their_exact_interval_in_a_single_bar():
+    p=song()
+    p['sections']=[dict(name=n,start=a,end=b) for n,a,b in [('A',0,3),('Break',3,3.5),('B',3.5,10.5)]]
+    p['cues']=[dict(name='Go',time=3.5)]
+    a,short,b=practice_grid(p)['groups']
+    assert short['cells'][0]['start']==3 and short['cells'][0]['end']==3.5
+    assert short['cells'][0]['lyrics']=='mot' and short['cells'][0]['cues']==[]
+    assert b['cells'][0]['cues']==['Go'] and b['cells'][0]['lyrics']==''
+    assert b['cells'][0]['chords']==['Dm7'] and a['cells'][-1]['end']==3
 
 
 def test_pdf_supports_long_text_dense_chords_and_empty_analysis(tmp_path):

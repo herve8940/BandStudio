@@ -13,6 +13,9 @@ import urllib.request
 import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT/'desktop/studio'))
+from chord_provider_defaults import write_catalog
+
 VERSION='1.1.0'
 
 
@@ -31,7 +34,7 @@ def extract(zip_path,target):
 
 def source_files():
     files=[ROOT/'LICENSE',ROOT/'THIRD_PARTY_NOTICES.md']
-    for name in ['services.py','analysis_cache.py','rhythm_quality.py','rhythm_adapter.py','cue_corrector.py','cue_corrector_runtime.py','cue_corrector_bundle.py','chord_provider_defaults.py','cue_feedback.py','structure_review.py','structure_sources.py','song_memory.py','musical_patterns.py','chord_sources.py','lyrics_reference.py','lyrics_alignment.py','chord_alignment.py','chord_features.py','section_evidence.py','chart_sections.py','chord_choice.py','section_functions.py','chord-providers.json','musical_timing.py','section_grid_rollback.py','listening.py','diagnostics.py','compute.py','catalog.py','artwork.py','updater.py','preparation.py','batch_queue.py','batch_project.py','platform_tools.py','worker.py','analysis_progress.py','advanced.py','phone.py','creative.py']:files.append(ROOT/'desktop/studio'/name)
+    for name in ['services.py','analysis_cache.py','rhythm_quality.py','rhythm_adapter.py','cue_corrector.py','cue_corrector_runtime.py','cue_corrector_bundle.py','chord_provider_defaults.py','cue_feedback.py','structure_review.py','structure_sources.py','song_memory.py','musical_patterns.py','chord_sources.py','lyrics_reference.py','lyrics_alignment.py','chord_alignment.py','chord_features.py','section_evidence.py','chart_sections.py','chord_choice.py','section_functions.py','musical_timing.py','section_grid_rollback.py','listening.py','diagnostics.py','compute.py','catalog.py','artwork.py','updater.py','preparation.py','batch_queue.py','batch_project.py','platform_tools.py','worker.py','analysis_progress.py','advanced.py','phone.py','creative.py']:files.append(ROOT/'desktop/studio'/name)
     for name in ('rhythm-quality.json','rhythm-adapter.json'):
         calibration=ROOT/'desktop/studio'/name
         if calibration.is_file():files.append(calibration)
@@ -48,7 +51,7 @@ def source_files():
 
 def build(output):
     if os.name!='nt':raise SystemExit('Run this builder on Windows x64 (GitHub Actions).')
-    output=Path(output).resolve();stage=output/'stage';package=stage/'BandStudio-DEV';engine=package/'engine';engine.mkdir(parents=True,exist_ok=False)
+    output=Path(output).resolve();stage=output/'stage';package=stage/'BandStudio';engine=package/'engine';engine.mkdir(parents=True,exist_ok=False)
     for source in source_files():
         if source.is_relative_to(ROOT/'desktop/studio'):relative=source.relative_to(ROOT/'desktop/studio')
         else:relative=source.relative_to(ROOT)
@@ -58,6 +61,7 @@ def build(output):
             text=source.read_text(encoding='utf-8-sig').replace('ReaCue','BandStudio')
             dest.write_bytes(b'\xef\xbb\xbf'+text.replace('\r\n','\n').replace('\n','\r\n').encode('utf-8'))
         else:shutil.copy2(source,dest)
+    write_catalog(engine)
     (engine/'build.json').write_text(json.dumps({'version':VERSION,'commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),'runtime':1}))
     shutil.copy2(ROOT/'desktop/studio/windows/LIRE-MOI.txt',package/'LIRE-MOI.txt')
     shutil.copy2(ROOT/'desktop/studio/windows/THIRD_PARTY.txt',package/'WINDOWS_THIRD_PARTY.txt')

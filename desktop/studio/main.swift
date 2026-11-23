@@ -2,6 +2,34 @@ import Foundation
 import AppKit
 import AVFoundation
 
+if CommandLine.arguments.count>=3 && CommandLine.arguments[1]=="--timing-test" {
+    do {
+        let data=try Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[2]))
+        let rows=try JSONSerialization.jsonObject(with:data) as! [[String:Any]]
+        for row in rows {
+            let p=try JSONDecoder().decode(StudioProject.self,from:JSONSerialization.data(withJSONObject:row["project"]!))
+            guard let grid=p.timingGrid,grid.basis.matches(p) else{throw StudioError("Grille musicale obsolète")}
+            for sample in row["samples"] as! [[String:Double]] {
+                let time=sample["time"]!,coordinate=sample["coordinate"]!
+                guard abs(p.musicalClock.coordinate(time)-coordinate)<1e-8,
+                      abs(p.musicalClock.at(coordinate)-time)<1e-8,
+                      abs(p.period(at:time)-sample["period"]!)<1e-8 else{throw StudioError("Horloge native différente de l’export")}
+            }
+            for expected in row["plans"] as! [[String:Any]] {
+                let plan=p.countPlan(at:expected["position"] as! Double)
+                let times=expected["times"] as! [Double],numbers=expected["numbers"] as! [Int]
+                guard abs(plan.lead-(expected["lead"] as! Double))<1e-8,
+                      abs(plan.target-(expected["target"] as! Double))<1e-8,
+                      plan.events.map({$0.number})==numbers,plan.events.count==times.count,
+                      zip(plan.events,times).allSatisfy({abs($0.0.time-$0.1)<1e-8}) else{throw StudioError("Décompte natif différent des guides")}
+            }
+            var edited=p;edited.settings.firstBeat+=0.125
+            guard !grid.basis.matches(edited) else{throw StudioError("Ancienne grille réutilisée après correction")}
+        }
+        print("PASS native clock and count-in parity for \(rows.count) recordings");exit(0)
+    } catch {fputs("FAIL: \(error.localizedDescription)\n",stderr);exit(1)}
+}
+
 func selfTest(_ directory:String) throws {
     var review=StructureProposal(schema:1,id:"test",fingerprint:"test",createdAt:0,status:"proposed",message:"Prête",
                                 sources:[],anchors:0,changes:[],warnings:[],sections:[],chords:[],chordReference:nil,chordUpdate:false)
@@ -65,10 +93,25 @@ func selfTest(_ directory:String) throws {
           webChords.chordReference?.alignment?.subdivision==2,
           webChords.chordReference?.sources.first?.transitions==[["C","G"]],webChords.chordReference?.selectedURL==source,
           webChords.chordReference?.catalogVersion==2,webChords.chordReference?.checks?.first?.status=="found" else{throw StudioError("Source, calage ou correction manuelle d’accords perdus")}
-    guard ChordProvider.all.count==22,ChordProvider.all.filter({$0.template != nil}).count==8 else{throw StudioError("Catalogues d’accords absents du paquet")}
+    let providers=ChordProvider.all
+    guard Set(providers.map(\.id)).count==providers.count,
+          providers.contains(where:{$0.id=="topaccords" && $0.template != nil}),
+          providers.contains(where:{$0.id=="ultimate" && $0.template == nil}) else{throw StudioError("Catalogue des sources d’accords invalide")}
     let providerSearch=try ChordProvider.searchURL(query:"AC/DC Highway to Hell",kind:"chords",provider:"ultimate")
     guard URLComponents(url:providerSearch,resolvingAgainstBaseURL:false)?.queryItems?.first?.value?.contains("site:ultimate-guitar.com")==true else{throw StudioError("Recherche ciblée invalide")}
     print("PASS native web chord sources, grid placement, confidence and manual protection roundtrip")
+    let lyricResult=root.appendingPathComponent("lyric-review.json")
+    let lyricData:[String:Any] = ["segments":[["t":0.2,"end":0.7,"text":"Listen","timingReview":true,"confidence":0.8,
+                                               "words":[["t":0.2,"end":0.7,"w":"Listen","timingReview":true]]],
+                                              ["t":1.0,"end":1.5,"text":"Aligned","timingReview":false,"confidence":0.8]],
+                                   "lyricsReference":["status":"corrected","message":"OK","sources":["LRCLIB"],"corrected":2,"review":0,
+                                                      "lineTimingCheck":["publisher":"LRCLIB","url":"https://lrclib.net/api/get/1","compared":7,"consistent":6,"offsetSeconds":0.2]]]
+    try JSONSerialization.data(withJSONObject:lyricData).write(to:lyricResult)
+    try editor.applyTextAnalysis("lyrics",result:lyricResult)
+    let lyricsReloaded=try StudioProject.load(root)
+    guard lyricsReloaded.lyrics.map({$0.timingReview})==[true,false], lyricsReloaded.lyrics.first?.words?.first?.timingReview==true,
+          lyricsReloaded.lyricsReference?.lineTimingCheck?.consistent==6 else{throw StudioError("Alertes de calage des paroles perdues")}
+    print("PASS native per-line lyric timing warnings survive save/reload")
     try loaded.save(root)
     print("PASS native manual boundary, validation, volumes, persistence and analysis reuse")
     var inherited=GuideSettings();inherited.firstBeat=2.635;inherited.gridMode="fixed";inherited.clickGain=1.28

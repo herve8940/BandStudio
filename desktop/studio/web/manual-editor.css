@@ -10,5 +10,8 @@
 
 .chord-source{padding:14px 0;border-top:1px solid var(--border)}
 .chord-source>button{margin:8px 8px 0 0}.chord-source .annotation-toolbar{margin:12px 0}
+.chord-source>strong,.chord-source>[data-palette-key]{display:block}
+.chord-source>[data-palette-key]{margin-top:12px}
+.chord-alignment-details{margin:4px 0 12px;color:var(--muted)}
 .chord-catalog{margin-top:18px}.chord-catalog summary{cursor:pointer;font-weight:600;padding:10px 0}
 .chord-provider{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0}

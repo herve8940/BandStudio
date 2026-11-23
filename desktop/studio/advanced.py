@@ -523,7 +523,6 @@ def master(audio, target, engine, options):
 
 def practice_grid(p, options=None):
     """Read-only score layout, using the same beat origin as the editable song sheet."""
-    import bisect
     from phone import transpose
     options = options or {}
     settings = p.get('settings') or {}
@@ -535,25 +534,10 @@ def practice_grid(p, options=None):
         duration = max((x.get('end', 0) for kind in ('sections', 'lyrics', 'chords') for x in p.get(kind, [])), default=0)
     if not 1 <= meter <= 12 or not 20 <= bpm <= 400 or duration <= 0:
         raise ValueError('Le morceau doit avoir une durée, un tempo et une mesure valides.')
-    beats = sorted({float(t) for t in p.get('beats', []) if math.isfinite(t) and 0 <= t <= duration})
-    detected = settings.get('gridMode', 'detected') != 'fixed' and len(beats) > 1
-    first = float(settings.get('firstBeat', 0))
-    anchor = min(range(len(beats)), key=lambda i: abs(beats[i]-first)) if detected else 0
-    anchor %= meter  # Match the editor and the metronome when a later downbeat was calibrated.
-    origin = beats[anchor] if detected else first
-
-    def at(value):
-        if not detected:
-            return origin+value*60/bpm
-        index = value+anchor
-        lower = max(0, min(len(beats)-2, math.floor(index)))
-        return beats[lower]+(index-lower)*(beats[lower+1]-beats[lower])
-
-    def coordinate(t):
-        if not detected:
-            return (t-origin)*bpm/60
-        i = max(0, min(len(beats)-2, bisect.bisect_right(beats, t)-1))
-        return i-anchor+(t-beats[i])/(beats[i+1]-beats[i])
+    from musical_timing import BeatClock
+    clock = BeatClock(p, duration)
+    origin = clock.at(0)
+    at, coordinate = clock.at, clock.coordinate
 
     shift = int(finite(options.get('pitch', 0), -12, 12))
     capo = int(p.get('capo', 0))
@@ -605,8 +589,8 @@ def practice_grid(p, options=None):
     for group in groups:
         cells = []
         for bar in bars:
-            a, b = bar['start'], bar['end']
-            if not group['start']-1e-7 <= a < group['end']-1e-7:
+            a, b = max(bar['start'], group['start']), min(bar['end'], group['end'])
+            if b <= a+1e-7:
                 continue
             names = []
             for chord in chords:
@@ -618,10 +602,10 @@ def practice_grid(p, options=None):
             text = ' '.join(x['text'] for x in lyrics if a <= x['start'] < b)
             text = re.sub(r'\s+([,.;!?])', r'\1', text)
             cues = [c.get('callText') or c.get('name', '') for c in p.get('cues', []) if a <= c['time'] < b]
-            cues += [g['name']+' · temps '+str(round(coordinate(g['start'])%meter+1,2))
-                     for g in groups if a+1e-7<g['start']<b-1e-7]
+            continuation = a > bar['start']+1e-7
             cells.append(dict(number=bar['number'], start=a, end=b, chords=names, lyrics=text,
-                              cues=cues, partial=False, continuation=False))
+                              cues=cues, partial=continuation or b < bar['end']-1e-7, continuation=continuation,
+                              startBeat=coordinate(a)%meter+1))
         group['cells'] = cells
     return dict(groups=groups, bpm=tempo_info(p)['bpm'], pulseBPM=bpm, meter=meter, timeSignature=f'{meter*3}/8' if pulse_scale(settings)==1.5 else f'{meter}/4', key=transpose(p.get('key') or '?', shift),
                 capo=capo, shift=shift, has_lyrics=bool(lyrics), duration=duration)
@@ -830,6 +814,8 @@ def practice_sheet(p, target, options):
             if not first and rest:
                 parts = rest[0].split(avail_width, room)
                 if parts:
+                    for part in parts:
+                        part.wrap(avail_width, 10000)
                     first.append(parts[0]);rest = parts[1:]+rest[1:]
             if not first:
                 return []
@@ -851,11 +837,30 @@ def practice_sheet(p, target, options):
         cells = group['cells']
         if not cells:
             continue
-        first, last = cells[0]['number'], cells[-1]['number']
-        position = 'levée' if first == last == 0 else ('levée puis ' if first == 0 else '')+f'mes. {max(1, first)}-{last}'
-        if cells[0]['partial'] or cells[-1]['partial']:
-            position += ' / mesure partagée'
-        rows = [BarRow(cells[i:i+4]) for i in range(0, len(cells), 4)]
+        rows = []
+        if cells[0]['continuation']:
+            # An entrance before the next downbeat is a lead-in, not another whole numbered bar.
+            entry, cells = cells[0], cells[1:]
+            measure = f'M. {entry["number"]}' if entry['number'] else 'levée initiale'
+            beat = f'{entry["startBeat"]:.2f}'.rstrip('0').rstrip('.').replace('.', ',')
+            parts = [f'Entrée · {measure} · temps {beat}']
+            if entry['chords']:
+                parts.append('<b>'+escaped(' / '.join(entry['chords']))+'</b>')
+            if entry['lyrics']:
+                parts.append('<font color="'+red+'">'+escaped(entry['lyrics'])+'</font>')
+            if entry['cues']:
+                parts.append(escaped(' / '.join(entry['cues'])))
+            first_line = Paragraph(' &nbsp;·&nbsp; '.join(parts), styles['meta'])
+            first_line.wrap(width, 10000)
+            rows.append(first_line)
+        position = ''
+        if cells:
+            first, last = cells[0]['number'], cells[-1]['number']
+            if first == last:
+                position = f'mes. {first}' if first else 'levée'
+            else:
+                position = ('levée puis ' if first == 0 else '')+f'mes. {max(1, first)}-{last}'
+            rows.extend(BarRow(cells[i:i+4]) for i in range(0, len(cells), 4))
         body.append(SectionBlock(group['name'], position, rows, number=group_number))
     if p.get('notes'):
         body.extend([para('Notes de jeu', 'section'), para(p['notes'], 'notes')])

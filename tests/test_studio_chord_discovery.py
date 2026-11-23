@@ -62,6 +62,28 @@ def test_oasis_keeps_working_without_a_search_engine_request(monkeypatch):
     assert web._read_provider(provider(),'Supersonic','Oasis')[1]=='found'
 
 
+@pytest.mark.parametrize('suffix',['(Chap. II)','[Chapter 12]','(Chapitre IV)'])
+def test_video_chapter_uses_artist_checked_album_chart_after_exact_miss(monkeypatch,suffix):
+    p=provider();artist='An Artist';title='A Song '+suffix
+    exact=web.provider_url(p,title,artist);album=web.provider_url(p,'A Song',artist)
+    calls=[]
+    def fetch(url):
+        calls.append(url)
+        if url==exact:raise HTTPError(url,404,'missing',{},None)
+        return chart('A Song',artist),url
+    monkeypatch.setattr(web,'fetch',fetch)
+    monkeypatch.setattr(web,'PROVIDERS',[p])
+    ref=web.lookup({'name':artist+' - '+title})['reference']
+    assert ref['status']=='found' and ref['selectedURL']==album and calls==[exact,album]
+    assert ref['query']==artist+' '+title and ref['sources'][0]['chords']==['A','C','G']
+    monkeypatch.setattr(web,'fetch',lambda url:(chart(title,artist),url))
+    assert web._read_provider(p,title,artist)[2]['url']==exact
+    monkeypatch.setattr(web,'fetch',lambda url:(chart('A Song','Another Artist'),url))
+    assert web._direct_chart(p,title,artist)[1]=='not_found'
+    for distinct in ('A Song (Part II)','A Song (Live)','Chapter II','A Song (Remix)'):
+        assert web.chart_titles(distinct)==(distinct,)
+
+
 @pytest.mark.parametrize('kind,canonical',[
     ('cifraclub','https://www.cifraclub.com/legacy-performer-name/123456/'),
     ('echords','https://www.e-chords.com/chords/another-publisher-id/song-version'),
@@ -197,13 +219,14 @@ def test_direct_requests_get_priority_over_fallbacks(monkeypatch):
     def fetch(url):
         with lock:seen.append(url)
         raise HTTPError(url,404,'missing',{},None)
+    automatic=sum(bool(p.get('template')) for p in web.PROVIDERS)
     def search(query):
-        with lock:assert len(seen)==8
+        with lock:assert len(seen)==automatic
         return '<div class="no-results"></div>'
     monkeypatch.setattr(web,'fetch',fetch)
     monkeypatch.setattr(web,'fetch_discovery',search)
     found=web._search('Song','Artist')
-    assert len(found)==8 and all(status=='not_found' for status,source in found.values())
+    assert len(found)==automatic and all(status=='not_found' for status,source in found.values())
 
 
 @pytest.mark.parametrize('artist,slug,initial',[

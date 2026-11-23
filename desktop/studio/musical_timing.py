@@ -4,6 +4,7 @@ import copy
 import math
 import statistics
 import uuid
+from functools import lru_cache
 
 
 def pulse_scale(settings):
@@ -25,48 +26,135 @@ def tempo_info(project):
                 source='manual' if s.get('gridMode')=='fixed' else 'reference' if reference else 'estimated')
 
 
-def metronome_grid(project, duration):
-    """One continuous clock, including intros, detection gaps and outros.
+def timing_basis(project, duration=None):
+    s=project.get('settings',{})
+    if duration is None:
+        duration=max(project.get('sessionDuration',0),max((t.get('offset',0)+t.get('duration',0)
+                     for t in project.get('tracks',[]) if not t.get('role','').startswith('guide_')),default=0))
+        if not duration:duration=max(project.get('beats',[0]) or [0])+60/pulse_bpm(project)
+    return dict(beats=project.get('beats',[]),downbeats=project.get('downbeats',[]),
+                bpm=pulse_bpm(project),first=s.get('firstBeat',0),meter=s.get('beatsPerBar',4),
+                mode=s.get('gridMode','detected'),locked=bool(project.get('gridLocked')),duration=duration)
 
-    Detected beats remain available for musical analysis. They must not drive
-    a metronome: detector jitter and missed beats are not tempo changes.
-    """
-    first=project['settings']['firstBeat'];period=60/pulse_bpm(project)
-    start=math.ceil(-first/period-1e-9)
-    stop=math.ceil((duration-first)/period-1e-9)
-    return [max(0.,first+i*period) for i in range(start,stop)]
+
+@lru_cache(maxsize=64)
+def _completed_clock(raw, downbeats, bpm, first, meter, mode, locked, duration):
+    fallback=60/bpm
+    observed=sorted(set(t for t in raw if math.isfinite(t) and 0<=t<duration))
+    if mode=='fixed' or len(observed)<2:
+        start=math.ceil(-first/fallback-1e-9);stop=math.ceil((duration-first)/fallback-1e-9)
+        beats=[max(0.,first+i*fallback) for i in range(start,stop)]
+        return tuple(beats),0,fallback,fallback,0,0.,False
+    spans=[b-a for a,b in zip(observed,observed[1:])]
+    def local(values):
+        usable=[d for d in values if .15<=d<=max(3.,4*fallback)]
+        # Reject missing pulses when choosing the interpolation/extrapolation tempo.
+        center=statistics.median(usable) if usable else fallback
+        close=[d for d in usable if .65*center<=d<=1.5*center]
+        return statistics.median(close) if close else fallback
+    head=local(spans[:16]);tail=local(spans[-16:])
+    # Sparse end detections must not slow the clock by several multiples.
+    for side in ('head','tail'):
+        window=spans[:16] if side=='head' else spans[-16:]
+        if sum(.65*fallback<=d<=1.5*fallback for d in window)>=4:
+            value=local([d for d in window if .65*fallback<=d<=1.5*fallback])
+            if side=='head':head=value
+            else:tail=value
+    beats=[observed[0]];filled=0
+    for i,span in enumerate(spans):
+        period=local(spans[max(0,i-8):i]+spans[i+1:i+9])
+        count=max(1,round(span/period)) if span>1.65*period else 1
+        # Keep every observed pulse at its exact timestamp. Fill gaps locally;
+        # never replace expressive timing by the global BPM estimate.
+        beats.extend(observed[i]+span*j/count for j in range(1,count))
+        beats.append(observed[i+1]);filled+=count-1
+    start=math.ceil(-beats[0]/head-1e-9)
+    before=[max(0.,beats[0]+i*head) for i in range(start,0)]
+    end=math.ceil((duration-beats[-1])/tail-1e-9)
+    after=[beats[-1]+i*tail for i in range(1,end)]
+    beats=before+beats+after
+    nearest=min(range(len(beats)),key=lambda i:abs(beats[i]-first));anchor=nearest%meter
+    confidence=0.
+    if (not locked and len(downbeats)>=4 and all(math.isfinite(t) for t in downbeats)
+            and all(b>a for a,b in zip(downbeats,downbeats[1:]))):
+        indices=[]
+        for t in downbeats:
+            i=bisect.bisect_left(beats,t)
+            choices=[j for j in (i-1,i) if 0<=j<len(beats)]
+            if not choices:continue
+            j=min(choices,key=lambda j:abs(beats[j]-t))
+            if abs(beats[j]-t)<=.15*fallback:indices.append(j)
+        indices=sorted(set(indices))
+        if len(indices)>=4:
+            votes=[sum(i%meter==phase for i in indices) for phase in range(meter)]
+            phase=max(range(meter),key=lambda phase:votes[phase])
+            adjacent=sum(b-a==meter for a,b in zip(indices,indices[1:]))
+            confidence=votes[phase]/len(indices) if adjacent>=3 else 0.
+            if confidence>=.85 and adjacent>=3:anchor=phase
+    return tuple(beats),anchor,head,tail,filled+len(before)+len(after),confidence,True
+
+
+class BeatClock:
+    """Shared musical coordinates for guides, counts, sheets and exported tempo."""
+    def __init__(self,project,duration=None):
+        self.basis=timing_basis(project,duration);b=self.basis
+        values=_completed_clock(tuple(b['beats']),tuple(b['downbeats']),b['bpm'],b['first'],
+                                b['meter'],b['mode'],b['locked'],b['duration'])
+        self.beats,self.anchor,self.head,self.tail,self.filled,self.confidence,self.detected=values
+        self.meter=b['meter'];self.first=b['first'];self.period=60/b['bpm']
+
+    def at(self,value):
+        if not self.detected:return self.first+value*self.period
+        index=value+self.anchor
+        if index<0:return self.beats[0]+index*self.head
+        if index>=len(self.beats)-1:return self.beats[-1]+(index-len(self.beats)+1)*self.tail
+        i=math.floor(index)
+        return self.beats[i]+(index-i)*(self.beats[i+1]-self.beats[i])
+
+    def coordinate(self,time):
+        if not self.detected:return (time-self.first)/self.period
+        if time<self.beats[0]:return (time-self.beats[0])/self.head-self.anchor
+        if time>=self.beats[-1]:return len(self.beats)-1+(time-self.beats[-1])/self.tail-self.anchor
+        i=bisect.bisect_right(self.beats,time)-1
+        return i+(time-self.beats[i])/(self.beats[i+1]-self.beats[i])-self.anchor
+
+    def period_at(self,time):
+        i=math.floor(self.coordinate(time)+1e-9)
+        return self.at(i+1)-self.at(i)
+
+    def payload(self):
+        return dict(version=1,basis=self.basis,beats=list(self.beats),anchor=self.anchor,
+                    head=self.head,tail=self.tail,filled=self.filled,phaseConfidence=self.confidence,detected=self.detected)
+
+
+def prepare_clock(project):
+    """Resolve automatic bar phase once before saving a review or rendering its guides."""
+    clock = BeatClock(project)
+    correction = None
+    if clock.detected and not project.get('gridLocked') and clock.confidence >= .85:
+        if round(clock.coordinate(project['settings']['firstBeat'])) % clock.meter:
+            correction = clock.at(0)
+            project['settings']['firstBeat'] = correction
+            clock = BeatClock(project)
+    return clock, correction
+
+
+def metronome_grid(project, duration):
+    return list(BeatClock(project,duration).beats)
 
 
 def grid(project):
-    s=project['settings'];meter=s['beatsPerBar']
-    beats=sorted(set(t for t in project.get('beats',[]) if math.isfinite(t) and t>=0))
-    period=60/pulse_bpm(project)
-    if s['gridMode']=='detected' and len(beats)>1:
-        anchor=min(range(len(beats)),key=lambda i:abs(beats[i]-s['firstBeat']))%meter
-        head=statistics.median([b-a for a,b in zip(beats,beats[1:])][:8])
-        tail=statistics.median([b-a for a,b in zip(beats,beats[1:])][-8:])
-        def at(i):
-            if i<0:return beats[0]+i*head
-            if i>=len(beats):return beats[-1]+(i-len(beats)+1)*tail
-            return beats[i]
-        def following(t):
-            if t<=beats[0]+1e-7:return anchor
-            if t>beats[-1]:return len(beats)-1+math.ceil((t-beats[-1])/tail-1e-7)
-            return bisect.bisect_left(beats,t-1e-7)
-        return at,following,anchor
-    first=s['firstBeat']
-    return lambda i:first+i*period,lambda t:math.ceil((t-first)/period-1e-7),0
+    clock=BeatClock(project)
+    return (lambda i:clock.at(i-clock.anchor),
+            lambda t:math.ceil(clock.coordinate(t)-1e-7)+clock.anchor,clock.anchor)
 
 
 def count_plan(project,position=0):
     s=project['settings'];meter=s['beatsPerBar'];n=s['countBars']*meter
     if not n:return dict(lead=0,end=0,target=position,events=[])
-    first=s['firstBeat'];period=60/pulse_bpm(project)
-    at=lambda i:first+i*period
-    # At the beginning, hand over on the first nonnegative downbeat. Extend
-    # the saved phase backwards instead of waiting through an untracked intro.
-    target=(math.ceil(-first/(period*meter)-1e-9)*meter if position<=0 else
-            math.ceil((position-first)/period-1e-9))
+    clock=BeatClock(project);at=clock.at
+    target=(math.ceil(clock.coordinate(0)/meter-1e-9)*meter if position<=0 else
+            math.ceil(clock.coordinate(position)-1e-9))
     anchor=0
     # Count every beat through an opening pickup, including the final "four".
     # The music keeps its pickup; the generated click takes over on the "one".
@@ -75,6 +163,37 @@ def count_plan(project,position=0):
                  number=(i-anchor)%meter+1,spoken=i>=target-meter)
             for i in range(target-n,target)]
     return dict(lead=lead,end=at(target)-position+lead,target=at(target),events=events)
+
+
+def tempo_envelope(project,preroll=0):
+    """REAPER square tempo points: one pulse between consecutive clock beats.
+
+    Without a count-in, the leading partial measure gets its own short time
+    signature. This preserves the audio positions and all later bar accents.
+    """
+    clock=BeatClock(project);scale=pulse_scale(project['settings']);meter=clock.meter
+    coordinate=clock.coordinate(-preroll);index=math.floor(coordinate+1e-9)
+    exact=abs(clock.at(index)+preroll)<1e-7
+    pickup=(-index)%meter if exact else 0
+    denominator=8 if scale==1.5 else 4
+    def point(time,i,pulses=0,partial=False):
+        return dict(time=max(0.,time),bpm=60*scale/(clock.at(i+1)-clock.at(i)),
+                    numerator=pulses*(3 if scale==1.5 else 1),denominator=denominator,
+                    flags=(5 if partial else 1) if pulses else 0)
+    points=[point(0,index,pickup or meter)]
+    limit=clock.basis['duration']+preroll
+    for i in range(index+1,math.ceil(clock.coordinate(clock.basis['duration']))+1):
+        time=clock.at(i)+preroll
+        if time>=limit-1e-9:break
+        if not exact:
+            pickup=(-i)%meter
+            item=point(time,i,pickup or meter,True);exact=True
+        elif pickup and i%meter==0:
+            item=point(time,i,meter);pickup=0
+        else:item=point(time,i)
+        # Keep every tempo change, without redundant points on a fixed grid.
+        if item['flags'] or abs(item['bpm']-points[-1]['bpm'])>1e-8:points.append(item)
+    return points
 
 
 def audio_entry(audio):
@@ -116,7 +235,7 @@ def align_intro_sections(project,entry,force=False):
         else:break
     intros=[i for i in prefix if intro(rows[i])]
     if not intros or not all(editable(rows[i]) for i in prefix):return p
-    at,_,anchor=grid(p);meter=p['settings']['beatsPerBar'];beats=p['beats']
+    at,_,anchor=grid(p);meter=p['settings']['beatsPerBar'];beats=list(BeatClock(p).beats)
     first=next((i for i in prefix if rows[i]['name'].strip().casefold()=='levée'),intros[0])
     if not 0<=entry<rows[first]['end']:return p
     nearest=min(beats,key=lambda t:abs(t-entry));period=60/pulse_bpm(p)
@@ -141,3 +260,13 @@ def align_intro_sections(project,entry,force=False):
         rows.insert(0,dict(id=str(uuid.uuid4()),name='Avant départ',start=0,end=start,
                           origin='intro-calibration',locked=False,reviewed=False,announce=False))
     return p
+
+
+if __name__ == '__main__':
+    import argparse
+    import json
+    import sys
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--clock', action='store_true', required=True)
+    parser.parse_args()
+    json.dump(BeatClock(json.load(sys.stdin)).payload(), sys.stdout, allow_nan=False)

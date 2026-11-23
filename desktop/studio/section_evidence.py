@@ -1,6 +1,8 @@
 """Conservative audio checks for proposed structure, never manual boundaries."""
 import copy
+import math
 import uuid
+from pathlib import Path
 import numpy as np
 
 
@@ -46,14 +48,107 @@ def supports_change(project,time,features=None):
     return sum((e['harmony']>.12 or e['texture']>.08,e['bass']>.30,e['voice']>.30,e['drums']>.30))>=2
 
 
+def _line_entries(project):
+    return [line['words'][0] for line in project.get('lyrics', []) if line.get('words')]
+
+
+def _attack(stream, time):
+    """Local rise in channel power around a timestamp, independent of track gain."""
+    hop = max(1, round(stream.samplerate * .01))
+    start = round(time * stream.samplerate) - 10 * hop
+    if start < 0 or start + 18 * hop > stream.frames:
+        return 0.
+    stream.seek(start)
+    audio = stream.read(18 * hop, dtype='float32', always_2d=True)
+    energy = np.sqrt(np.mean(audio.reshape(18, hop, -1) ** 2, axis=(1, 2)))
+    peak = float(max(energy[8:16]))
+    return max(0., peak - float(np.median(energy[:7]))) / max(peak, .003)
+
+
+def _arrival_in_audio(project, downbeat, marker, pulse):
+    import soundfile as sf
+    from preparation import media_file
+    if not project.get('_root'):
+        return None
+    labels = {'drums':'la batterie', 'drum_kick':'la grosse caisse', 'bass':'la basse', 'source':'le mix'}
+    for role, label in labels.items():
+        for track in project.get('tracks', []):
+            if track['role'] != role or not track.get('file'):
+                continue
+            offset = track.get('offset', 0)
+            try:
+                with sf.SoundFile(media_file(Path(project['_root']), track['file'])) as stream:
+                    on_bar = _attack(stream, downbeat - offset)
+                    on_marker = _attack(stream, marker - offset)
+            except (OSError, RuntimeError, ValueError):
+                continue
+            # Two windows separated by just a few tens of ms can contain the same attack.
+            same_attack = marker - downbeat <= .1 * pulse and on_bar >= on_marker - .05
+            if on_bar >= .40 and (same_attack or on_bar >= on_marker + .15):
+                return label
+    return None
+
+
+def align_bar_arrivals(project):
+    """Correct late automatic boundaries only when the local musical attack agrees."""
+    from musical_timing import BeatClock
+    from structure_review import protected
+    rows = copy.deepcopy(project.get('sections', []))
+    changes = []
+    if not rows:
+        return rows, changes
+    clock = BeatClock(project)
+    fixed = project.get('settings', {}).get('gridMode') == 'fixed'
+    if not fixed and (not clock.detected or (not project.get('gridLocked') and clock.confidence < .85)):
+        return rows, changes
+    entries = _line_entries(project)
+    for previous, current in zip(rows, rows[1:]):
+        old = current['start']
+        if (protected(previous) or protected(current) or abs(previous['end'] - old) > 1e-7
+                or previous.get('announce') is False or current.get('announce') is False):
+            continue
+        index = math.floor(clock.coordinate(old) / clock.meter) * clock.meter
+        bar = clock.at(index)
+        pulse = clock.at(index + 1) - bar
+        if not (1e-6 < old - bar <= pulse / 2):
+            continue
+        # The attack must be inside two substantial sections, never a short break or pickup.
+        if previous['start'] > clock.at(index - clock.meter) + 1e-7 or current['end'] < clock.at(index + clock.meter) - 1e-7:
+            continue
+        if clock.detected and not fixed:
+            observed = project.get('beats', [])
+            if not observed or not observed[0] <= bar <= observed[-1]:
+                continue
+        nearby = [w for w in entries if bar - .15 * pulse <= w['start'] <= old + .15 * pulse]
+        if any(not w.get('timingReview') and abs(w['start'] - old) < abs(w['start'] - bar)
+               and w['start'] - bar > .15 * pulse for w in nearby):
+            continue
+        vocal = any(not w.get('timingReview') and abs(w['start'] - bar) <= .15 * pulse
+                    and abs(w['start'] - bar) < abs(w['start'] - old) for w in nearby)
+        source = 'le chant' if vocal else _arrival_in_audio(project, bar, old, pulse)
+        if source:
+            previous['end'] = current['start'] = bar
+            changes.append(dict(id=str(uuid.uuid4()), kind='adjust', time=bar, before=current['name'], after=current['name'],
+                                reason=f'Début ramené de {old:.3f} s à {bar:.3f} s sur le premier temps entendu dans {source}.'))
+    # The structure model reports its last analysis frame; keep the final audio samples in the section.
+    tail = rows[-1]
+    duration = clock.basis['duration']
+    if (tail.get('origin') in ('analysis', 'automatic-review', 'intro-calibration') and not protected(tail)
+            and 0 < duration - tail['end'] <= .05):
+        tail['end'] = duration
+    return rows, changes
+
+
 def refine(project,features=None):
     from musical_patterns import describe
     from structure_review import protected,measures
     rows=copy.deepcopy(project.get('sections',[]));changes=[]
-    bars,_=measures(project);beats=np.asarray(project.get('beats',[]))
+    from musical_timing import BeatClock
+    bars,_=measures(project);beats=np.asarray(BeatClock(project).beats)
     if not bars or len(beats)<4:return rows,changes
     if features is None:features=describe(project)
     if features is None:return rows,changes
+    entries=_line_entries(project)
     for i in range(1,len(rows)):
         previous,current=rows[i-1:i+1];old=current['start']
         if protected(previous) or protected(current) or abs(previous['end']-old)>.001:continue
@@ -70,6 +165,8 @@ def refine(project,features=None):
         if not candidates or not before:continue
         ranked=[]
         for at in candidates:
+            if 0 < at-old <= .5*pulse and any(old-.1*pulse <= w['start'] < at for w in entries):
+                continue  # A sung pickup belongs to the incoming section.
             e=boundary(features,at)
             # Joint harmonic/bass novelty, not a loud fill or a vocal pickup.
             if not e or e['harmony']<.17 or e['bass']<.30:continue

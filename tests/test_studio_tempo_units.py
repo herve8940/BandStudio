@@ -40,7 +40,7 @@ def test_fixed_quarter_tempo_converts_to_dotted_pulses_everywhere():
     assert tempo_info(p)['bpm']==113 and tempo_info(p)['source']=='manual'
     assert pulse_bpm(p)==pytest.approx(113/1.5)
     beats,_=beat_grid(p)
-    assert beats[:3]==pytest.approx([.98,.98+90/113,.98+180/113])
+    assert beats[:3]==pytest.approx([.98-90/113,.98,.98+90/113])
     assert model.period(p,0)==pytest.approx(90/113)
     assert count_plan(p)['events'][1]['time']-count_plan(p)['events'][0]['time']==pytest.approx(90/113)
     sheet=practice_grid(p)

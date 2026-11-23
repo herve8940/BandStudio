@@ -224,6 +224,7 @@ def test_chord_only_uncertainty_uses_existing_one_click_listening(manual_page):
     page,p=manual_page;proposal=ui_proposal(p);proposal.update(changes=[],reviewPassages=[dict(id='c',start=2,end=6,reason='Accords'),dict(id='d',start=12,end=16,reason='Variante')],repeatedGroups=1)
     p['structureProposal']=proposal
     page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:2})',p)
+    page.locator('[data-workspace-mode=structure]').click()
     assert page.locator('#listenStructure').is_enabled()
     assert '2 passages à écouter' in page.locator('#structureReviewListening').inner_text()
     page.locator('#listenStructure').click()
@@ -234,6 +235,7 @@ def test_chord_only_uncertainty_uses_existing_one_click_listening(manual_page):
 
 def test_recall_still_needs_only_existing_two_click_flow(manual_page):
     page,p=manual_page
+    page.locator('[data-workspace-mode=structure]').click()
     page.evaluate('sent=[]')
     page.locator('#reviewStructure').click()
     p['structureProposal']={**ui_proposal(p),'changes':[],'reviewPassages':[],

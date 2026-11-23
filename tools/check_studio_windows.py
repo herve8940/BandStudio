@@ -19,7 +19,7 @@ def check(archive,report):
             invalid=[name for name in z.namelist() if not (root/name).resolve().is_relative_to(root)]
             assert not invalid,invalid[:3]
             z.extractall(root)
-        package=root/'BandStudio-DEV';engine=package/'engine';python=engine/'python/python.exe';launcher=engine/'windows/launcher.py'
+        package=root/'BandStudio';engine=package/'engine';python=engine/'python/python.exe';launcher=engine/'windows/launcher.py'
         assert (package/'BandStudio.exe').is_file()
         env=os.environ.copy();env.update(PYTHONUTF8='1',PYTHONIOENCODING='utf-8',PYTHONNOUSERSITE='1',PYTHONPATH='',LOCALAPPDATA=str(root/'LocalAppData'))
         # Python's ZIP extractor does not propagate Explorer's Mark of the Web.

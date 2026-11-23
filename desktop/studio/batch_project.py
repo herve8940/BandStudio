@@ -141,20 +141,10 @@ def apply(item, stage, root, folder, library):
         from chord_sources import apply as apply_chord_reference
         apply_chord_reference(p,result)
     elif stage=='lyrics':
-        p['lyricsReference']=result.get('lyricsReference')
-        entries = []
-        for row in result['segments']:
-            start, end = row.get('start', row.get('t', 0)), min(model.duration(p), row['end'])
-            if end <= start:
-                continue
-            entry = dict(id=model.ident(), start=start, end=end,
-                         text=row.get('text', row.get('label', '')), manual=False, sourceURL=row.get('sourceURL'),confidence=row.get('confidence'))
-            if stage == 'lyrics':
-                entry['words'] = [dict(start=w['t'], end=w['end'], text=w['w'])
-                                  for w in row.get('words', []) if start <= w['t'] < w['end'] <= end + .1]
-            entries.append(entry)
-        p[stage] = sorted(entries, key=lambda x: x['start'])
+        model.apply_lyrics(p,result)
     elif stage == 'guides':
+        p['timingGrid'] = result.get('timingGrid')
+        if not p.get('gridLocked') and result.get('firstBeatCorrection') is not None:p['settings']['firstBeat']=result['firstBeatCorrection']
         previous_guides = p['tracks']
         p['tracks'] = [t for t in p['tracks'] if not t['role'].startswith('guide_')]
         # Count-ins also need the individual spoken numbers and section-call assets.

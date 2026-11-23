@@ -24,6 +24,29 @@ def song(first=2.68,period=.64,phase=0):
     return p
 
 
+def test_legacy_display_and_pdf_get_the_same_clock_before_guides(tmp_path):
+    import subprocess
+    from musical_timing import BeatClock
+    from windows.host import Api
+    p=song(first=.3,period=.5);p['sessionDuration']=24
+    p['downbeats']=p['beats'][::4];del p['beats'][8:10]
+    raw=copy.deepcopy(p['beats']);sections=copy.deepcopy(p['sections'])
+    api=Api(tmp_path/'engine',tmp_path/'library');api._project=p;api._root=tmp_path
+    messages=[];api._send=messages.append
+    try:
+        for first in (.3,.45):
+            p['settings']['firstBeat']=first
+            api._state()
+            grid=next(m['project']['timingGrid'] for m in messages if m['type']=='state')
+            expected=BeatClock(p).payload()
+            cli=subprocess.run([sys.executable,str(Path(__file__).resolve().parents[1]/'desktop/studio/musical_timing.py'),'--clock'],
+                               input=json.dumps(p),text=True,capture_output=True,check=True)
+            assert grid==json.loads(cli.stdout)==expected and grid['filled']>=2
+            messages.clear()
+        assert 'timingGrid' not in p and p['beats']==raw and p['sections']==sections
+    finally:api._audio.close()
+
+
 @pytest.mark.parametrize('first,period,phase',[(2.68,.64,0),(.56,.62,1),(1.01,.54,3),(.26,.5,0),(12,.5,0)])
 def test_full_count_hands_over_at_first_downbeat_with_pickup_preserved(first,period,phase):
     p=song(first,period,phase);plan=count_plan(p)
@@ -35,14 +58,14 @@ def test_full_count_hands_over_at_first_downbeat_with_pickup_preserved(first,per
     assert plan['lead']>=0 and plan['events'][0]['time']>=0
 
 
-def test_seek_uses_constant_tempo_and_saved_downbeat_phase():
+def test_seek_follows_recorded_tempo_and_saved_downbeat_phase():
     p=song();p['beats']=[.2,.7,1.22,1.75,2.3,2.82,3.38,3.94,4.52,5.1];p['settings']['firstBeat']=.7
     plan=count_plan(p,3.8)
-    assert plan['target']==pytest.approx(3.9)
-    assert plan['events'][-1]['number']==1
-    assert plan['events'][-1]['end']-plan['events'][-1]['time']==pytest.approx(.64)
-    exact=count_plan(p,3.9)
-    assert exact['target']==pytest.approx(3.9)
+    assert plan['target']==pytest.approx(3.94)
+    assert plan['events'][-1]['number']==2
+    assert plan['events'][-1]['end']-plan['events'][-1]['time']==pytest.approx(.56)
+    exact=count_plan(p,3.94)
+    assert exact['target']==pytest.approx(3.94)
     p['settings']['countBars']=0
     assert count_plan(p,3.8)==dict(lead=0,end=0,target=3.8,events=[])
 

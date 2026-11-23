@@ -161,6 +161,7 @@ def ctc_frames(audio,language,folder):
     import torch
     import reacue_words
     import reacue_performance
+    from analysis_progress import emit
     reacue_performance.configure_torch(torch)
     files=reacue_words.model_files(language,download=False)
     path=Path(audio);stat=path.stat()
@@ -177,9 +178,12 @@ def ctc_frames(audio,language,folder):
         # XLSR emits a frame every 20 ms. Include context at chunk boundaries
         # and discard its frames; no duplicated or missing sung words.
         frame=320;chunk=20*16000;context=16000
+        total=math.ceil(len(wav)/chunk)
         with torch.inference_mode():
             for start in range(0,len(wav),chunk):
-                print(f'Recalage vocal {language} : {start//chunk+1}/{math.ceil(len(wav)/chunk)}',flush=True)
+                label=f'Analyse du chant ({language}) · extrait {start//chunk+1} sur {total}'
+                emit(progressLabel=label, indeterminate=True)
+                print(label,flush=True)
                 end=min(len(wav),start+chunk)
                 a=max(0,start-context);b=min(len(wav),end+context)
                 logits,_=reacue_words.emissions(model,wav[a:b],normalize)
@@ -486,7 +490,8 @@ def reconstruct(segments,proposal,jobs,aligned,position,source):
         if valid:
             for index,(w,text) in enumerate(zip(words,expected),job['first']):
                 acoustic[index]={**w,'w':text}
-                if w.get('score',0)<.08 or not math.isfinite(result.get('score',0)) or result.get('score',0)<.15:uncertain.add(index)
+                if w.get('score',0)<.08 or not math.isfinite(result.get('score',0)) or result.get('score',0)<.15:
+                    uncertain.add(index);acoustic[index]['timingReview']=True
     result=[];cursor=0;review=0
     manual=[copy.deepcopy(s) for s in segments if s.get('manual')]
     for line_index,row in enumerate(proposal['rows']):

@@ -47,6 +47,10 @@ struct Preparation: Codable {
     var validatedAt:String? = nil
 }
 struct LyricsReference: Codable {
+    struct LineTimingCheck:Codable {
+        var publisher:String;var url:String;var compared:Int;var consistent:Int;var offsetSeconds:Double
+    }
+    var lineTimingCheck:LineTimingCheck? = nil
     var alignmentVersion:Int? = nil
     var status:String
     var message:String
@@ -69,6 +73,7 @@ struct StudioProject: Codable {
     var cues: [Cue] = []
     var bpm = 0.0
     var beats: [Double] = []
+    var timingGrid:TimingGrid?=nil
     var notes = ""
     var settings=GuideSettings()
     var guideFiles:[String:String]=[:]
@@ -89,13 +94,15 @@ struct StudioProject: Codable {
     var duration: Double { max(sessionDuration,tracks.filter{!$0.role.hasPrefix("guide_")}.map { $0.duration + $0.offset }.max() ?? 0) }
 
     func analysisDone(_ kind:String)->Bool {
-        if kind == "chords" {return chordReference != nil || chords.contains{$0.manual} || preparation?.fingerprint != nil}
+        if kind == "chords" {
+            return preparation?.fingerprint != nil || chords.contains{$0.manual}
+                || (chordReference?.sources.isEmpty == false && chords.contains{!($0.sourceURL ?? "").isEmpty})
+        }
         if ["grid","smartgrid"].contains(kind) {return gridLocked || preparation?.fingerprint != nil || settings.gridMode=="fixed" || !beats.isEmpty || analysesCompleted.contains(where:{["grid","smartgrid"].contains($0)})}
-        if ["structure","lyrics","chords","drums","key"].contains(kind),preparation?.fingerprint != nil || analysesCompleted.contains(kind) {return true}
+        if ["structure","lyrics","drums","key"].contains(kind),preparation?.fingerprint != nil || analysesCompleted.contains(kind) {return true}
         switch kind {
         case "structure":return !sections.isEmpty
         case "lyrics":return !lyrics.isEmpty
-        case "chords":return !chords.isEmpty
         case "drums":return !drumHits.isEmpty
         case "key":return !key.isEmpty
         case "separate":return tracks.contains{["drums","bass","vocals","other","guitar","piano"].contains($0.role)}
@@ -164,7 +171,7 @@ struct StudioProject: Codable {
         try data.write(to:root.appendingPathComponent("project.json"),options:.atomic)
     }
     mutating func applySections(_ suggestions: [Section]) {
-        let protected = sections.filter { $0.locked || $0.origin == "manual" }
+        let protected = sections.filter { $0.locked || $0.reviewed == true || $0.origin == "manual" }
         var result = protected
         // Preserve manual regions. Trim new suggestions around protected intervals.
         for var s in suggestions {

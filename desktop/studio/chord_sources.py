@@ -18,8 +18,7 @@ from urllib.parse import urlsplit, urlencode, urljoin, parse_qs, quote
 from urllib.error import HTTPError
 from urllib.request import Request, HTTPRedirectHandler, build_opener
 
-from chord_provider_defaults import PROVIDERS
-CATALOG_VERSION = 9
+from chord_provider_defaults import CATALOG_VERSION, PROVIDERS
 NETWORK_BUDGET = 14.
 CACHE_RETRY_SECONDS = 300.
 HOSTS = {host for p in PROVIDERS if p.get('template') for host in (p['domain'],'www.'+p['domain'])} | {'www.cifraclub.com.br','cifraclub.com.br'}
@@ -48,6 +47,13 @@ NAME_TAG = re.compile(r'\s*[\[(](?:'
     r'|\d{2,3} ?k(?:bit|bps)?s?(?:[ _-]?(?:aac|mp3|opus|ogg|m4a|vorbis|webm))?|aac|mp3|opus|m4a'
     r')[\])]', re.I)
 NAME_PREFIX = re.compile(r'^(?:(?:full|mix|master|stereo|original)_+|\d{1,3}(?:[_.]+|\s+-\s+))', re.I)
+VIDEO_CHAPTER = re.compile(r'\s+[\[(](?:chap\.?|chapitre|chapter)\s+(?:[ivxlcdm]{1,8}|\d{1,3})[\])]\s*$', re.I)
+
+
+def chart_titles(title):
+    """Try the published video title first, then its title without a chapter tag."""
+    base = VIDEO_CHAPTER.sub('', title).strip()
+    return (title, base) if base and base != title else (title,)
 
 
 def clean_name(value):
@@ -284,6 +290,7 @@ class Chart(HTMLParser):
     def __init__(self,provider='cifraclub'):
         super().__init__();self.provider=provider;self.title='';self.chords=[];self.transitions=[];self.sections={};self.section=None;self.previous=None;self.stack=[];self.capo=0
         self.sectionSequences=[];self.sequence=None;self.sectionOrder=[];self.chordSequence=[];self.hasTab=False
+        self.hasInferredCopies=False
     def heading(self,kind,name=None):
         self.section=kind;self.sections.setdefault(kind,[])
         if len(self.sectionOrder)<128:self.sectionOrder.append((name or kind).strip()[:70])
@@ -291,6 +298,17 @@ class Chart(HTMLParser):
         if len(self.sectionSequences)<128:self.sectionSequences.append(self.sequence)
     def handle_starttag(self,tag,attrs):
         attrs=dict(attrs)
+        if self.provider=='topaccords' and tag=='span':
+            classes=attrs.get('class','').split()
+            if 'chords' in classes:
+                ancestors={c for t,a in self.stack if t=='div' for c in a.get('class','').split()}
+                if {'partition-content','paroles','lyrics-line'}<=ancestors:
+                    if 'copie' in classes:
+                        self.hasInferredCopies=True
+                    else:
+                        # The publisher's underlying chords are already in concert pitch,
+                        # including charts with a suggested capo. The display can be transposed.
+                        self.add_chord(attrs.get('data-chords') or '')
         if self.provider=='khmerchords' and attrs.get('id')=='lc-content':
             capo=attrs.get('data-capo','')
             if capo.isdigit():self.capo=min(12,int(capo))
@@ -326,15 +344,19 @@ class Chart(HTMLParser):
             repeat=re.fullmatch(r'\s*\(?\s*(?:[x×]\s*(\d{1,2})|(\d{1,2})\s*[x×])\s*\)?\s*',text,re.I)
             if repeat and self.sequence and self.sequence['chords']:
                 self.sequence['repeat']=min(16,max(1,int(repeat[1] or repeat[2])))
-        if in_chord and len(token)<=24 and CHORD.fullmatch(token):
-            if len(self.chordSequence)<512:self.chordSequence.append(token)
-            if token not in self.chords and len(self.chords)<60:self.chords.append(token)
-            if self.sequence is not None and len(self.sequence['chords'])<256:self.sequence['chords'].append(token)
-            if self.section and token not in self.sections[self.section] and token in self.chords:self.sections[self.section].append(token)
-            pair=[self.previous,token]
-            if self.previous and token!=self.previous and pair not in self.transitions and len(self.transitions)<360:
-                self.transitions.append(pair)
-            self.previous=token
+        if in_chord:self.add_chord(token)
+
+    def add_chord(self, token):
+        token=token.strip()
+        if len(token)>24 or not CHORD.fullmatch(token):return
+        if len(self.chordSequence)<512:self.chordSequence.append(token)
+        if token not in self.chords and len(self.chords)<60:self.chords.append(token)
+        if self.sequence is not None and len(self.sequence['chords'])<256:self.sequence['chords'].append(token)
+        if self.section and token not in self.sections[self.section] and token in self.chords:self.sections[self.section].append(token)
+        pair=[self.previous,token]
+        if self.previous and token!=self.previous and pair not in self.transitions and len(self.transitions)<360:
+            self.transitions.append(pair)
+        self.previous=token
 
 
 class SongLinks(HTMLParser):
@@ -354,6 +376,19 @@ class SongLinks(HTMLParser):
                 and url not in self.urls and len(self.urls)<MAX_DISCOVERED_URLS):self.urls.append(url)
 
 
+def transposed_chart(source, steps):
+    """Transpose all pitch-bearing facts together, including inversions and ordered phrases."""
+    names=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']
+    pcs=dict(C=0,D=2,E=4,F=5,G=7,A=9,B=11)
+    def transpose(label):
+        return re.sub(r'(^|/)([A-G])([#b]?)',lambda m:m[1]+names[(pcs[m[2]]+{'':0,'#':1,'b':-1}[m[3]]+steps)%12],label)
+    def labels(rows):return [transpose(c) for c in rows]
+    return {**source,'chords':labels(source['chords']),'chordSequence':labels(source.get('chordSequence') or []),
+            'transitions':[labels(pair) for pair in source.get('transitions') or []],
+            'sections':{k:labels(row) for k,row in (source.get('sections') or {}).items()},
+            'sectionSequences':[{**s,'chords':labels(s['chords'])} for s in source.get('sectionSequences') or []]}
+
+
 def _read_chart(provider,title,artist,url):
     status='not_found';source=None
     try:
@@ -364,28 +399,23 @@ def _read_chart(provider,title,artist,url):
             raise ValueError('Adresse de grille invalide.')
         chart=Chart(provider['id']);chart.feed(page)
         if provider['id']=='ukuleletabs' and urlsplit(url).path.endswith('-uke-tabs.html') and not chart.chords:
-            links=SongLinks(url,title);links.feed(page)
-            for candidate in links.urls:
-                request_timeout()
-                result=_read_chart(provider,title,artist,candidate)
-                if result[1]!='not_found':return result
+            for edition in chart_titles(title):
+                links=SongLinks(url,edition);links.feed(page)
+                for candidate in links.urls:
+                    request_timeout()
+                    result=_read_chart(provider,edition,artist,candidate)
+                    if result[1]!='not_found':return result
             return provider['id'],'not_found',None
         from chart_sections import extract as section_anchors,SCHEMA as ANCHOR_SCHEMA
         if matches_heading(chart.title,title,artist) and chart.chords:
             source=dict(title=title+' — '+artist,publisher=provider['publisher'],url=url,chords=chart.chords,transitions=chart.transitions,sections=chart.sections,
                         sectionSequences=[s for s in chart.sectionSequences if s['chords']],sectionOrder=chart.sectionOrder,
                         sectionAnchors=section_anchors(page),anchorSchema=ANCHOR_SCHEMA,
-                        chordSequence=chart.chordSequence if not chart.sectionOrder and not chart.hasTab else [])
+                        chordSequence=chart.chordSequence if not (chart.sectionOrder or chart.hasTab or chart.hasInferredCopies) else [])
             from chord_choice import reputation
             source.update(reputation(page,title))
             if chart.capo:
-                names=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];pcs=dict(C=0,D=2,E=4,F=5,G=7,A=9,B=11)
-                def transpose(chord):return re.sub(r'(^|/)([A-G])([#b]?)',lambda m:m[1]+names[(pcs[m[2]]+{'':0,'#':1,'b':-1}[m[3]]+chart.capo)%12],chord)
-                source['chords']=[transpose(c) for c in chart.chords]
-                source['chordSequence']=[transpose(c) for c in source['chordSequence']]
-                source['transitions']=[[transpose(c) for c in pair] for pair in chart.transitions]
-                source['sections']={key:[transpose(c) for c in values] for key,values in chart.sections.items()}
-                source['sectionSequences']=[{**s,'chords':[transpose(c) for c in s['chords']]} for s in source['sectionSequences']]
+                source=transposed_chart(source,chart.capo)
                 source['note']=f'Grille écrite avec capo {chart.capo} : accords convertis en tonalité entendue.'
             status='found'
     except HTTPError as error:status='not_found' if error.code==404 else 'unavailable'
@@ -425,8 +455,17 @@ def _discover_provider(provider,title,artist):
     return provider['id'],'not_found',None
 
 
+def _direct_chart(provider,title,artist):
+    editions = chart_titles(title) if '{title}' in provider['template'] else (title,)
+    for edition in editions:
+        result = _read_chart(provider,edition,artist,provider_url(provider,edition,artist))
+        if result[1] != 'not_found':
+            return result
+    return result
+
+
 def _read_provider(provider,title,artist):
-    result=_read_chart(provider,title,artist,provider_url(provider,title,artist))
+    result=_direct_chart(provider,title,artist)
     # A 403, rate limit or network error must not cause repeated publisher requests.
     return _discover_provider(provider,title,artist) if result[1]=='not_found' else result
 
@@ -448,7 +487,7 @@ def _search(title,artist,only=None):
             if discover:
                 result=_discover_provider(provider,title,artist)
             else:
-                result=_read_chart(provider,title,artist,provider_url(provider,title,artist))
+                result=_direct_chart(provider,title,artist)
                 # Give every publisher its direct attempt before spending the
                 # remaining budget discovering alternatives for missing charts.
                 if result[1]=='not_found':
@@ -470,8 +509,9 @@ def _search(title,artist,only=None):
 def lookup(project, *, reanalyze=False):
     title, artist = identity(project)
     query = ' '.join((artist,title)).strip()
-    previous = project.get('chordReference')
-    matching=previous and previous.get('query')==query and previous.get('status')=='found' and previous.get('catalogVersion')==CATALOG_VERSION
+    previous = project.get('chordReference') or {}
+    if previous.get('query')!=query:previous={}
+    matching=previous.get('status')=='found' and previous.get('catalogVersion')==CATALOG_VERSION
     retry=None
     if not reanalyze and matching:
         retry={c['id'] for c in previous.get('checks',[]) if c.get('status') in ('unavailable','not_found')}
@@ -481,23 +521,34 @@ def lookup(project, *, reanalyze=False):
         message='Aucune grille correspondante trouvée. Recherche une autre source sur Internet ; aucun accord n’a été inventé.')
     if artist and title:
         results=_search(title,artist,only=retry)
+        preferred=previous.get('selectedURL')
+        manual=bool(preferred) and previous.get('selectionMode','manual')=='manual'
         for provider in PROVIDERS:
             if not provider.get('template'):continue
             if retry is not None and provider['id'] not in retry:
                 source=next((copy.deepcopy(s) for s in previous['sources'] if s['publisher']==provider['publisher']),None)
                 status='found' if source else 'not_found'
             else:status,source=results.get(provider['id'],('unavailable',None))
+            if status=='unavailable' and not source:
+                # A temporary outage must not discard saved editions or change a manual choice.
+                source=next((copy.deepcopy(s) for s in previous.get('sources',[])
+                             if s.get('publisher')==provider['publisher'] and s.get('url')
+                             and safe_url(s['url']) and same_publisher(s['url'],'https://'+provider['domain'])),None)
             reference['checks'].append(dict(id=provider['id'],status=status))
             if source:reference['sources'].append(source)
         if reference['sources']:
-            preferred=(previous or {}).get('selectedURL') or next(iter((previous or {}).get('sources',[])),{}).get('url')
-            reference.update(status='found',selectedURL=next((s['url'] for s in reference['sources'] if s['url']==preferred),reference['sources'][0]['url']),
-                selectionMode=(previous or {}).get('selectionMode','manual' if (previous or {}).get('selectedURL') else 'automatic'),
+            kept=next((s for s in reference['sources'] if s['url']==preferred),None)
+            reference.update(status='found',selectedURL=(kept or reference['sources'][0])['url'],
+                selectionMode='manual' if kept and manual else 'automatic',
                 message=f"{len(reference['sources'])} grille(s) trouvée(s). Les versions restent séparées ; choisis la source à caler.")
         elif any(c['status']=='unavailable' for c in reference['checks']):
             reference.update(status='unavailable',message='Aucune grille récupérée : certaines sources sont indisponibles. Tu peux ouvrir les recherches ciblées ou réessayer.')
-    if reference['status']=='unavailable' and previous and previous.get('query')==query and previous.get('status')=='found':
+    offline=reference['checks'] and all(check['status']=='unavailable' for check in reference['checks'])
+    if (offline or reference['status']=='unavailable') and previous.get('status')=='found':
         return dict(engine='web-reference',segments=[],reference=copy.deepcopy(previous),cacheHit=True,cachedAfterFailure=True)
+    if artist and title and not reference['sources']:
+        delay = CACHE_RETRY_SECONDS if reference['status']=='unavailable' else 86400
+        reference['retryAfter'] = time.time()+delay
     return dict(engine='web-reference',segments=[],reference=reference,cacheHit=False)
 
 
@@ -522,12 +573,10 @@ def analyze(project,audio,*,reanalyze=False,source_url='',ordered=False,phrase_g
     if source_url and not any(s['url']==source_url for s in sources):raise ValueError('Cette grille ne fait pas partie des sources trouvées pour le morceau.')
     if sources:
         if source_url:
-            chosen=next(s for s in sources if s['url']==source_url)
-            result['reference']['selectionMode']='manual';result['reference']['selectionReason']='Ta grille choisie est conservée.'
-        else:
-            from chord_choice import choose
-            chosen,reason=choose({**project,'chordReference':result['reference']},sources)
-            result['reference']['selectionReason']=reason
+            result['reference'].update(selectedURL=source_url,selectionMode='manual')
+        from chord_choice import choose
+        chosen,reason=choose({**project,'chordReference':result['reference']},sources)
+        result['reference']['selectionReason']=reason
         result['reference']['selectedURL']=chosen['url']
         from advanced import media_path
         from chord_alignment import place
@@ -540,6 +589,10 @@ def analyze(project,audio,*,reanalyze=False,source_url='',ordered=False,phrase_g
         extra={'phrase_groups':phrase_groups} if phrase_groups else {}
         if chosen.get('chordSequence'):extra['written_chart']=chosen['chordSequence']
         result['segments'],alignment=place(*arguments,sequences=chosen.get('sectionSequences'),**extra) if ordered else place(*arguments)
+        shift=chosen.get('recordingTranspose',0)
+        if shift:
+            alignment['chartTranspose']=shift
+            alignment['message']+=f' Grille transposée de {shift:+d} demi-tons pour cet enregistrement.'
         result['reference']['message']=f"{len(sources)} grille(s) trouvée(s) · source utilisée : {chosen['publisher']}. "+alignment['message']
         result['reference']['message']+=' '+result['reference']['selectionReason']
         if result.get('cachedAfterFailure'):result['reference']['message']='Internet indisponible : utilisation de la source déjà enregistrée. '+alignment['message']

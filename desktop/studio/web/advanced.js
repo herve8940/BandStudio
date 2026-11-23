@@ -14,7 +14,7 @@ $('unlockTempo').onclick=()=>send('musicSettings',{gridLocked:false});
 $('editTempo').onclick=()=>{view('guides');$('setting-referenceBPM').focus();};
 $('markDownbeat').onclick=()=>{
  const s={...guideDefaults,...state.project.settings,firstBeat:transport.position||0};
- guideDirty=false;send('settings',{value:s});
+ dirtyGuideSettings.delete('firstBeat');guideDirty=dirtyGuideSettings.size>0;send('settings',{value:s});
 };
 let taps=[];
 $('tapTempo').onclick=()=>{
@@ -24,14 +24,14 @@ $('tapTempo').onclick=()=>{
  const deltas=taps.slice(1).map((v,i)=>v-taps[i]).sort((a,b)=>a-b);
  const bpm=60000/deltas[Math.floor(deltas.length/2)];
  if(bpm<20||bpm>400)return;
- $('setting-manualBPM').value=(bpm*($('setting-pulseUnit').value==='dottedQuarter'?1.5:1)).toFixed(1);$('setting-gridMode').value='fixed';guideDirty=true;
+ $('setting-manualBPM').value=(bpm*($('setting-pulseUnit').value==='dottedQuarter'?1.5:1)).toFixed(1);$('setting-gridMode').value='fixed';markGuideSetting('manualBPM');markGuideSetting('gridMode');
  $('tapResult').textContent=$('setting-manualBPM').value+' BPM à la noire · Appliquer au morceau pour enregistrer ce tempo fixe';
 };
 $('exportStems').onclick=()=>studioTask('stemsexport',{format:$('stemFormat').value});
 $('exportLyrics').onclick=()=>studioTask('lyricsexport',{format:$('lyricFormat').value});
 $('manualLyrics').onclick=()=>{
  if(!state.loaded||state.busy)return;
- view('prompter');$('annotationKind').value='lyrics';renderAnnotations();
+ window.openStudioEditor?.('lyrics');$('annotationKind').value='lyrics';renderAnnotations();
  const lines=state.project.lyrics||[],at=transport.position||0;
  const line=lines.find(x=>x.start<=at&&at<x.end)||lines.find(x=>x.start>=at)||lines.at(-1);
  openAnnotation(line);$('wordEditor').open=!!line?.words?.length;
@@ -67,16 +67,20 @@ renderFeatures=function(){oldFeatures();
 };
 const originalStage=renderStage;
 renderStage=function(){originalStage();
- const p=state.project,steps=transport.pitch||0,capo=p.capo||0;
- $('stageKey').textContent=p.key?'Tonalité entendue : '+transposeChord(p.key,steps):'Tonalité à déterminer';
- const chord=(p.chords||[]).find(c=>c.start<=(transport.position||0)&&c.end>(transport.position||0));
- if(chord)$('stageChord').textContent=transposeChord(chord.text,steps-capo)+(capo?' · capo '+capo:'');
+ const p=state.project;
+ $('stageKey').textContent=p.key?'Tonalité entendue · '+transposeChord(chordLabel(p.key),transport.pitch||0):'Tonalité à déterminer';
 };
 function wordRow(word){
  const row=node('div','word-edit-row');
  for(const [key,label] of [['start','Début du mot (s)'],['end','Fin du mot (s)'],['text','Mot']]){
   const input=node('input');input.dataset.word=key;input.type=key==='text'?'text':'number';input.value=word[key];input.setAttribute('aria-label',label);
-  if(key!=='text'){input.min=0;input.step=.001;}else input.maxLength=120;
+  if(key!=='text'){input.min=0;input.step=.001;}else{
+   input.maxLength=120;
+   if(word.timingReview){
+    input.classList.add('word-timing-review');input.title='Calage de ce mot à écouter';
+    input.setAttribute('aria-label','Mot dont le calage est à écouter');
+   }
+  }
   input.oninput=()=>{const text=[...$('wordRows').querySelectorAll('[data-word=text]')].map(x=>x.value).join(' ');$('annotationText').value=text;};
   row.append(input);
  }

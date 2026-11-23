@@ -93,11 +93,14 @@ def test_update_contains_model_and_can_use_original_code_only_allowlist(tmp_path
         # The original updater permits top-level .py, but not arbitrary JSON/data folders.
         assert not any(p.startswith('engine/cue-corrector/') for p in z.namelist())
         extracted=tmp_path/'extracted';z.extractall(extracted)
-    result=subprocess.run([sys.executable,'-c','import chord_sources; assert len(chord_sources.PROVIDERS)==22; assert sum(bool(p.get("template")) for p in chord_sources.PROVIDERS)==8'],
+    result=subprocess.run([sys.executable,'-c','import chord_sources; assert any(p["id"]=="topaccords" and p.get("template") for p in chord_sources.PROVIDERS)'],
                           cwd=extracted/'engine',capture_output=True,text=True)
     assert result.returncode==0,result.stderr
 
 
-def test_catalog_fallback_matches_native_catalog():
+def test_both_installers_export_the_worker_catalog(tmp_path):
+    from build_studio_mac import write_catalog as mac_catalog
+    from package_studio_windows import write_catalog as windows_catalog
     from chord_provider_defaults import PROVIDERS
-    assert PROVIDERS==json.loads((ROOT/'desktop/studio/chord-providers.json').read_text())
+    for build_catalog in (mac_catalog, windows_catalog):
+        assert json.loads(build_catalog(tmp_path).read_text())==PROVIDERS

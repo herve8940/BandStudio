@@ -28,6 +28,7 @@ Contre les hallucinations sur du chant :
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
 import os
 import sys
@@ -284,6 +285,29 @@ def detect_language(model, y, clips, prefer=("fr", "en")) -> tuple[str, float]:
     return best, round(probs.get(best, 0.0), 3)
 
 
+@contextmanager
+def report_decode_attempts(model, temperatures, status, index, count):
+    """Whisper's fallback runs inside a clip. Report real retries without changing decoding."""
+    if not isinstance(temperatures,(tuple,list)) or len(temperatures)<2:
+        yield
+        return
+    original=model.decode
+    had_override='decode' in vars(model)
+    def observed(mel,*args,**kwargs):
+        options=args[0] if args else kwargs.get('options')
+        value=getattr(options,'temperature',None)
+        if value in temperatures[1:]:
+            attempt=temperatures.index(value)+1
+            _write_status(status,'running',done=index,total=count,
+                          step=f'Extrait {index+1} sur {count} · lecture vocale {attempt} sur {len(temperatures)}')
+        return original(mel,*args,**kwargs)
+    model.decode=observed
+    try:yield
+    finally:
+        if had_override:model.decode=original
+        else:del model.decode
+
+
 def transcribe_array(model, y, lang: str = "auto", status: Path | None = None, decode: dict | None = None) -> dict:
     """Signal 16 kHz mono (numpy) -> résultat (voir l'en-tête du module)."""
     import torch
@@ -308,7 +332,8 @@ def transcribe_array(model, y, lang: str = "auto", status: Path | None = None, d
         if b - a < int(0.2 * SR):
             continue
         off = a / SR
-        r = whisper.transcribe(model, ym[a:b], language=lang, task="transcribe", verbose=None, **opts)
+        with report_decode_attempts(model,opts['temperature'],status,k,len(clips)):
+            r = whisper.transcribe(model, ym[a:b], language=lang, task="transcribe", verbose=None, **opts)
         for s in r.get("segments") or []:
             ws = [{"w": w["word"].strip(), "t": round(off + float(w["start"]), 3),
                    "end": round(off + float(w["end"]), 3), "p": round(float(w.get("probability", 0.0)), 3)}

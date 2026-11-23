@@ -115,8 +115,9 @@
   sourceDetails.hidden=!(proposal.sourceChecks||[]).length&&!found.length;
  }
  function beginAudition(selection=null){
-  const p=state.project,proposal=p.structureProposal,clips=selection||clipsFor(proposal);if(!proposal||!clips.length||state.busy||dirty())return;
-  audition={project:p.id,proposal:proposal.id,clips,index:0,armed:false,last:null,
+  const p=state.project,proposal=p.structureProposal,clips=(selection||clipsFor(proposal)).filter(c=>Number.isFinite(c.start)&&Number.isFinite(c.end)&&c.start>=0&&c.end>c.start&&c.end<=state.duration);
+  if(!state.loaded||!clips.length||state.busy||dirty())return;
+  audition={project:p.id,proposal:proposal?.id,clips,index:0,armed:false,last:null,
    loop:{on:!!transport.loop,start:transport.loopStart||0,end:transport.loopEnd||state.duration}};
   nextClip();
  }
@@ -135,6 +136,13 @@
   comparison.setAudition(null);
   if(stop&&previous.project===state.project.id){send('stop');send('loop',previous.loop);}
  }
+ // Every guided excerpt shares this transport controller and loop restoration.
+ // Lyrics and rhythm can be reviewed before a structure proposal exists.
+ window.studioAudition={
+  play(clip){stopAudition();beginAudition([clip]);},
+  stop:()=>stopAudition(),
+  current:()=>audition?.clips[audition.index]||null
+ };
  const beforeTransport=renderTransport;
  renderTransport=function(){
   beforeTransport();comparison.updateTransport();if(!audition)return;

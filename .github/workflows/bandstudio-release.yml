@@ -18,7 +18,7 @@ jobs:
       PYTHONUTF8: '1'
       PYTHONIOENCODING: utf-8
       BANDSTUDIO_BROWSER: chromium
-      BANDSTUDIO_TEST_ENGINE: ${{ github.workspace }}/dist/bandstudio/stage/BandStudio-DEV/engine
+      BANDSTUDIO_TEST_ENGINE: ${{ github.workspace }}/dist/bandstudio/stage/BandStudio/engine
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
@@ -42,7 +42,7 @@ jobs:
       - name: Verify rhythm, chord discovery, structure review and export on Windows
         run: python -m pytest -q tests/test_studio_rhythm_decoder.py tests/test_studio_web_chords.py tests/test_studio_chord_providers.py tests/test_studio_chord_discovery.py tests/test_studio_structure_review.py tests/test_studio_structure_sources.py tests/test_studio_first_import.py tests/test_studio_song_memory.py tests/test_studio_manual_editor.py tests/test_studio_song_sheet.py tests/test_studio_workspace.py --junitxml=dist/checks/music-regressions.xml
       - name: Verify complete preparation, lyrics, guide mixing and graphical comparison
-        run: python -m pytest -q tests/test_studio_complete_preparation.py tests/test_studio_lyrics_reference.py tests/test_studio_lyrics_alignment.py tests/test_studio_section_grid.py tests/test_studio_guide_mix.py tests/test_studio_section_evidence.py tests/test_studio_section_functions.py tests/test_studio_structure_comparison.py tests/test_studio_publication.py --junitxml=dist/checks/complete-preparation.xml
+        run: python -m pytest -q tests/test_studio_complete_preparation.py tests/test_studio_automatic_benchmark.py tests/test_studio_lyrics_reference.py tests/test_studio_lyrics_search.py tests/test_studio_lyrics_alignment.py tests/test_studio_section_grid.py tests/test_studio_guide_mix.py tests/test_studio_section_evidence.py tests/test_studio_section_functions.py tests/test_studio_structure_comparison.py tests/test_studio_publication.py --junitxml=dist/checks/complete-preparation.xml
       - name: Reproduce and repair analysis dependency failure
         run: python tools/check_studio_analysis.py --report dist/checks
       - run: python tools/check_studio_windows.py dist/bandstudio/BandStudio-1.1.0-Windows-x64.zip --report dist/checks
@@ -79,8 +79,10 @@ jobs:
       - name: Verify portable correction and protected cues
         run: python -m pytest -q tests/test_cue_corrector_release.py tests/test_cue_corrector_training.py tests/test_cue_corrector_portable.py tests/test_studio_cue_scheduling.py tests/test_studio_reanalysis.py
       - name: Verify automatic preparation and musical protection on both Mac architectures
-        run: python -m pytest -q tests/test_studio_complete_preparation.py tests/test_studio_lyrics_reference.py tests/test_studio_lyrics_alignment.py tests/test_studio_section_grid.py tests/test_studio_section_evidence.py tests/test_studio_section_functions.py
+        run: python -m pytest -q tests/test_studio_complete_preparation.py tests/test_studio_automatic_benchmark.py tests/test_studio_lyrics_reference.py tests/test_studio_lyrics_search.py tests/test_studio_lyrics_alignment.py tests/test_studio_section_grid.py tests/test_studio_section_evidence.py tests/test_studio_section_functions.py
       - run: python tools/build_studio_mac.py
+      - name: Verify native clock against recorded rhythm fixtures
+        run: python tools/check_studio_timing.py desktop-build/standalone/BandStudio.app/Contents/MacOS/BandStudio
       - name: Test native document and offline audio
         run: desktop-build/standalone/BandStudio.app/Contents/MacOS/BandStudio --self-test "$RUNNER_TEMP/BandStudio-test"
       - run: python tools/package_studio_update.py --platform ${{ matrix.platform }} --app desktop-build/standalone/BandStudio.app

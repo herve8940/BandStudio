@@ -18,6 +18,28 @@ def fresh(name='Nouveau morceau'):
 
 def duration(p):return max(p.get('sessionDuration',0),max((t['offset']+t['duration'] for t in p['tracks'] if not t['role'].startswith('guide_')),default=0))
 
+
+def apply_lyrics(p,result):
+    """Apply the same protected lyrics and word timing in the editor and batch queue."""
+    manual=[line for line in p.get('lyrics',[]) if line.get('manual')]
+    entries=list(manual)
+    limit=duration(p)
+    for row in result['segments']:
+        start=row.get('start',row.get('t',0));end=min(limit,row['end'])
+        if not 0<=start<end or any(line['start']<end and line['end']>start for line in manual):continue
+        words=[]
+        for w in row.get('words',[]):
+            if start<=w['t']<w['end']<=end+.1:
+                word=dict(start=w['t'],end=w['end'],text=w['w'])
+                if w.get('timingReview') is True:word['timingReview']=True
+                words.append(word)
+        line=dict(id=ident(),start=start,end=end,text=row.get('text',row.get('label','')),manual=False,
+                  words=words,sourceURL=row.get('sourceURL'),confidence=row.get('confidence'))
+        if isinstance(row.get('timingReview'),bool):line['timingReview']=row['timingReview']
+        entries.append(line)
+    p['lyrics']=sorted(entries,key=lambda x:x['start'])
+    p['lyricsReference']=result.get('lyricsReference')
+
 def relative_file(root,relative):
     root=Path(root).resolve();value=Path(relative)
     if value.is_absolute() or '..' in value.parts:raise ValueError('Fichier hors du projet.')
@@ -96,7 +118,7 @@ def track(path,root,name,role,offset=0):
     return dict(id=ident(),name=name,file=path.relative_to(root).as_posix(),role=role,duration=info.duration,offset=offset,gain=.8,pan=0,muted=False,solo=False,peaks=waveform(path),peaksVersion=2)
 
 def guide_key(p):
-    value={k:p[k] for k in ['settings','bpm','beats','sections','cues']};value['duration']=duration(p)
+    value={k:p[k] for k in ['settings','bpm','beats','sections','cues']};value['duration']=duration(p);value['downbeats']=p.get('downbeats',[]);value['gridLocked']=p.get('gridLocked',False)
     value=copy.deepcopy(value)
     value['settings'].pop('referenceBPM',None)
     if value['settings']['gridMode']=='detected':value['settings'].pop('pulseUnit',None)
@@ -106,14 +128,14 @@ def guide_key(p):
     for item in value['sections']+value['cues']:
         for key in ('reviewed','locked','origin'):item.pop(key,None)
     # Platform names prevent accidentally reusing Mac voice assets after editing on Windows.
-    return 'windows-guides-8:'+hashlib.sha256(json.dumps(value,sort_keys=True,allow_nan=False).encode()).hexdigest()
+    return 'windows-guides-9:'+hashlib.sha256(json.dumps(value,sort_keys=True,allow_nan=False).encode()).hexdigest()
 
 def period(p,at):
-    from musical_timing import pulse_bpm
-    return 60/pulse_bpm(p)
+    from musical_timing import BeatClock
+    return BeatClock(p).period_at(at)
 
 def apply_sections(p,suggestions):
-    protected=[s for s in p['sections'] if s.get('locked') or s.get('origin')=='manual'];result=copy.deepcopy(protected)
+    protected=[s for s in p['sections'] if s.get('locked') or s.get('reviewed') or s.get('origin')=='manual'];result=copy.deepcopy(protected)
     for section in suggestions:
         ranges=[(max(0,section['start']),min(duration(p),section['end']))]
         for keep in protected:
@@ -128,10 +150,13 @@ def apply_sections(p,suggestions):
 
 def analysis_done(p,kind):
     """Existing musical decisions take priority over a preparation request."""
-    if kind=='chords':return bool(p.get('chordReference') or any(c.get('manual') for c in p.get('chords',[])) or (p.get('preparation') or {}).get('fingerprint'))
+    if kind=='chords':
+        chords=p.get('chords',[])
+        return bool((p.get('preparation') or {}).get('fingerprint') or any(c.get('manual') for c in chords)
+                    or ((p.get('chordReference') or {}).get('sources') and any(c.get('sourceURL') for c in chords)))
     if kind in ('grid','smartgrid'):
         return bool(p.get('gridLocked') or (p.get('preparation') or {}).get('fingerprint') or (p.get('settings') or {}).get('gridMode')=='fixed' or p.get('beats') or any(k in p.get('analysesCompleted',[]) for k in ('grid','smartgrid')))
-    if kind in ('structure','lyrics','chords','drums','key'):
+    if kind in ('structure','lyrics','drums','key'):
         field={'structure':'sections','drums':'drumHits'}.get(kind,kind)
         return bool(p.get(field) or kind in p.get('analysesCompleted',[]) or (p.get('preparation') or {}).get('fingerprint'))
     roles=[t['role'] for t in p.get('tracks',[])]

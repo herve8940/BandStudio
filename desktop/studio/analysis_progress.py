@@ -144,19 +144,26 @@ class PassProgress:
 
 
 @contextmanager
-def legacy_status(module):
+def legacy_status(module, *, phases=1):
     """Bridge existing standalone engine callbacks, even without a legacy status file."""
     original = module._write_status
     def report(path, state, **values):
         original(path, state, **values)
         label = values.get('step', '').split(' / ')[0]
         if state == 'done':
-            emit(progress=99, progressLabel='Enregistrement du résultat…', indeterminate=True)
+            if phases==1:
+                emit(progress=99, progressLabel='Enregistrement du résultat…', indeterminate=True)
+            else:
+                emit(progress=100/phases, progressBasis='steps', progressLabel='Transcription terminée', indeterminate=False)
         elif state == 'running':
             if values.get('total', 0) > 0:
                 done, total = values.get('done', 0), values['total']
-                emit(completed=done, total=total,
-                     progressLabel=label if not label[:1].isdigit() else f'Extrait {min(done+1,total)} sur {total}')
+                label=label if label and not label[:1].isdigit() else f'Extrait {min(done+1,total)} sur {total}'
+                if phases==1:
+                    emit(completed=done, total=total, progressLabel=label)
+                else:
+                    emit(progress=100*min(done,total)/(total*phases), progressBasis='steps',
+                         progressLabel='Transcription · '+label, indeterminate=False)
             else:
                 emit(progressLabel=label or 'Calcul en cours…', indeterminate=True)
     module._write_status = report

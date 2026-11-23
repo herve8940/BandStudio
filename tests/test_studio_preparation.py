@@ -25,6 +25,36 @@ def approve(p, root):
     return snapshot
 
 
+def test_direct_export_checks_current_media_without_claiming_listening(tmp_path,monkeypatch):
+    p=project(tmp_path);generate(p,tmp_path,monkeypatch)
+    snapshot=tmp_path/'snapshot.json';atomic(snapshot,p);out=tmp_path/'result.json'
+    preparation.export_validated(snapshot,out,ENGINE,preflight=True)
+    rpp=Path(json.loads(out.read_text())['path'])
+    receipt=json.loads((rpp.parent/'validation.json').read_text())
+    assert receipt['approval']['kind']=='technical'
+    assert receipt['approval']['fingerprint']==preparation.fingerprint(p)
+    assert 'preparation' not in json.loads(snapshot.read_text())
+    # The fast path leaves PCM samples byte-identical and has no extra audio tree.
+    tree=read_rpp(rpp)
+    source=next(t for t in tree['children'] if t['kind']=='TRACK')
+    item=next(c for c in source['children'] if c['kind']=='ITEM')
+    audio=next(c for c in item['children'] if c['kind']=='SOURCE')
+    relative=next(row[1] for row in audio['lines'] if row[0]=='FILE')
+    assert (rpp.parent/relative).read_bytes()==(tmp_path/'Audio/source.wav').read_bytes()
+    assert not (tmp_path/'PreparedAudio').exists()
+    p['sections'][1]['start']=7;atomic(snapshot,p)
+    with pytest.raises(ValueError,match='chevauchent'):
+        preparation.export_validated(snapshot,tmp_path/'bad.json',ENGINE,preflight=True)
+    assert not (tmp_path/'bad.json').exists()
+
+
+def test_unmodified_export_needs_no_decoder_or_intermediate_copy(tmp_path,monkeypatch):
+    p=project(tmp_path)
+    monkeypatch.setattr(preparation,'run',lambda *a,**kw:pytest.fail('No audio transform required'))
+    monkeypatch.setattr(preparation.shutil,'copy2',lambda *a,**kw:pytest.fail('No intermediate copy required'))
+    assert preparation.transformed(p,tmp_path/'unused',ENGINE)==p
+
+
 @pytest.mark.parametrize('change', ['gain', 'section', 'rate', 'pitch', 'mode', 'media'])
 def test_changes_require_new_approval(tmp_path, monkeypatch, change):
     p = project(tmp_path)
@@ -64,6 +94,13 @@ def test_missing_media_and_overlapping_sections_are_reported(tmp_path):
     (tmp_path / p['tracks'][0]['file']).unlink()
     with pytest.raises(ValueError, match='Média absent'):
         approve(p, tmp_path)
+
+
+def test_export_tempo_uses_the_song_pulse_when_the_intro_misses_beats(tmp_path):
+    p=project(tmp_path)
+    p['settings'].update(gridMode='detected',exportGuides=False,pulseUnit='dottedQuarter')
+    p.update(bpm=80,beats=[0,4.5,5.25,6.,6.75,7.5])
+    assert preparation.review(p)['bpm']==120
 
 
 def field(chunk, name):
@@ -195,4 +232,18 @@ def test_long_unicode_export_is_portable_unique_and_keeps_original_title():
         preparation.export_validated(snapshot,out,ENGINE)
         assert json.loads(out.read_text())['path']!=str(rpp) and rpp.read_bytes()==first
         assert (root/'Audio/source.wav').read_bytes()==original
+        assert not list(rpp.parent.parent.glob('.export-*'))
+
+
+def test_deep_library_uses_compact_folder_and_budgets_the_final_rpp_path():
+    with tempfile.TemporaryDirectory(prefix='BS-path-') as tmp:
+        base=Path(tmp)
+        library=base/('L'*(160-len(str(base).encode('utf-16-le'))//2-1))
+        root=library/('Recorded session '*3+'.bandstudio');root.mkdir(parents=True)
+        p=project(root);p['settings'].update(exportGuides=False,exportCount=False)
+        snapshot=root/'snapshot.json';atomic(snapshot,p);result=root/'export.json'
+        preparation.export_validated(snapshot,result,ENGINE,preflight=True)
+        rpp=Path(json.loads(result.read_text())['path'])
+        assert rpp.is_file() and rpp.parent.parent==library/'Exports' and rpp.parent.name.startswith('R-')
+        assert all(len(str(f).encode('utf-16-le'))//2<=240 for f in rpp.parent.rglob('*'))
         assert not list(rpp.parent.parent.glob('.export-*'))

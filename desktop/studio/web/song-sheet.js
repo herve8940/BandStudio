@@ -3,27 +3,9 @@
 // The sheet edits the project's existing annotations; it has no separate saved copy.
 (() => {
  const EPS = 1e-7;
- function musicalGrid(project, duration) {
-  const settings = {...guideDefaults, ...project.settings};
-  const meter = settings.beatsPerBar;
-  const bpm = pulseTempo(project);
-  const beats = [...new Set((project.beats || []).filter(t => Number.isFinite(t) && t >= 0 && t <= duration))].sort((a,b) => a-b);
-  const detected = settings.gridMode !== 'fixed' && beats.length > 1;
-  let anchor = 0;
-  if (detected) beats.forEach((t,i) => {if (Math.abs(t-settings.firstBeat) < Math.abs(beats[anchor]-settings.firstBeat)) anchor=i;});
-  if (detected) anchor %= meter; // Same measure numbering as the structure editor and metronome.
-  const origin = detected ? beats[anchor] : settings.firstBeat;
-  function at(coordinate) {
-   if (!detected) return origin + coordinate * 60 / bpm;
-   const index = coordinate + anchor, lower = Math.max(0, Math.min(beats.length-2, Math.floor(index)));
-   return beats[lower] + (index-lower) * (beats[lower+1]-beats[lower]);
-  }
-  function coordinate(t) {
-   if (!detected) return (t-origin) * bpm / 60;
-   let lo=0, hi=beats.length-1;
-   while (hi-lo>1) {const mid=(lo+hi)>>1;if(beats[mid]<=t)lo=mid;else hi=mid;}
-   return lo-anchor+(t-beats[lo])/(beats[lo+1]-beats[lo]);
-  }
+ function sheetGrid(project, duration) {
+  const clock=musicalGrid(project),{at,coordinate,meter}=clock;
+  const bpm=pulseTempo(project),origin=at(0),detected=clock.detected;
   function position(t) {
    // Round only floating-point noise, not the actual position of a word or chord.
    const value=Math.round(coordinate(t)*1e6)/1e6, bar=Math.floor(value/meter);
@@ -37,7 +19,7 @@
   }
   return {at,coordinate,position,bars,meter,origin,bpm:tempoSummary(project).bpm,pulseBPM:bpm,timeSignature:pulseScale(project)===1.5?(meter*3)+'/8':meter+'/4',detected};
  }
- window.bandStudioSheetGrid = musicalGrid;
+ window.bandStudioSheetGrid = sheetGrid;
 
  const nav=button('',()=>view('sheet'),'nav');nav.dataset.view='sheet';
  nav.append(node('b','','▦'),document.createTextNode('Fiche morceau'));
@@ -76,7 +58,7 @@
   searches.push(search);references.append(search);
  }
  references.append(node('small','','Compare la version et la tonalité, puis corrige la fiche.'));
- references.append(button('Comparer les sources d’accords',()=>{view('prompter');$('chordReferencePrompter').scrollIntoView({block:'start'});}));
+ references.append(button('Comparer les sources d’accords',()=>{openStudioEditor('chords');$('chordReferencePrompter').scrollIntoView({block:'nearest'});}));
  const correctLyrics=button('Corriger les paroles et recaler',()=>{view('tools');$('correctLyrics').click();});correctLyrics.id='sheetCorrectLyrics';references.append(correctLyrics);
  const manualLyrics=button('Recaler à la main',()=>$('manualLyrics').click());manualLyrics.id='sheetManualLyrics';references.append(manualLyrics);
  const chordLegend=node('small','');chordLegend.id='sheetChordSource';references.append(chordLegend);
@@ -107,11 +89,6 @@
   cover.title=entry?.artwork?'Changer la pochette':'Choisir une pochette';
   cover.setAttribute('aria-label',cover.title);
  }
- function chordLabel(text) {
-  text=String(text).trim();
-  if(/^(N|NC|N\.C\.|NO_CHORD)$/i.test(text))return 'N.C.';
-  return text.replace(/:min(?=$|[^a-z])/g,'m').replace(/:maj(?=$|\/|\s)/g,'').replace(/:maj(?=\d)/g,'maj').replace(/:(dim|aug|sus|add|\d)/g,'$1');
- }
 
  function positionLabel(grid,t) {
   const p=grid.position(t);
@@ -125,18 +102,18 @@
  function entryButton(kind,item,start,end,grid) {
   const continuation=item.start<start-EPS;
   let label=item.text;
-  if(kind==='chords')label=transposeChord(chordLabel(label),(transport.pitch||0)-(state.project.capo||0));
-  else if(item.words?.length)label=item.words.filter(w=>w.start>=start-EPS&&w.start<end-EPS).map(w=>w.text).join(' ');
+  if(kind==='chords')label=playingChord(label);
+  else if(item.words?.length)label=item.words.filter(w=>w.start>=start&&w.start<end).map(w=>w.text).join(' ');
   else if(continuation)return null;
   if(!label)return null;
-  const uncertain=kind==='chords'&&!item.manual&&item.sourceURL&&item.confidence<.5;
+  const uncertain=annotationNeedsReview(item);
   const b=button('',()=>editEntry(kind,item),'sheet-entry sheet-'+kind+(item.manual?' manual':'')+(uncertain?' uncertain':''));
   b.dataset.annotation=item.id;b.dataset.kind=kind;b.disabled=!!state.busy;
   b.append(node('span','sheet-entry-text',label+(uncertain?' ?':'')));
   const pos=positionLabel(grid,Math.max(start,item.start));
   b.append(node('small','',pos+' · '+(item.manual?'corrigé':item.sourceURL?'Internet · '+(uncertain?'calage incertain':'proposé'):'auto')));
   b.title='Modifier '+(kind==='chords'?'l’accord':'la ligne')+' : '+item.text+' ('+positionLabel(grid,item.start)+')';
-  if(item.sourceURL&&!item.manual)b.title+=' · '+(uncertain?'Calage incertain, à vérifier':'Calage proposé depuis une grille Internet');
+  if(item.sourceURL&&!item.manual)b.title+=' · '+(uncertain?'Calage incertain, à vérifier':kind==='chords'?'Calage proposé depuis une grille Internet':'Calage proposé depuis les paroles de référence');
   return b;
  }
  function groups(project,duration) {
@@ -161,7 +138,8 @@
   renderIdentity();
   content.replaceChildren();highlighted=null;
   if(!opened){meta.textContent='';hint.textContent='Ouvre un morceau pour afficher sa fiche.';sections.replaceChildren();return;}
-  const grid=musicalGrid(p,duration);
+  if(state.sheetClockPending){stats.replaceChildren();meta.textContent='';sections.replaceChildren();hint.textContent='Calcul des mesures du morceau…';return;}
+  const grid=sheetGrid(p,duration);
   stats.replaceChildren();
   for(const [label,value] of [['TEMPO',Number(grid.bpm.toFixed(1))+' BPM'],['TONALITÉ',p.key?transposeChord(chordLabel(p.key),transport.pitch||0):'À préciser'],['MESURE',grid.timeSignature],['DURÉE',time(duration)]]) {
    const stat=node('div','sheet-stat');stat.append(node('small','',label),node('strong','',value));stats.append(stat);
@@ -179,25 +157,26 @@
    const head=node('div','sheet-section-heading');
    const title=button(group.name,()=>send('seek',{time:group.start}),'sheet-section-title');
    title.title='Aller au début de '+group.name;
-   // One cell per measure. A deliberate pickup/break inside it is indicated
-   // in that cell, rather than duplicating its number and held chord.
-   const groupBars=grid.bars.filter(b=>(sections.value?b.end>group.start+EPS:b.start>=group.start-EPS)&&b.start<group.end-EPS);
-   const range=groupBars.length?(groupBars[0].number===0?'Levée':'M. '+groupBars[0].number)+' – '+groupBars.at(-1).number:'';
+   const groupBars=grid.bars.filter(b=>Math.min(group.end,b.end)>Math.max(group.start,b.start)+EPS);
+   const numbered=groupBars.filter(b=>b.start>=group.start-EPS);
+   const first=numbered[0]?.number,last=numbered.at(-1)?.number;
+   const range=first===undefined?'':(first===0?'Levée':'M. '+first)+(first===last?'':' – '+last);
    head.append(node('span','sheet-section-number',String(all.indexOf(group)+1).padStart(2,'0')),title,node('small','',range));
    head.title=positionLabel(grid,group.start)+' → '+time(group.end,true);
    const originalSection=(p.sections||[]).find(s=>s.id===group.id);
    if(originalSection) {const edit=button('Modifier la section',()=>openEditor('section',originalSection));edit.disabled=!!state.busy;head.append(edit);}
+   article.append(head);
    const row=node('div','sheet-bars');
    for(const bar of groupBars) {
-    const start=bar.start,end=bar.end;
-    const cell=node('div','sheet-bar');cell.dataset.start=start;cell.dataset.end=end;cell.dataset.bar=bar.number;
-    const top=node('div','sheet-bar-heading');const seek=button(bar.number?'M. '+bar.number:'Levée',()=>send('seek',{time:start}));
-    seek.setAttribute('aria-label',bar.number?'Écouter la mesure '+bar.number:'Écouter la levée');
+    const start=Math.max(group.start,bar.start),end=Math.min(group.end,bar.end),entry=start>bar.start+EPS;
+    const cell=node('div','sheet-bar'+(entry?' sheet-entry-fragment':''));cell.dataset.start=start;cell.dataset.end=end;cell.dataset.bar=bar.number;
+    const top=node('div','sheet-bar-heading');
+    const label=entry?'Entrée · '+positionLabel(grid,start).replace(/(\d)\.(\d)/,'$1,$2'):
+     (bar.number?'M. '+bar.number:'Levée')+(end<bar.end-EPS?' · début':'');
+    const seek=button(label,()=>send('seek',{time:start}));
+    seek.setAttribute('aria-label','Écouter '+label);
     seek.title='Écouter à partir de '+time(start,true);top.append(seek);
     top.append(node('small','',time(start,true)));cell.append(top);
-    for(const boundary of all.filter(s=>s.start>start+EPS&&s.start<end-EPS)) {
-     cell.append(node('small','sheet-boundary',boundary.name+' · '+positionLabel(grid,boundary.start)));
-    }
     for(const kind of ['chords','lyrics']) {
      const lane=node('div','sheet-lane sheet-lane-'+kind);lane.setAttribute('aria-label',kind==='chords'?'Accords':'Paroles');
      for(const item of (p[kind]||[]).filter(e=>e.start<end-EPS&&e.end>start+EPS).sort((a,b)=>a.start-b.start)) {
@@ -207,10 +186,9 @@
      add.dataset.add=kind;add.disabled=!!state.busy;
      lane.classList.toggle('has-entries',!!lane.children.length);lane.append(add);cell.append(lane);
     }
-    row.append(cell);
+    if(entry)article.append(cell);else row.append(cell);
    }
-   if(!groupBars.length)row.append(node('p','sheet-short-section','Passage dans '+positionLabel(grid,group.start)+' · voir la mesure complète ci-dessus.'));
-   article.append(head,row);content.append(article);
+   article.append(row);content.append(article);
   }
   highlight();
  }
@@ -255,7 +233,7 @@
  replaceLabel.id='sheetReplaceLabel';replaceLabel.append(replace,document.createTextNode('Remplacer les accords présents sur cette plage'));
  placement.append(fields,move,help,replaceLabel,error);
  $('annotationText').parentElement.after(placement);
- function editorGrid(){return musicalGrid(state.project,state.duration);}
+ function editorGrid(){return sheetGrid(state.project,state.duration);}
  function refreshPosition() {
   const g=editorGrid();
   for(const side of ['Start','End']) {

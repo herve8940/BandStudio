@@ -3,25 +3,34 @@
 // One coordinate system for the ruler, snapping, zoom and the listening window.
 function musicalGrid(project) {
  const s={...guideDefaults,...project.settings},meter=s.beatsPerBar;
- const beats=(project.beats||[]).filter(Number.isFinite);
+ const saved=project.timingGrid,b=saved?.basis;
+ const same=(a,c)=>a.length===c.length&&a.every((v,i)=>v===c[i]);
+ const duration=Math.max(project.sessionDuration||0,...(project.tracks||[]).filter(t=>!t.role.startsWith('guide_')).map(t=>t.offset+t.duration),0);
+ const ready=saved?.version===1&&b.mode===s.gridMode&&b.first===s.firstBeat&&b.meter===s.beatsPerBar&&b.bpm===pulseTempo(project)&&b.locked===!!project.gridLocked&&Math.abs(b.duration-duration)<.00001&&same(b.beats,project.beats||[])&&same(b.downbeats,project.downbeats||[]);
+ const beats=(ready?saved.beats:project.beats||[]).filter(Number.isFinite);
  const detected=s.gridMode==='detected'&&beats.length>1&&beats.every((t,i)=>!i||t>beats[i-1]);
  const period=60/pulseTempo(project);
  const nearest=detected?beats.reduce((best,t,i)=>Math.abs(t-s.firstBeat)<Math.abs(beats[best]-s.firstBeat)?i:best,0):0;
- const anchor=nearest%meter;
+ const anchor=ready?saved.anchor:nearest%meter,head=ready?saved.head:beats[1]-beats[0],tail=ready?saved.tail:beats.at(-1)-beats.at(-2);
  function at(value) {
   if(!detected)return s.firstBeat+value*period;
-  const index=value+anchor,i=Math.max(0,Math.min(beats.length-2,Math.floor(index)));
+  const index=value+anchor;
+  if(index<0)return beats[0]+index*head;
+  if(index>=beats.length-1)return beats.at(-1)+(index-beats.length+1)*tail;
+  const i=Math.floor(index);
   return beats[i]+(index-i)*(beats[i+1]-beats[i]);
  }
  function coordinate(t) {
   if(!detected)return (t-s.firstBeat)/period;
+  if(t<beats[0])return (t-beats[0])/head-anchor;
+  if(t>=beats.at(-1))return beats.length-1-anchor+(t-beats.at(-1))/tail;
   let lo=0,hi=beats.length;
   while(lo<hi){const mid=(lo+hi)>>1;if(beats[mid]<=t)lo=mid+1;else hi=mid;}
   const i=Math.max(0,Math.min(beats.length-2,lo-1));
   return i-anchor+(t-beats[i])/(beats[i+1]-beats[i]);
  }
  const label=t=>{const c=coordinate(t),b=Math.floor((c+1e-7)/meter);return c<-.0001?'Levée':'Mesure '+(b+1)+' · temps '+(c-b*meter+1).toFixed(2).replace(/\.00$/,'');};
- return {meter,at,coordinate,label,snap:(t,unit)=>at(Math.round(coordinate(t)/unit)*unit)};
+ return {meter,detected,at,coordinate,label,snap:(t,unit)=>at(Math.round(coordinate(t)/unit)*unit)};
 }
 
 let editorSong='',editorFocus=null,editorPending=null,zoomStart=0,zoomSpan=0;

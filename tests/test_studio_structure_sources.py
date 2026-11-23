@@ -187,7 +187,9 @@ def test_new_reader_ships_in_both_native_packages():
 
 
 def test_sources_ui_is_optional_distinguishes_examples_and_preserves_export(manual_page):
-    page,p=manual_page;p['structureProposal']=ui_proposal(p)
+    page,p=manual_page
+    page.locator('[data-workspace-mode=structure]').click()
+    p['structureProposal']=ui_proposal(p)
     p['structureProposal'].update(confirmedSections=2,sources=[dict(publisher='Hooktheory',format='types',sectionNames=['Intro','Verse','Chorus'])],
         sourceChecks=[dict(publisher='DRUMY',status='found',format='timed'),dict(publisher='Hooktheory',status='found',format='types')])
     page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:2})',p)

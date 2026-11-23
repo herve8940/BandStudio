@@ -52,6 +52,9 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     var queueInput:FileHandle?
     var queueState:[String:Any]=["type":"batchQueue","items":[],"enabled":false]
     var queuePulse=0.0
+    var requestedClockBasis:TimingBasis?
+    var clockRequest:UUID?
+    var displayClock:TimingGrid?
 
     func applicationDidFinishLaunching(_ notification:Notification) {
         StudioDiagnostics.shared.event("startup",["version":"1.1.0","os":ProcessInfo.processInfo.operatingSystemVersionString])
@@ -138,11 +141,49 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         let str=String(data:(try? f.readToEnd()) ?? Data(),encoding:.utf8) ?? ""
         return str.components(separatedBy:CharacterSet.newlines.union(CharacterSet(charactersIn:"\r"))).filter{!$0.isEmpty}.last ?? "Chargement du modèle…"
     }
+    // Older projects can have usable audio guides without a saved display clock.
+    // Ask the same lightweight clock used by the PDF; generating audio is unnecessary.
+    func prepareDisplayClock() -> Bool {
+        guard root != nil,let runtime=runtime,project.settings.gridMode=="detected",project.beats.count>=2,
+              !(project.timingGrid?.version==1 && project.timingGrid?.basis.matches(project)==true),
+              displayClock?.basis.matches(project) != true else{return false}
+        if requestedClockBasis?.matches(project)==true{return clockRequest != nil}
+        let python=runtime.appendingPathComponent(".venv/bin/python"),script=runtime.appendingPathComponent("musical_timing.py")
+        guard FileManager.default.isExecutableFile(atPath:python.path),FileManager.default.fileExists(atPath:script.path) else{return false}
+        let basis=project.timingBasis,request=UUID(),settings=project.settings
+        requestedClockBasis=basis;clockRequest=request
+        DispatchQueue.global(qos:.userInitiated).async {
+            var result:TimingGrid?
+            do {
+                let data=try JSONSerialization.data(withJSONObject:["settings":JSONSerialization.jsonObject(with:JSONEncoder().encode(settings)),
+                    "bpm":basis.bpm,"beats":basis.beats,"downbeats":basis.downbeats,"gridLocked":basis.locked,"sessionDuration":basis.duration])
+                let process=Process(),input=Pipe(),output=Pipe()
+                process.executableURL=python;process.arguments=[script.path,"--clock"]
+                process.standardInput=input;process.standardOutput=output;process.standardError=FileHandle.nullDevice
+                try process.run()
+                try input.fileHandleForWriting.write(contentsOf:data);try input.fileHandleForWriting.close()
+                let response=output.fileHandleForReading.readDataToEndOfFile();process.waitUntilExit()
+                if process.terminationStatus==0 {result=try JSONDecoder().decode(TimingGrid.self,from:response)}
+            } catch {StudioDiagnostics.shared.event("display-clock",["message":error.localizedDescription])}
+            let grid=result
+            DispatchQueue.main.async {
+                guard self.clockRequest==request else{return}
+                self.clockRequest=nil
+                if let grid=grid,grid.version==1,grid.basis.matches(self.project){self.displayClock=grid}
+                if !self.quitting{self.sendState()}
+            }
+        }
+        return true
+    }
     func sendState() {
-        let object=(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(project))) ?? [:]
+        let waitingForClock=prepareDisplayClock()
+        var display=project
+        if let clock=displayClock,clock.basis.matches(project),
+           !(project.timingGrid?.version==1 && project.timingGrid?.basis.matches(project)==true) {display.timingGrid=clock}
+        let object=(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(display))) ?? [:]
         let lists=(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(setlists))) ?? []
         let providers=ChordProvider.all.map{["id":$0.id,"publisher":$0.publisher,"domain":$0.domain,"automatic":$0.template != nil] as [String:Any]}
-        send(["type":"state","project":object,"duration":project.duration,"loaded":root != nil,"library":projectList(),"analysisPlan":analysisPlan(),"trashAvailable":hasTrashedProjects(),"setlists":lists,"busy":busy,"job":jobName,"jobTask":jobKind,"jobID":jobIdentifier,"jobPlan":jobPlan,"jobPlanIndex":jobPlanIndex,"notice":notice,"undo":!history.isEmpty,"redo":!future.isEmpty,"revision":revision,"lastExport":lastExport,"guidesReady":project.guideKey==project.desiredGuideKey(),"chordProviders":providers])
+        send(["type":"state","project":object,"duration":project.duration,"loaded":root != nil,"library":projectList(),"analysisPlan":analysisPlan(),"trashAvailable":hasTrashedProjects(),"setlists":lists,"busy":busy,"job":jobName,"jobTask":jobKind,"jobID":jobIdentifier,"jobPlan":jobPlan,"jobPlanIndex":jobPlanIndex,"notice":notice,"undo":!history.isEmpty,"redo":!future.isEmpty,"revision":revision,"lastExport":lastExport,"guidesReady":project.guideKey==project.desiredGuideKey(),"chordProviders":providers,"sheetClockPending":waitingForClock])
         sendTransport()
     }
     func changed(invalidate:Bool=true) throws {
@@ -184,6 +225,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             p=try StudioProject.load(url)
         }
         try audio.load(p,root:url);audio.loop=false
+        requestedClockBasis=nil;clockRequest=nil
         project=p;root=url;history=[];future=[];notice="";lastExport="";revision += 1
         audio.rate=1;audio.pitch=0;audio.stretch.pitch=0
         if let prep=p.preparation {audio.rate=Float(prep.rate);audio.pitch=Float(prep.pitch);audio.mode=prep.mode;audio.stretch.pitch=Float(prep.pitch)*100;audio.applyMix()}
@@ -203,8 +245,8 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         let clean=raw.components(separatedBy:CharacterSet(charactersIn:"/:\0")).joined(separator:"-")
         return String(clean.prefix(120)).isEmpty ? "Morceau" : String(clean.prefix(120))
     }
-    @objc func importSong() {chooseAudio(new:true)}
-    func chooseAudio(new:Bool) {
+    @objc func importSong() {chooseAudio(new:true,prepare:true)}
+    func chooseAudio(new:Bool,prepare:Bool=false) {
         perform {
             try requireIdle()
             let panel=NSOpenPanel();panel.canChooseDirectories=false;panel.allowsMultipleSelection = !new
@@ -213,11 +255,11 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             panel.message=new ? "Choisis le morceau à travailler." : "Choisis les pistes à ajouter, alignées au début du morceau."
             panel.beginSheetModal(for:window){[weak self] answer in
                 guard let self=self,answer == .OK else{return}
-                self.importFiles(panel.urls,new:new)
+                self.importFiles(panel.urls,new:new,prepare:prepare)
             }
         }
     }
-    func importFiles(_ urls:[URL],new:Bool) {
+    func importFiles(_ urls:[URL],new:Bool,prepare:Bool=false) {
         guard !urls.isEmpty else{return}
         busy=true;audio.pause();notice="Import des fichiers audio…";sendState()
         let current=project,currentRoot=root
@@ -254,7 +296,8 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                     self.busy=false
                     self.perform{
                         try self.load(dest,prepareGuides:!new)
-                        if new {try self.calibrateImportedSong()}
+                        if new && prepare {try self.prepareAll([:])}
+                        else if new {try self.calibrateImportedSong()}
                         else {self.notice="Pistes importées.";self.sendState()}
                     }
                 }
@@ -369,7 +412,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         perform {
             if command == "artwork" {try artworkCommand(args);return}
             if command == "ready" {sendState();sendUpdate();try startQueue();send(queueState);if automaticUpdates{checkUpdates()};return}
-            if command == "import" {importSong();return}
+            if command == "import" {chooseAudio(new:true,prepare:args["prepare"] as? Bool ?? true);return}
             if command == "open" {openProject();return}
             if ["bandpilot","bridge","studioControl","record","newSession","captureSettings"].contains(command) {
                 throw StudioError("BandStudio prépare les morceaux. L’enregistrement se poursuit dans REAPER.")
@@ -497,7 +540,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 project.structureProposal=nil;try changed(invalidate:false);notice="Parcours actuel conservé."
             case "exportStructure":try exportStructure(args)
             case "applyStructure":try applyStructure(args)
-            case "reaper":try exportRPP(open:args["open"] as? Bool ?? false)
+            case "reaper":try exportRPP(open:args["open"] as? Bool ?? false,preflight:args["preflight"] as? Bool == true)
             case "showExport":if !lastExport.isEmpty{NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath:lastExport)])}
             case "annotation":try annotation(args)
             case "studioTask":try advancedTask(args)

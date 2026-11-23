@@ -20,3 +20,23 @@ body.workspace-open header{padding:12px 28px}body.workspace-open header .eyebrow
 
 .rail .sidebar-collapse{display:flex;align-items:center;justify-content:center;flex-shrink:0;min-height:36px;padding:8px 6px;margin-bottom:4px;background:#33486b;border-color:#7495c4;color:#f4f7ff;font-size:11px;font-weight:600;letter-spacing:0}
 .rail .sidebar-collapse:hover{background:#405c83;border-color:#9cbbe7}
+
+/* All musical edits share the workshop; other views are read-only projections. */
+.workspace-tabs{flex-wrap:wrap}
+.workspace-editor-panel{padding:20px 16px;border-top:1px solid var(--line,#293349);min-width:0}
+.workspace-editor-panel .annotation-list{max-height:480px;overflow:auto}
+.workspace-editor-panel .settings-grid{grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr))}
+.workspace-editor-panel .callout{margin:0 0 16px}
+.workspace-editor-panel .sticky-actions{position:static;flex-wrap:wrap}
+.workspace-editor-panel .lyrics-tools{margin:0 0 18px}
+#workspace[data-editor=lyrics] .workspace-empty,#workspace[data-editor=chords] .workspace-empty,#workspace[data-editor=rhythm] .workspace-empty{display:none}
+#workspace[data-editor=lyrics] .workspace-shortcuts,#workspace[data-editor=chords] .workspace-shortcuts,#workspace[data-editor=rhythm] .workspace-shortcuts{display:none}
+
+#workspace:not([data-editor=structure]) #structureReview{display:none}
+#workspace.contextual-editor .inspector{display:none}
+#workspace.contextual-editor .workspace-grid{grid-template-columns:minmax(0,1fr)}
+#workspace.contextual-editor .arrangement{grid-column:1/-1}
+#structureTable+#structureReview,#structureReview{margin-bottom:14px}
+
+.workspace-editor-panel .analysis-progress.idle{display:none}
+.word-edit-row .word-timing-review {border-bottom: 2px dashed var(--warning, #e6b05c);}

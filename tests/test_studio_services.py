@@ -74,6 +74,28 @@ def test_variable_grid_anticipation_and_manual_first_beat():
     assert services.before_beat(15,4,beats,120)==pytest.approx(13)
 
 
+def test_speech_cache_reuses_exact_pcm_and_rebuilds_changed_or_damaged_clips(tmp_path,monkeypatch):
+    settings=dict(language='fr',voice='Thomas',speechRate=210);calls=[]
+    def synthesize(text,folder,settings):
+        calls.append((text,settings.copy()));path=folder/'new.wav'
+        sf.write(path,np.full((4410,2),.2,dtype='float32'),44100,subtype='FLOAT');return path
+    monkeypatch.setattr(services,'voice_wav',synthesize)
+    folders=[tmp_path/str(i) for i in range(5)]
+    for folder in folders:folder.mkdir()
+    first=services.reusable_voice('Couplet',folders[0],settings,tmp_path)
+    second=services.reusable_voice('Couplet',folders[1],settings,tmp_path)
+    assert second.parent==folders[1] and second.read_bytes()==first.read_bytes()
+    assert len(calls)==1
+    services.reusable_voice('Couplet',folders[2],{**settings,'speechRate':180},tmp_path)
+    assert len(calls)==2
+    cached=tmp_path/'Cache/guide-voices'/(services.voice_key('Couplet',settings)+'.wav')
+    cached.write_bytes(b'partial write')
+    services.reusable_voice('Couplet',folders[3],settings,tmp_path)
+    assert len(calls)==3 and sf.info(cached).frames==4410
+    services.reusable_voice('Refrain',folders[4],settings,tmp_path)
+    assert len(calls)==4
+
+
 @pytest.mark.parametrize('lead', [0, 2, 8])
 def test_calls_and_cues_anticipate_on_pulses_without_moving_offbeat_targets(tmp_path,monkeypatch,lead):
     p=project(tmp_path)
@@ -116,7 +138,7 @@ def test_pickup_count_clicks_keep_the_metronome_bar_accent(tmp_path,monkeypatch)
     (7.88,[],[6,6.5,7,7.5]),
     (8,[],[6,6.5,7,7.5]),
     (8.07,[0,.52,1.03,1.55,2.1,2.65,3.2,3.75,4.31,4.86,5.42,5.99,6.55,7.10,7.64,8.2,8.75,9.3,9.85,10.4,10.95,11.5],
-     [16/3,6,20/3,22/3]),
+     [5.99,6.55,7.10,7.64]),
 ])
 def test_offbeat_region_counts_land_on_audible_metronome_clicks(tmp_path,monkeypatch,target,grid,expected):
     p=project(tmp_path);p['sections']=[dict(id='region',name='Refrain',start=target,end=12,locked=True,origin='manual')]
@@ -211,6 +233,30 @@ def test_reaper_audio_region_count_roundtrip(tmp_path,monkeypatch):
     assert imported['settings']['countBars']==0
     assert imported['settings']['manualBPM']==120
     assert imported['lyrics'][0]['start']==5 and imported['lyrics'][0]['manual'] is True
+
+
+@pytest.mark.parametrize('count',[False,True])
+@pytest.mark.parametrize('compound',[False,True])
+def test_reaper_roundtrip_keeps_variable_clock_phase_and_pickup(tmp_path,count,compound):
+    from musical_timing import BeatClock
+    p=project(tmp_path)
+    p.update(beats=[.38,.98,1.61,2.25,2.92,3.6,4.29,5.01,5.74,6.48,7.23,8.,8.78,9.57,10.37,11.18],gridLocked=True)
+    p['settings'].update(gridMode='detected',firstBeat=1.61,exportCount=count,exportGuides=False,
+                         pulseUnit='dottedQuarter' if compound else 'quarter',beatsPerBar=2 if compound else 4)
+    clock=BeatClock(p);snapshot=tmp_path/'snapshot.json';snapshot.write_text(json.dumps(p))
+    services.export_reaper(snapshot,tmp_path/'export.json')
+    exported=json.loads((tmp_path/'export.json').read_text());shift=exported['preroll']
+    out=tmp_path/'import/result.json';services.import_reaper(exported['path'],out,ENGINE,snapshot)
+    imported=json.loads((Path(json.loads(out.read_text())['project'])/'project.json').read_text())
+    restored=BeatClock(imported)
+    assert imported['tracks'][0]['offset']==pytest.approx(shift,abs=1e-8)
+    assert imported['settings']['firstBeat']==pytest.approx(clock.at(0)+shift)
+    assert imported['beats']==pytest.approx([t+shift for t in clock.beats])
+    # A count-in adds complete bars before the original, without changing phase.
+    offset=restored.coordinate(clock.at(0)+shift)
+    assert offset%clock.meter==pytest.approx(0,abs=1e-8)
+    for at in clock.beats:
+        assert restored.coordinate(at+shift)-offset==pytest.approx(clock.coordinate(at),abs=1e-7)
 
 
 def test_reaper_import_keeps_source_offset_and_item_rate(tmp_path):
