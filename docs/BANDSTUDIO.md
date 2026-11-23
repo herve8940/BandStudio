@@ -4,7 +4,7 @@ Sur un morceau déjà importé, **Préparer** vérifie les départs de section a
 
 Dans **Éditeur du morceau → Accords**, tu peux ouvrir une grille publiée, comparer les accords à jouer et choisir celle à utiliser. La palette suit la transposition du lecteur et le capo. Quand tu places un accord, l’éditeur affiche sa valeur d’origine et l’accord à jouer. La fiche et le prompteur suivent le même réglage.
 
-Pour les paroles, BandStudio essaie le titre du fichier puis une forme simplifiée, par exemple « Mon époque » pour un clip intitulé « Mon époque (Chap. II) ». Après LRCLIB et lyrics.ovh, la recherche peut consulter Paroles.net et Paroles2Chansons, retrouver le morceau dans le catalogue de l’artiste ou chercher sa page sur le Web. BandStudio compare le texte au chant et recale les mots sur l’enregistrement. Quand plusieurs passages concordent avec une édition synchronisée, ses repères aident à retrouver les répétitions. **Écoute ciblée** permet de réécouter les mots dont le placement reste incertain. Si un site est indisponible, BandStudio peut réutiliser sa référence déjà enregistrée pour ce morceau.
+Pour les paroles, BandStudio essaie le titre du fichier puis une forme simplifiée, en retirant par exemple une mention de chapitre ou de clip. Après LRCLIB et lyrics.ovh, la recherche peut consulter Paroles.net et Paroles2Chansons, retrouver le morceau dans le catalogue de l’artiste ou chercher sa page sur le Web. BandStudio compare le texte au chant et recale les mots sur l’enregistrement. Quand plusieurs passages concordent avec une édition synchronisée, ses repères aident à retrouver les répétitions. **Écoute ciblée** permet de réécouter les mots dont le placement reste incertain. Si un site est indisponible, BandStudio peut réutiliser sa référence déjà enregistrée pour ce morceau.
 
 1. **Importer** un fichier audio. La préparation complète démarre automatiquement avec les moteurs installés, sans diminuer leur qualité. L’option peut être désactivée dans **Mes morceaux**. Le fichier original est conservé.
 2. **Éditeur du morceau** regroupe les pistes, sections, paroles, accords et réglages du métronome. Une correction utilise le même document et le même historique d’annulation partout. La fiche et le prompteur renvoient vers cet éditeur.
@@ -14,13 +14,13 @@ Pour les paroles, BandStudio essaie le titre du fichier puis une forme simplifi�
 
 Sans changement de vitesse ni de hauteur, l’export conserve les WAV à l’identique et évite la copie audio intermédiaire. Les annonces vocales identiques sont réutilisées entre traitements ; un cache absent ou endommagé est reconstruit. Les réglages de qualité des moteurs restent inchangés. Les modifications non appliquées doivent être enregistrées avant une préparation ou un export.
 
-## Nouveautés du 21 novembre 2026
+## Préparer un morceau déjà importé
 
-Dans **Pistes & structure**, **Tout préparer** effectue la séparation disponible, les sous-pistes de batterie et de chant, les analyses manquantes, les paroles, puis la révision des sections et des accords Internet. Les améliorations automatiques sont enregistrées avant les guides. **Avant / Préparée** montre le résultat ; sélectionne un changement pour l’écouter. Un nouveau clic reprend les étapes manquantes. Les moteurs facultatifs doivent être installés dans **Réglages → Analyses locales**.
+Dans **Éditeur du morceau**, choisis **1 · Préparer**. Le traitement utilise les moteurs installés et reprend les étapes manquantes. À la fin, **2 · Écouter et corriger** ouvre les passages à vérifier. Pour comparer les limites de deux sections, ouvre **Sections** et sélectionne une modification dans les frises **Avant / Préparée**.
 
-**Vérifier et compléter** reste un parcours facultatif : ses frises **Actuelle / Proposée** précèdent une application explicite. Les notes et réglages en cours doivent être enregistrés. Les modifications manuelles et repères protégés restent prioritaires ; les choix automatiques ne constituent pas une validation humaine. La validation finale de l’export se trouve dans **Projet REAPER**.
+Dans le même onglet, **Vérifier et compléter** propose une autre lecture du morceau. Compare les frises **Actuelle / Proposée**, écoute les changements, puis choisis ceux à appliquer. Tu peux aussi conserver ta préparation actuelle.
 
-[Guide français](BANDSTUDIO_TUTORIEL_fr.md) · [English guide](BANDSTUDIO_TUTORIAL_en.md) · [Notes FR / EN](RELEASE_2026-11-21.md).
+[Guide français](BANDSTUDIO_TUTORIEL_fr.md) · [English tutorial](BANDSTUDIO_TUTORIAL_en.md) · [Notes de version FR / EN](RELEASE_2026-11-23.md).
 
 ## Préparer une série
 
@@ -30,7 +30,7 @@ Clique sur **Démarrer la file** lorsque ta liste est prête. L’application tr
 
 Le morceau ouvert dans l’atelier reste indépendant de la file. Une lecture ou un autre traitement dans BandStudio met la file en attente ; elle reprend ensuite. **Pause** arrête l’étape en cours, qui sera relancée avec **Reprendre la file**. Les étapes terminées sont enregistrées sur disque. Après fermeture ou interruption de l’application, la file attend un nouveau clic : elle ne redémarre jamais seule. Laisse BandStudio ouvert et l’ordinateur éveillé pendant le traitement ; ce n’est pas un service fonctionnant application fermée.
 
-Les morceaux entièrement préparés apparaissent dans **Mes morceaux**, prêts à écouter et à corriger avant validation. La file ne valide ni n’exporte automatiquement dans REAPER. **Retirer** annule une tâche inachevée ; retirer une tâche terminée de la liste conserve son morceau dans la bibliothèque. Les fichiers d’origine restent inchangés et doivent rester accessibles jusqu’à leur import.
+Les morceaux entièrement préparés apparaissent dans **Mes morceaux**, prêts à écouter et à corriger dans l’éditeur. La file ne valide ni n’exporte automatiquement dans REAPER. **Retirer** annule une tâche inachevée ; retirer une tâche terminée de la liste conserve son morceau dans la bibliothèque. Les fichiers d’origine restent inchangés et doivent rester accessibles jusqu’à leur import.
 
 ## Traitement du morceau
 
@@ -76,7 +76,7 @@ L’erreur `numpy.core.multiarray failed to import` peut venir de NumPy 2 avec s
 Exemple avec un moteur local déjà préparé et son Python disposant de NumPy et SoundFile :
 
 ```sh
-python tools/check_studio_automatic.py --engine /chemin/Engine --library /chemin/BandStudio --output /chemin/nouvel-essai --song Apocalypse --song Hysteria --song Tostaky
+python tools/check_studio_automatic.py --engine /chemin/Engine --library /chemin/BandStudio --output /chemin/nouvel-essai --song "Nom du morceau dans ta bibliothèque"
 ```
 
 Le dossier de sortie doit être nouveau. Chaque étape utilise le vrai worker ; les modèles restent locaux et les recherches de références Internet utilisent le titre et l’artiste. L’option `--reuse-raw-structure` autorise uniquement les segments bruts SongFormer dont la clé audio/modèles/code/environnement/paramètres et le checksum sont identiques. Elle ne reprend aucune section du document : toutes les corrections et comparaisons ultérieures sont rejouées. La réutilisation est déclarée dans le rapport ; une incompatibilité déclenche une nouvelle inférence.

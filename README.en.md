@@ -2,9 +2,9 @@
 
 **Your song. Your way.** Local song preparation for every musician.
 
-[💬 Discord · help & community](https://discord.gg/5UnQPdMUpR) · [Website](https://herve8940.github.io/BandStudio/en.html) · [Downloads](https://github.com/herve8940/BandStudio/releases/tag/bandstudio-main) · [Tutorial](docs/BANDSTUDIO_TUTORIAL_en.md) · [Français](README.md) · [Report a bug](https://github.com/herve8940/BandStudio/issues/new/choose)
+[💬 Discord · help & community](https://discord.gg/5UnQPdMUpR) · [Website](https://herve8940.github.io/BandStudio/en.html) · [Downloads](https://github.com/herve8940/BandStudio/releases/latest) · [Tutorial](docs/BANDSTUDIO_TUTORIAL_en.md) · [Français](README.md) · [Report a bug](https://github.com/herve8940/BandStudio/issues/new/choose)
 
-BandStudio is free software for local stem separation and song practice: adjust tempo, work on chords and synchronized lyrics, then export a reviewed project to REAPER. Vocals, guitar, bass, keyboards and drums share the same instrument selector, solo and backing-track controls.
+BandStudio is free software for local stem separation and song practice: adjust tempo, work on chords and synchronized lyrics, then export the project and its media to REAPER. Vocals, guitar, bass, keyboards and drums share the same instrument selector, solo and backing-track controls.
 
 - Local 4/6-stem separation, mixing and optional drum/vocal sub-stems.
 - Tempo and key detection, speed adjustment, pitch shifting, loops and count-ins.
@@ -21,16 +21,16 @@ Windows packaging, speech, WebView2 and offline audio are exercised in CI; actua
 
 BandStudio grew from ReaCue. The [legacy REAPER documentation](README_REACUE.md) remains available. Code: [MIT](LICENSE). Optional models retain their own terms, including noncommercial restrictions for some structure/drum components: [third-party notices](THIRD_PARTY_NOTICES.md).
 
-## What’s new · 21 November 2026
+## What’s new on 23 November 2026
 
-- **Prepare all**: instruments, detailed drums, lead/backing vocals, lyrics, online chords, final section review and guides in one workflow, using installed engines. Automatic improvements are saved; completed processing is reused.
-- **Before / Prepared**: aligned section timelines show added, renamed and adjusted sections. Select a change to audition it. The optional comparison-before-apply workflow remains available.
-- **Lyrics and chords**: free lyric references without an account, supported word corrections and local vocal alignment. Chord charts are compared with your recording; public ratings are only a secondary criterion when available. Manual edits and selected charts take priority.
-- **A clearer workspace**: grouped navigation, collapsible left menu, lyric tools together, and volume/mute/solo for guide tracks.
+- **Écouter et corriger** opens after preparation. Use **Écoute ciblée** to hear a flagged word, chord or section and adjust its timing.
+- Lyrics lookup tries the full title, a shortened title and several catalogues. BandStudio times words against the vocals in your recording and flags uncertain placements.
+- In **Accords**, compare charts and choose one for your arrangement. Both the song sheet and teleprompter use your capo setting.
+- The PDF sheet, count-in and REAPER project share the same beat grid. The sheet shows a pickup on the beat where the section actually begins.
 
-![Section comparison in BandStudio, demonstration data](site/assets/structure-comparison.png)
+![Targeted listening in BandStudio’s song editor with a demo song](site/assets/editor-review.jpg)
 
-[Visual preparation tutorial](https://herve8940.github.io/BandStudio/tutorial.html) · [Song sheet → PDF](https://herve8940.github.io/BandStudio/song-sheet.html) · [Written guide](docs/BANDSTUDIO_TUTORIAL_en.md) · [Release notes FR / EN](docs/RELEASE_2026-11-21.md).
+[From import to REAPER](https://herve8940.github.io/BandStudio/tutorial.html) · [From lyrics to a printable PDF](https://herve8940.github.io/BandStudio/song-sheet.html) · [Written guide](docs/BANDSTUDIO_TUTORIAL_en.md) · [Release notes FR / EN](docs/RELEASE_2026-11-23.md).
 
 ## Community & support
 
