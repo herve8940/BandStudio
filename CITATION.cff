@@ -3,8 +3,7 @@ message: "Si tu cites BandStudio, utilise ces métadonnées. / If you cite BandS
 title: "BandStudio"
 abstract: "Local song preparation for musicians: stems, tempo, chords, lyrics, practice tools and REAPER export."
 authors:
-  - family-names: "Naessens"
-    given-names: "Hervé"
+  - name: "BandStudio contributors"
 version: "1.1.0"
 license: MIT
 repository-code: "https://github.com/herve8940/BandStudio"

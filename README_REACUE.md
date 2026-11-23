@@ -1159,13 +1159,13 @@ Project layout:
 - **Your music:** you alone are responsible for having the rights to the audio, stems and lyrics you
   process with ReaCue. ReaCue provides **no audio and no lyrics**, and never downloads lyrics.
 - **Trademarks:** REAPER is a trademark of Cockos Incorporated; Claude is a trademark of Anthropic; other
-  names (e.g. Moises) belong to their owners. ReaCue is an independent project, **not affiliated with or
+  names belong to their owners. ReaCue is an independent project, **not affiliated with or
   endorsed by** Cockos, Anthropic or any other company mentioned.
 - The **Settings** tab of the ReaCue window has a **Licences** button that opens this information.
 
 ## Credits and licence
 
-ReaCue by Hervé Naessens. MIT licence, see [LICENSE](LICENSE).
+ReaCue is released under the [MIT license](LICENSE).
 
 Stem separation by [Demucs](https://github.com/facebookresearch/demucs) (Alexandre Défossez, Meta AI, MIT
 licence) on [PyTorch](https://pytorch.org/).

@@ -15,7 +15,7 @@ BandStudio is free software for local stem separation and song practice: adjust 
 
 **Windows:** extract the complete ZIP and run `BandStudio.exe`. Python is included; WebView2 is required. Optional models are installed separately. **macOS:** native app for an existing prepared local runtime; initial source installation is described in the [guide](docs/BANDSTUDIO.md#macos). A complete new-machine macOS installer is not yet distributed.
 
-Windows packaging, speech, WebView2 and offline audio are exercised in CI; actual audio devices and optional AI engines still need hardware testing. AI output needs musical review. Specialized separation models and cloud services from commercial products are not all reproduced.
+Windows packaging, speech, WebView2 and offline audio are exercised in CI; actual audio devices and optional AI engines still need hardware testing. AI output needs musical review.
 
 **[BandPilot](https://herve8940.github.io/BandPilot/en.html)** complements BandStudio with mixer control, guided sound checks and rehearsals. Both applications work independently; REAPER receives the prepared music.
 
