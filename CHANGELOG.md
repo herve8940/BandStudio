@@ -1,3 +1,10 @@
+## BandStudio · 2026-11-23
+
+- L’éditeur regroupe les pistes, les sections, les paroles, les accords et le métronome. Après préparation, l’écoute ciblée permet de rejoindre un passage signalé.
+- La recherche de paroles essaie aussi le titre simplifié et les catalogues d’artistes. Le calage utilise le chant local. La fiche affiche les entrées anticipées et suit la même grille que le décompte et l’export REAPER.
+
+[Notes de version en français et en anglais](docs/RELEASE_2026-11-23.md).
+
 ## 2026-11-21 — Complete preparation and graphical section comparison
 
 - Extend Prepare all and the batch queue with installed drum/vocal sub-stem models, vocal-first lyrics, final automatic structure/chord review and guide regeneration; retain completed work and manual edits.
