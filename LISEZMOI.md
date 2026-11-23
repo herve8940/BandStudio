@@ -1231,13 +1231,13 @@ Migration depuis une ancienne installation (dossier `~/Documents/reacue-mcp`) : 
 - **Ta musique :** tu es seul responsable des droits sur l'audio, les stems et les paroles que tu traites
   avec ReaCue. ReaCue ne fournit **ni audio ni paroles**, et ne télécharge jamais de paroles.
 - **Marques :** REAPER est une marque de Cockos Incorporated ; Claude est une marque d'Anthropic ; les autres
-  noms (par exemple Moises) appartiennent à leurs propriétaires. ReaCue est un projet indépendant, **ni
+  noms appartiennent à leurs propriétaires. ReaCue est un projet indépendant, **ni
   affilié ni approuvé** par Cockos, Anthropic ou toute autre société citée.
 - L'onglet **Réglages** de la fenêtre ReaCue a un bouton **Licences** qui ouvre ces informations.
 
 ## Crédits et licence
 
-ReaCue par Hervé Naessens. Licence MIT, voir [LICENSE](LICENSE).
+ReaCue est publié sous [licence MIT](LICENSE).
 
 Séparation de stems par [Demucs](https://github.com/facebookresearch/demucs) (Alexandre Défossez, Meta AI,
 licence MIT) sur [PyTorch](https://pytorch.org/).

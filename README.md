@@ -25,7 +25,7 @@ BandStudio est un logiciel gratuit de séparation d’instruments (stems) et de 
 - **Préparer la répétition** avec le click, les appels de sections, le décompte et les notes. Tu peux consigner ta vérification à l’écoute dans **Projet REAPER**.
 - **Exporter** : mix, stems WAV/FLAC/MP3/AAC, paroles LRC/SRT, fiche PDF, MIDI batterie et projet REAPER portable avec médias et décompte initial réglable pour préparer le départ.
 
-La qualité dépend du morceau et des modèles installés. Une estimation d’IA se vérifie à l’écoute. BandStudio ne prétend pas reproduire tous les modèles de séparation spécialisés ou services de Moises. [Fonctions et limites](docs/BANDSTUDIO.md#traitement-du-morceau).
+La qualité dépend du morceau et des modèles installés. Vérifie à l’écoute les accords, les paroles et les sections proposés. [Fonctions et limites](docs/BANDSTUDIO.md#traitement-du-morceau).
 
 ## Nouveautés du 23 novembre 2026
 
@@ -76,7 +76,7 @@ Les tests audio supplémentaires demandent FFmpeg et le moteur de test local : `
 
 ## Licence et crédits
 
-Code sous [licence MIT](LICENSE), par Hervé Naessens et les contributeurs. Les composants et modèles conservent leurs licences ; certains modèles facultatifs de structure et batterie ont des restrictions non commerciales. Voir [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Aucun modèle ni morceau personnel n’est publié dans le dépôt.
+Code sous [licence MIT](LICENSE), par les contributeurs de BandStudio. Les composants et modèles conservent leurs licences ; certains modèles facultatifs de structure et batterie ont des restrictions non commerciales. Voir [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Aucun modèle ni morceau personnel n’est publié dans le dépôt.
 
 ## Communauté & assistance
 

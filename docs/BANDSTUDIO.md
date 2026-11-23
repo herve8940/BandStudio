@@ -37,15 +37,13 @@ Les morceaux entièrement préparés apparaissent dans **Mes morceaux**, prêts 
 | Usage | BandStudio | Limites |
 |---|---|---|
 | Séparer les instruments | Demucs 4/6 pistes | Guitare et piano seulement avec le modèle 6 pistes ; résidus possibles |
-| Sous-pistes | DrumSep, chant principal/chœurs | Moteurs facultatifs ; pas tous les instruments spécialisés de Moises Pro |
+| Sous-pistes | DrumSep, chant principal/chœurs | Moteurs facultatifs pour la batterie et le chant |
 | Écouter sa partie | Original, mix, solo et sans l’instrument choisi | Seuls les instruments disponibles sont proposés |
 | Vitesse et hauteur | 50–150 %, ±12 demi-tons | Artefacts possibles ; Windows prépare les changements dans le cache |
 | Tempo, tonalité, structure | Détection et corrections | Résultats à vérifier musicalement |
 | Boucles, métronome, décompte | Passage précis, progression, guides séparés | La carte audio et les voix système restent à tester sur chaque ordinateur |
 | Accords et paroles | Grilles Internet avec calage proposé, transcription locale, édition, capo, LRC/SRT | Recherche d’accords en ligne ; placement et transcription à vérifier |
 | Exports | Mix, stems, MIDI batterie, PDF, projet REAPER | Les stems individuels restent au tempo et à la hauteur d’origine ; le projet REAPER applique les réglages validés |
-
-Référence fonctionnelle : [traitement d’un morceau dans Moises](https://help.moises.ai/hc/en-us/articles/8583454469276-How-to-Upload-and-Edit-your-track-using-Moises). BandStudio est un projet indépendant. Le mastering et la génération musicale ne font pas partie de son atelier de préparation.
 
 ## Windows
 
