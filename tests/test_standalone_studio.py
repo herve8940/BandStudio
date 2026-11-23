@@ -187,11 +187,11 @@ def test_native_ui_commands_and_project_binding(tmp_path,windows):
             expect(page.locator('.track[data-id=guide_count] .track-buttons button').nth(0)).to_have_attribute('aria-pressed','true')
             expect(page.locator('.track[data-id=guide_count] .track-buttons button').nth(1)).to_have_attribute('aria-pressed','true')
             page.locator('.track[data-id=guide_count] .track-name').click()
-            expect(page.locator('#view-guides')).to_be_visible()
-            for name in ['prepare','delivery','library','settings','guides','prompter','studio']:
+            expect(page.locator('#editorRhythm #guideForm')).to_be_visible()
+            for name in ['prepare','delivery','library','settings','sheet','prompter','studio']:
                 page.locator(f'.rail [data-view={name}]').click()
                 expect(page.locator('#view-'+name)).to_be_visible()
-            page.locator('.rail [data-view=guides]').click()
+            page.locator('[data-workspace-mode=rhythm]').click()
             page.locator('#setting-manualBPM').fill('96')
             page.locator('#setting-countBars').fill('1')
             page.locator('#setting-callsPan').fill('-1')
@@ -211,21 +211,28 @@ def test_native_ui_commands_and_project_binding(tmp_path,windows):
                 expect(page.locator('#stageBeat')).to_have_text(label)
             page.evaluate('window.studioReceive({type:"transport",position:2.5,rate:1,mode:"mix"})')
             assert page.locator('.drum-row').last.locator('.drum-cell').first.get_attribute('class').find('hit')>=0
-            # Moving the first measure preserves pulse phase, but earlier bars become pickups.
+            # A later downbeat in the detected grid preserves earlier complete measures.
             project['settings']['firstBeat']=6.5
             page.evaluate('p=>window.studioReceive({type:"state",project:p,duration:100,loaded:true,library:[],revision:4})',project)
+            expect(page.locator('#stageBeat')).to_have_text('Mesure 1 · temps 1 / 4')
+            page.evaluate('window.studioReceive({type:"transport",position:6.5,rate:1,mode:"mix"})')
+            expect(page.locator('#stageBeat')).to_have_text('Mesure 3 · temps 1 / 4')
+            # A fixed manual grid numbers its first measure from the saved start.
+            project['settings'].update(gridMode='fixed',manualBPM=120)
+            page.evaluate('p=>window.studioReceive({type:"state",project:p,duration:100,loaded:true,library:[],revision:5})',project)
+            page.evaluate('window.studioReceive({type:"transport",position:2.5,rate:1,mode:"mix"})')
             expect(page.locator('#stageBeat')).to_have_text('Levée · temps 1 / 4')
             page.evaluate('window.studioReceive({type:"transport",position:6.5,rate:1,mode:"mix"})')
             expect(page.locator('#stageBeat')).to_have_text('Mesure 1 · temps 1 / 4')
             assert page.locator('#importLink').count()==0 and page.locator('#linkEditor').count()==0
-            page.locator('.rail [data-view=prompter]').click()
+            page.get_by_role('button',name='Modifier dans l’éditeur').click()
             page.locator('#addAnnotation').click()
             page.locator('#annotationText').fill('Paroles corrigées <b>à garder comme texte</b>')
             page.locator('#annotationStart').fill('1.25')
             page.locator('#annotationEnd').fill('2.9')
             page.locator('#annotationForm button[type=submit]').click()
             assert page.evaluate('window.sent.at(-1).args.start')==1.25
-            page.locator('.rail [data-view=studio]').click()
+            page.locator('[data-workspace-mode=tracks]').click()
             page.locator('.track-name').first.click()
             page.locator('#trackPan').fill('0.5')
             page.locator('#trackOffset').fill('-0.05')
@@ -241,17 +248,21 @@ def test_native_ui_commands_and_project_binding(tmp_path,windows):
             assert page.evaluate('window.sent.at(-1).args')=={'kind':'stemsexport','options':{'format':'flac'}}
             page.locator('#exportSheet').click()
             assert page.evaluate('window.sent.at(-1).args.kind')=='sheet'
+            page.locator('.rail [data-view=studio]').click()
+            page.locator('[data-workspace-mode=lyrics]').click()
+            page.locator('#lyricsTools summary').click()
             page.locator('#lyricsFile').set_input_files({'name':'paroles.lrc','mimeType':'text/plain','buffer':b'[00:01.00]Bonjour\n[00:02.00]Refrain'})
             expect(page.locator('#lyricsFile')).to_have_value('')
             assert page.evaluate('window.sent.at(-1)?.args.kind')=='lyricsimport'
             assert page.evaluate('window.sent.at(-1).args.options.replace') is False
-            page.locator('.rail [data-view=guides]').click()
+            page.locator('[data-workspace-mode=rhythm]').click()
             page.locator('#lockGrid').check()
             assert page.evaluate('window.sent.at(-1).args.gridLocked') is True
             page.locator('.rail [data-view=prompter]').click()
             project['key']='D';project['capo']=2;project['chords']=[{'start':0,'end':100,'text':'D/F#'}]
             page.evaluate('p=>window.studioReceive({type:"state",project:p,duration:100,loaded:true,library:[],revision:6})',project)
             expect(page.locator('#stageChord')).to_have_text('C/E · capo 2')
+            page.get_by_role('button',name='Modifier dans l’éditeur').click()
             page.locator('#addAnnotation').click();page.locator('#annotationText').fill('Très bien')
             page.locator('#annotationStart').fill('1');page.locator('#annotationEnd').fill('3')
             page.locator('#wordEditor summary').click();page.locator('#distributeWords').click()
@@ -266,9 +277,11 @@ def test_native_ui_commands_and_project_binding(tmp_path,windows):
             page.evaluate('p=>window.studioReceive({type:"state",project:p,duration:100,loaded:true,library:[],revision:6,busy:false})',project)
             expect(page.locator('#newCue')).to_be_enabled()
             page.locator('.rail [data-view=delivery]').click()
-            expect(page.locator('#sendReaper')).to_be_disabled()
+            expect(page.locator('#sendReaper')).to_be_enabled()
+            expect(page.locator('#deliveryStatus')).to_have_text('À vérifier')
             expect(page.locator('[data-action=bandpilot]')).to_have_count(0)
             expect(page.locator('[data-action=record]')).to_have_count(0)
+            page.locator('.listening-checklist summary').click()
             for key in ['reviewAudio','reviewGrid','reviewGuides']:page.locator('#'+key).check()
             page.locator('#validateProject').click()
             assert page.evaluate('window.sent.at(-1).command')=='validateProject'
@@ -276,11 +289,13 @@ def test_native_ui_commands_and_project_binding(tmp_path,windows):
             project['preparation']={'fingerprint':'checked','validatedAt':'2026-11-10T20:00:00Z','rate':1,'pitch':0,'mode':'mix'}
             page.evaluate('p=>window.studioReceive({type:"state",project:p,duration:100,loaded:true,library:[],revision:7})',project)
             expect(page.locator('#sendReaper')).to_be_enabled()
+            expect(page.locator('#deliveryStatus')).to_contain_text('Validé pour REAPER')
             page.locator('#sendReaper').click()
             assert page.evaluate('window.sent.at(-1).command')=='reaper'
-            assert page.evaluate('window.sent.at(-1).args.open') is True
+            assert page.evaluate('window.sent.at(-1).args')==dict(open=True,preflight=True)
             page.evaluate('window.studioReceive({type:"transport",position:0,rate:.9,pitch:0,mode:"mix"})')
-            expect(page.locator('#sendReaper')).to_be_disabled()
+            expect(page.locator('#deliveryStatus')).to_have_text('À vérifier')
+            expect(page.locator('#sendReaper')).to_be_enabled()
             project['tracks'].append({**project['tracks'][0],'id':'source','role':'source','name':'Original'})
             library=[{'name':'Morceau <b>test</b>','path':'/Music/Test.bandstudio','artwork':''}]
             page.evaluate('v=>window.studioReceive({type:"state",project:v.project,duration:100,loaded:true,library:v.library,trashAvailable:true,analysisPlan:["grid","structure","key","guides"],revision:8})',dict(project=project,library=library))

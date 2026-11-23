@@ -12,6 +12,7 @@ def display(page,p,prepared=False):
         draft.update(status='prepared',beforeSections=copy.deepcopy(p['sections']));p['sections']=copy.deepcopy(draft['sections'])
     p['structureProposal']=draft
     page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:2})',p)
+    page.locator('[data-workspace-mode=structure]').click()
 
 
 def test_exact_shared_geometry_short_break_zoom_and_safe_read_only_selection(manual_page):
