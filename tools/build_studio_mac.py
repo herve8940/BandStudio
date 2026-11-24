@@ -104,7 +104,7 @@ def build(source, prepare=False):
     cache=BUILD / 'swift-module-cache';cache.mkdir(exist_ok=True)
     subprocess.run(['xcrun','swiftc','-O','-whole-module-optimization','-num-threads','4','-target',platform.machine()+'-apple-macosx12.0','-module-cache-path',str(cache),
                     *[str(ROOT / 'desktop/studio' / f) for f in ['StudioDiagnostics.swift','StudioUpdates.swift','StudioSettings.swift','StudioCore.swift','StudioLearning.swift','StudioApp.swift','StudioWorkflows.swift','StudioQueue.swift','StudioAdvanced.swift','StudioPhone.swift','StudioRecording.swift','main.swift']],
-                    '-o',str(mac / 'BandStudio'),'-framework','AppKit','-framework','WebKit','-framework','AVFoundation'],check=True)
+                    '-o',str(mac / 'BandStudio'),'-framework','AppKit','-framework','WebKit','-framework','AVFoundation','-framework','Accelerate'],check=True)
     subprocess.run(['codesign','--force','--sign','-',str(app)],check=True)
     subprocess.run(['codesign','--verify','--deep','--strict',str(app)],check=True)
     print(app)

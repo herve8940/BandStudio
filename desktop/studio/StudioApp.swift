@@ -2,7 +2,7 @@ import AppKit
 import WebKit
 import AVFoundation
 
-final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavigationDelegate {
+final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
     var window:NSWindow!
     var web:WKWebView!
     let audio=StudioAudio()
@@ -60,7 +60,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         StudioDiagnostics.shared.event("startup",["version":"1.1.0","os":ProcessInfo.processInfo.operatingSystemVersionString])
         NSApp.setActivationPolicy(.regular)
         let resources=Bundle.main.resourceURL!
-        webRoot=resources.appendingPathComponent("web")
+        webRoot=resources.appendingPathComponent("web").absoluteURL
         let config=(try? JSONSerialization.jsonObject(with:Data(contentsOf:resources.appendingPathComponent("studio.json")))) as? [String:String] ?? [:]
         runtime=URL(fileURLWithPath:config["runtime"] ?? resources.appendingPathComponent("Engine").path)
         library=URL(fileURLWithPath:config["library"] ?? NSHomeDirectory()+"/Music/BandStudio")
@@ -84,7 +84,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         window.appearance=NSAppearance(named:.darkAqua);window.setFrameAutosaveName("BandStudio")
         let cfg=WKWebViewConfiguration();cfg.websiteDataStore = .nonPersistent()
         cfg.userContentController.add(self,name:"studio")
-        web=WKWebView(frame:.zero,configuration:cfg);web.navigationDelegate=self
+        web=WKWebView(frame:.zero,configuration:cfg);web.navigationDelegate=self;web.uiDelegate=self
         window.contentView=web;window.center();window.makeKeyAndOrderFront(nil)
         web.loadFileURL(webRoot.appendingPathComponent("index.html"),allowingReadAccessTo:webRoot)
         NSApp.activate(ignoringOtherApps:true)
@@ -560,8 +560,13 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     }
     func webView(_ webView:WKWebView,didFinish navigation:WKNavigation!){sendState()}
     func webView(_ webView:WKWebView,decidePolicyFor action:WKNavigationAction,decisionHandler:@escaping(WKNavigationActionPolicy)->Void) {
-        let allowed=action.request.url?.standardizedFileURL.path == webRoot.appendingPathComponent("index.html").standardizedFileURL.path
+        let allowed=action.targetFrame?.isMainFrame == true && action.request.url?.isFileURL == true && action.request.url?.standardizedFileURL.path == webRoot.appendingPathComponent("index.html").standardizedFileURL.path
         decisionHandler(allowed ? .allow : .cancel)
+    }
+    func webView(_ webView:WKWebView,runOpenPanelWith parameters:WKOpenPanelParameters,initiatedByFrame frame:WKFrameInfo,completionHandler:@escaping ([URL]?)->Void) {
+        guard frame.isMainFrame,frame.request.url?.isFileURL == true,frame.request.url?.standardizedFileURL.path == webRoot.appendingPathComponent("index.html").standardizedFileURL.path else{completionHandler(nil);return}
+        let panel=NSOpenPanel();panel.canChooseDirectories=parameters.allowsDirectories;panel.allowsMultipleSelection=parameters.allowsMultipleSelection
+        panel.beginSheetModal(for:window){result in completionHandler(result == .OK ? panel.urls : nil)}
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender:NSApplication)->Bool{true}
     func application(_ application:NSApplication,open urls:[URL]) {

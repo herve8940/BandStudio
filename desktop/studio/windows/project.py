@@ -108,9 +108,25 @@ def save(p,root):
     validate(p,root);record(root,p);atomic(Path(root)/'project.json',p)
 
 def waveform(path):
-    path=Path(path);info=sf.info(path);peaks=np.zeros(720,dtype=np.float32);at=0
-    for data in sf.blocks(path,blocksize=65536,dtype='float32',always_2d=True):
-        bins=np.minimum(719,(np.arange(len(data),dtype=np.int64)+at)*720//info.frames);np.maximum.at(peaks,bins,np.abs(data).max(axis=1));at+=len(data)
+    peaks = np.zeros(720, dtype=np.float32)
+    with sf.SoundFile(path) as audio:
+        frames = len(audio)
+        if not frames:
+            return peaks.tolist()
+        # First frame of each display column, including repeated boundaries on short clips.
+        edges = (np.arange(721, dtype=np.int64) * frames + 719) // 720
+        offset = 0
+        for data in audio.blocks(blocksize=65536, dtype='float32', always_2d=True):
+            end = offset + len(data)
+            first = offset * 720 // frames
+            last = (end - 1) * 720 // frames
+            bins = np.arange(first, last + 1)
+            bins = bins[edges[bins + 1] > edges[bins]]
+            starts = np.maximum(edges[bins] - offset, 0)
+            np.abs(data, out=data)
+            block_peaks = np.maximum.reduceat(data, starts, axis=0).max(axis=1)
+            peaks[bins] = np.maximum(peaks[bins], block_peaks)
+            offset = end
     return peaks.tolist()
 
 def track(path,root,name,role,offset=0):
