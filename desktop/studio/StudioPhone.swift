@@ -7,7 +7,7 @@ extension StudioApp {
             send(["type":"phone","active":false]);return
         }
         if phoneProcess?.isRunning == true {phoneAnnounced=false;updatePhone();return}
-        guard root != nil else{throw StudioError("Ouvre d’abord un morceau.")}
+        guard root != nil else{throw StudioError(uiText("Ouvre d’abord un morceau.", "Open a song first."))}
         let folder=FileManager.default.temporaryDirectory.appendingPathComponent("bandstudio-phone-"+UUID().uuidString)
         try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
         let process=Process();process.executableURL=runtime.appendingPathComponent(".venv/bin/python")
@@ -15,7 +15,7 @@ extension StudioApp {
         process.standardOutput=FileHandle.nullDevice;process.standardError=FileHandle.nullDevice
         process.terminationHandler={[weak self] ended in DispatchQueue.main.async {
             guard let self=self,self.phoneProcess === ended else{return}
-            self.phoneProcess=nil;self.phoneFolder=nil;self.send(["type":"phone","active":false,"error":"Le prompteur réseau s’est arrêté. Tu peux le relancer."])
+            self.phoneProcess=nil;self.phoneFolder=nil;self.send(["type":"phone","active":false,"error":uiText("Le prompteur réseau s’est arrêté. Tu peux le relancer.", "The network teleprompter stopped. You can start it again.")])
         }}
         try process.run();phoneProcess=process;phoneFolder=folder;phoneRevision = -1;phoneAnnounced=false;phonePulse=0;updatePhone()
     }

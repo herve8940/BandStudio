@@ -3,6 +3,7 @@
 The digest covers decoded samples, rate and channels, not filenames or tags.
 Different edits/encodings are deliberately not fuzzy-matched to a trusted map.
 """
+from ui_language import ui_text
 import copy
 import hashlib
 import json
@@ -26,10 +27,10 @@ def recording(project):
     with sf.SoundFile(path) as stream:
         digest.update(f'pcm-v1:{stream.samplerate}:{stream.channels}:{stream.frames}:'.encode())
         for block in stream.blocks(blocksize=262144,dtype='float32',always_2d=True):
-            if not np.isfinite(block).all():raise ValueError('Audio non fini.')
+            if not np.isfinite(block).all():raise ValueError(ui_text('Audio non fini.', 'Audio contains non-finite values.'))
             digest.update(block.astype('<f4',copy=False).tobytes())
     after=path.stat()
-    if (before.st_size,before.st_mtime_ns)!=(after.st_size,after.st_mtime_ns):raise ValueError('Audio modifié pendant la comparaison.')
+    if (before.st_size,before.st_mtime_ns)!=(after.st_size,after.st_mtime_ns):raise ValueError(ui_text('Audio modifié pendant la comparaison.', 'Audio changed during comparison.'))
     return dict(digest=digest.hexdigest(),offset=source.get('offset',0),duration=source['duration'])
 
 

@@ -1,5 +1,6 @@
 """Portable project services: audible guides, media decoding and REAPER exchange."""
 from __future__ import annotations
+from ui_language import ui_text, using_english
 from listening import included, guide_audible
 import bisect
 import hashlib
@@ -73,12 +74,12 @@ def calibrate_grid(result):
             proposal_applied=True
     if proposal and not proposal_applied:
         result={k:v for k,v in result.items() if k not in ('learnedBarProposal','barAdaptation')}
-    status = '« 1 » calé automatiquement sur les mesures détectées' if automatic else '« 1 » à vérifier à l’écoute · mesures non confirmées'
+    status = ui_text('« 1 » calé automatiquement sur les mesures détectées', 'Beat 1 aligned automatically to the detected bars') if automatic else ui_text('« 1 » à vérifier à l’écoute · mesures non confirmées', 'Check beat 1 by ear · bars unconfirmed')
     if result.get('learnedReviewRequired'):
-        status = 'Temps et mesures à vérifier à l’écoute · calage incertain'
-        if proposal_applied:status='Premier temps et mesure proposés par apprentissage · à vérifier à l’écoute'
+        status = ui_text('Temps et mesures à vérifier à l’écoute · calage incertain', 'Check beats and bars by ear · uncertain timing')
+        if proposal_applied:status=ui_text('Premier temps et mesure proposés par apprentissage · à vérifier à l’écoute', 'Suggested downbeat and meter from the learned model · check by ear')
     if result.get('tempoNote'):status += ' · ' + result['tempoNote']
-    if beats and beats[0] > 2:status += f' · grille à partir de {beats[0]:.2f} s'
+    if beats and beats[0] > 2:status += (f' · grid from {beats[0]:.2f} s' if using_english() else f' · grille à partir de {beats[0]:.2f} s')
     return {**result, 'firstBeat': first, 'beatsPerBar': meter,
             'agreement': agreement, 'phaseConfidence': phase_confidence,
             'gridReviewRequired': not automatic, 'gridStatus': status}
@@ -103,7 +104,7 @@ def run(argv,timeout=1800):
     prior=signal.signal(signal.SIGTERM,stop)
     try:
         out,err=proc.communicate(timeout=timeout)
-        if proc.returncode:raise RuntimeError(err.decode(errors='replace')[-1800:] or 'Le traitement média a échoué.')
+        if proc.returncode:raise RuntimeError(err.decode(errors='replace')[-1800:] or ui_text('Le traitement média a échoué.', 'Media processing failed.'))
         return out
     finally:
         if proc.poll() is None:
@@ -226,7 +227,7 @@ def plan_announcements(entries,count_plans,beats,bpm,settings):
             at=announcement_before(conflict[0]-length-.05,beats,bpm)
         if at<0:
             warnings.append(dict(id=entry['id'],target=entry['target'],reason='noRoomBeforeEntry',
-                message='Annonce sans place disponible avant l’entrée et son décompte.'))
+                message=ui_text('Annonce sans place disponible avant l’entrée et son décompte.', 'No room for the announcement before the entry and its count-in.')))
             continue
         scheduled.append({**entry,'time':at,'end':at+length,'moved':abs(at-entry['requested'])>1e-6})
         next_start=at
@@ -287,7 +288,7 @@ def voice_wav(text,folder,settings):
         request.unlink(missing_ok=True)
     else:run(['/usr/bin/say','-v',settings['voice'],'-r',str(settings['speechRate']),'-o',raw,'--',text],timeout=60)
     x,sr=sf.read(raw,dtype='float32',always_2d=True)
-    if not len(x) or float(np.max(np.abs(x)))<1e-6:raise RuntimeError('La voix choisie ne produit aucun son. Choisis une voix installée.')
+    if not len(x) or float(np.max(np.abs(x)))<1e-6:raise RuntimeError(ui_text('La voix choisie ne produit aucun son. Choisis une voix installée.', 'The selected voice produced no sound. Choose an installed voice.'))
     # Preserve quiet consonants/nasal onsets; only trim actual synthesis silence.
     # A 3 ms margin at 1.8% of peak clipped the beginning of ‘Introduction’.
     active=np.flatnonzero(np.max(np.abs(x),axis=1)>np.max(np.abs(x))*.001)
@@ -332,7 +333,7 @@ def guides(project_file,output):
         n=min(len(data),len(dest)-start)
         if n>0:dest[start:start+n]+=data[:n]
     click_beats=([clock.at(clock.coordinate(beats[0])-1)]+beats if beats and s['subdivision']>1 else beats)
-    for beat in phase_items(click_beats,0,5,"Création du click"):
+    for beat in phase_items(click_beats,0,5,ui_text("Création du click", 'Creating click')):
         index=round(clock.coordinate(beat));span=clock.at(index+1)-clock.at(index)
         for sub in range(s['subdivision']):
             at=beat+sub*span/s['subdivision']
@@ -351,7 +352,7 @@ def guides(project_file,output):
         if item['id'] in count_plans:
             count_plans[item['id']]=[e for e in count_plans[item['id']] if e['time']>=previous_start]
         previous_start=max(previous_start,item['start'])
-    for item in phase_items(p.get('sections',[])+p.get('cues',[]),1,5,'Annonces des passages'):
+    for item in phase_items(p.get('sections',[])+p.get('cues',[]),1,5,ui_text('Annonces des passages', 'Announcing passages')):
         if item.get('announce') is False:continue
         text=announcement_text(item,s['language']);target=item.get('start',item.get('time',0))
         path=reusable_voice(text,cache,s,p.get('_root'))
@@ -369,8 +370,8 @@ def guides(project_file,output):
     words={'fr':['un','deux','trois','quatre','cinq','six','sept','huit','neuf','dix','onze','douze'],
            'en':['one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve']}
     if s['countVoice']:
-        for i,text in enumerate(phase_items(words[s['language']][:max(s['beatsPerBar'],s['regionCountBeats'])],2,5,'Voix du décompte')):file_map['number:'+str(i+1)]=str(reusable_voice(text,cache,s,p.get('_root')))
-    for item in phase_items(p.get('sections',[]),3,5,'Placement des décomptes'):
+        for i,text in enumerate(phase_items(words[s['language']][:max(s['beatsPerBar'],s['regionCountBeats'])],2,5,ui_text('Voix du décompte', 'Count-in voice'))):file_map['number:'+str(i+1)]=str(reusable_voice(text,cache,s,p.get('_root')))
+    for item in phase_items(p.get('sections',[]),3,5,ui_text('Placement des décomptes', 'Placing count-ins')):
         if item.get('announce') is False:continue
         for event in count_plans[item['id']]:
             number,at,end=event['number'],event['time'],event['end']
@@ -384,7 +385,7 @@ def guides(project_file,output):
                 accented=round(clock.coordinate(at))%s['beatsPerBar']==0
                 t=np.arange(int(sr*.035))/sr;wave=.65*np.sin(2*np.pi*(1760 if accented else 1100)*t)*np.exp(-t*130)
                 place(counts,np.repeat(wave[:,None],2,axis=1),at)
-    for name,data in phase_items([('click',click),('calls',calls),('cues',cues),('counts',counts)],4,5,'Enregistrement des guides'):
+    for name,data in phase_items([('click',click),('calls',calls),('cues',cues),('counts',counts)],4,5,ui_text('Enregistrement des guides', 'Saving guides')):
         path=root/(name+'.wav')
         with sf.SoundFile(path,'w',samplerate=sr,channels=2,subtype='FLOAT') as writer:
             for a in range(0,len(data),65536):writer.write(np.clip(data[a:a+65536],-1,1))
@@ -407,11 +408,11 @@ def reaper_filename(name, folder):
     budget=240-units(folder)-1
     # Audio/<UUID>.wav.reapeaks is longer than our metadata filenames.
     if budget<len('Audio/00000000-0000-0000-0000-000000000000.wav.reapeaks'):
-        raise ValueError('Chemin d’export trop long pour REAPER. Place le morceau dans un dossier plus court, puis relance l’export.')
+        raise ValueError(ui_text('Chemin d’export trop long pour REAPER. Place le morceau dans un dossier plus court, puis relance l’export.', 'REAPER export path is too long. Move the song to a shorter path and export again.'))
     stem=safe_name(name)
-    if re.match(r'^(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\.|$)',stem,re.I):stem='Morceau-'+stem
+    if re.match(r'^(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\.|$)',stem,re.I):stem=ui_text('Morceau-', 'Song-')+stem
     while units(stem)>min(60,budget-len('.rpp-bak')):stem=stem[:-1]
-    return (stem.rstrip(' .') or 'Morceau')+'.rpp'
+    return (stem.rstrip(' .') or ui_text('Morceau', 'Song'))+'.rpp'
 
 
 def export_reaper(project_file,output,*,final_folder=None):
@@ -442,7 +443,7 @@ def export_reaper(project_file,output,*,final_folder=None):
     for t in p['tracks']:
         if t['role'].startswith('guide_') and not s['exportGuides']:continue
         original=(root/t['file']).resolve()
-        if not original.is_relative_to(root.resolve()):raise ValueError('Fichier hors du projet.')
+        if not original.is_relative_to(root.resolve()):raise ValueError(ui_text('Fichier hors du projet.', 'File outside the project.'))
         name=str(uuid.uuid5(uuid.NAMESPACE_OID,t['id']))+'.wav';dest=media/name
         if not dest.exists():
             if original.suffix.lower()=='.wav':shutil.copy2(original,dest)
@@ -467,7 +468,7 @@ def export_reaper(project_file,output,*,final_folder=None):
                   '      VOLPAN 1 0 1 -1','      NAME '+quote(t['name']),'      <SOURCE WAVE','        FILE '+quote('Audio/'+name),'      >','    >','  >']
     if s['exportCount'] and plan['events']:
         render_count(p,root,plan,media/'count-in.wav')
-        lines+=['  <TRACK','    NAME "Décompte"',f'    MUTESOLO {int(not guide_audible(p,"guide_count"))} 0 0',f'    VOLPAN {s["countGain"]} {s["countPan"]}','    <ITEM','      POSITION 0',f'      LENGTH {plan["end"]:.9f}','      <SOURCE WAVE','        FILE "Audio/count-in.wav"','      >','    >','  >']
+        lines+=['  <TRACK',ui_text('    NAME "Décompte"', '    NAME "Count-in"'),f'    MUTESOLO {int(not guide_audible(p,"guide_count"))} 0 0',f'    VOLPAN {s["countGain"]} {s["countPan"]}','    <ITEM','      POSITION 0',f'      LENGTH {plan["end"]:.9f}','      <SOURCE WAVE','        FILE "Audio/count-in.wav"','      >','    >','  >']
         if s['exportGuides'] and s['callsEnabled'] and (s['countBars']>1 or not s['countVoice']):
             first=next((x for x in p['sections'] if x['start']<=plan['target']+.1 and x['end']>plan['target'] and x.get('announce') is not False),None)
             relative=p.get('guideFiles',{}).get('call:'+first['id']) if first else None
@@ -476,13 +477,13 @@ def export_reaper(project_file,output,*,final_folder=None):
                 initial=media/'initial-call.wav';shutil.copy2(root/relative,initial)
                 available=next((e['time'] for e in plan['events'] if e['spoken']),plan['end']) if s['countVoice'] else plan['end']
                 length=min(sf.info(initial).duration,max(0,available-.05))
-                lines+=['  <TRACK','    NAME "Annonce de départ"',f'    MUTESOLO {int(not guide_audible(p,"guide_voice"))} 0 0',f'    VOLPAN {s["callsGain"]} {s["callsPan"]}','    <ITEM','      POSITION 0',f'      LENGTH {length:.9f}','      <SOURCE WAVE','        FILE "Audio/initial-call.wav"','      >','    >','  >']
+                lines+=['  <TRACK',ui_text('    NAME "Annonce de départ"', '    NAME "Start announcement"'),f'    MUTESOLO {int(not guide_audible(p,"guide_voice"))} 0 0',f'    VOLPAN {s["callsGain"]} {s["callsPan"]}','    <ITEM','      POSITION 0',f'      LENGTH {length:.9f}','      <SOURCE WAVE','        FILE "Audio/initial-call.wav"','      >','    >','  >']
     if p.get('_exportChordTrack') and p.get('chords'):
         # Empty, muted items make the reviewed harmony readable in REAPER.
         # The original annotation metadata remains available for round trips.
-        lines+=['  <TRACK','    NAME "Accords"','    MUTESOLO 1 0 0']
+        lines+=['  <TRACK',ui_text('    NAME "Accords"', '    NAME "Chords"'),'    MUTESOLO 1 0 0']
         for chord in p['chords']:
-            caption=chord['text']+(' · à vérifier' if not chord.get('manual') and chord.get('confidence',0)<.5 else '')
+            caption=chord['text']+(ui_text(' · à vérifier', ' · needs review') if not chord.get('manual') and chord.get('confidence',0)<.5 else '')
             lines+=['    <ITEM',f'      POSITION {chord["start"]+preroll:.9f}',
                     f'      LENGTH {chord["end"]-chord["start"]:.9f}',
                     '      NAME '+quote(caption),'      IMGRESOURCEFLAGS 2',
@@ -515,7 +516,7 @@ def render_count(p,root,plan,target):
     sf.write(target,np.clip(y,-1,1),sr,subtype='FLOAT');return target
 
 
-def safe_name(name):return re.sub(r'[\x00-\x1f/\\:*?"<>|]','-',str(name))[:100].strip(' .') or 'Morceau'
+def safe_name(name):return re.sub(r'[\x00-\x1f/\\:*?"<>|]','-',str(name))[:100].strip(' .') or ui_text('Morceau', 'Song')
 
 
 def export_midi(p,output):
@@ -554,7 +555,7 @@ def read_rpp(path):
             try:tokens=shlex.split(line)
             except ValueError:continue
             if tokens:stack[-1]['lines'].append(tokens)
-    if root is None or root['kind']!='REAPER_PROJECT':raise ValueError('Ce fichier ne contient pas de projet REAPER.')
+    if root is None or root['kind']!='REAPER_PROJECT':raise ValueError(ui_text('Ce fichier ne contient pas de projet REAPER.', 'This file does not contain a REAPER project.'))
     return root
 
 
@@ -581,19 +582,19 @@ def import_reaper(path,output,engine,snapshot):
     if compound:settings['beatsPerBar']=int(num(tempo,1,4))//3;p['bpm']/=1.5
     guide_names={'click','voice','cues','métronome','appels de régions','décompte des régions','décompte','annonce de départ'}
     for track in [c for c in tree['children'] if c['kind']=='TRACK']:
-        name=' '.join(field(track,'NAME',['Piste']))
+        name=' '.join(field(track,'NAME',[ui_text('Piste', 'Track')]))
         if name.lower().strip() in guide_names:continue # Rebuilt from the editable imported regions.
-        if any(c['kind']=='FXCHAIN' for c in track['children']):warnings.append('Les effets REAPER restent dans le RPP et ne sont pas reproduits ici.')
+        if any(c['kind']=='FXCHAIN' for c in track['children']):warnings.append(ui_text('Les effets REAPER restent dans le RPP et ne sont pas reproduits ici.', 'REAPER effects remain in the RPP. This player does not reproduce them.'))
         vp=field(track,'VOLPAN',['1','0']);ms=field(track,'MUTESOLO',['0','0']);items=[c for c in track['children'] if c['kind']=='ITEM']
         for index,item in enumerate(items):
             sources=[c for c in item['children'] if c['kind']=='SOURCE'];src=sources[0] if sources else {}
             filename=field(src,'FILE',[]) if src else []
             if not filename:
-                warnings.append('Une source MIDI, générée ou composée a été ignorée.');continue
+                warnings.append(ui_text('Une source MIDI, générée ou composée a été ignorée.', 'Skipped a MIDI, generated or composite source.'));continue
             audio=Path(filename[0]);audio=audio if audio.is_absolute() else source.parent/audio
-            if not audio.is_file():raise FileNotFoundError('Média REAPER introuvable : '+str(audio))
+            if not audio.is_file():raise FileNotFoundError(ui_text('Média REAPER introuvable : ', 'REAPER media not found: ')+str(audio))
             length=num(field(item,'LENGTH',['0']),0);offset=num(field(item,'POSITION',['0']),0);skip=max(0,num(field(item,'SOFFS',['0']),0))
-            if length<=0 or length>43200 or offset<0:raise ValueError('Durée ou position non prise en charge dans le projet REAPER.')
+            if length<=0 or length>43200 or offset<0:raise ValueError(ui_text('Durée ou position non prise en charge dans le projet REAPER.', 'Unsupported duration or position in the REAPER project.'))
             rate_values=field(item,'PLAYRATE',['1','1','0']);rate=max(.1,min(8,num(rate_values,0,1)));preserve=num(rate_values,1,1)!=0;pitch=max(-36,min(36,num(rate_values,2,0)))
             factor=2**(pitch/12)*(1 if preserve else rate)
             filters=['aresample=44100']
@@ -617,8 +618,8 @@ def import_reaper(path,output,engine,snapshot):
             if restored_role in ('source','drums','drum_kick','drum_snare','drum_toms','drum_cymbals','vocal_lead','vocal_backing','bass','vocals','guitar','piano','other','take'):role=restored_role
             itemvp=field(item,'VOLPAN',['1','0']);gain=max(0,min(2,num(vp,0,1)*num(itemvp,0,1)));pan=max(-1,min(1,num(vp,1)+num(itemvp,1)))
             p['tracks'].append(dict(id=ident,name=name+(f' · {index+1}' if len(items)>1 else ''),file='Audio/'+target.name,role=role,duration=info.duration,offset=offset,gain=gain,pan=pan,muted=num(ms,0)!=0 or num(field(item,'MUTE',['0']),0)!=0,solo=num(ms,1)!=0,peaks=peaks.tolist()))
-    if not p['tracks']:raise ValueError('Aucune piste audio à importer. Dans REAPER, rends les instruments MIDI en audio avant l’import.')
-    if len(p['tracks'])>125:raise ValueError('Le projet contient trop de clips audio. Consolide les pistes dans REAPER avant l’import.')
+    if not p['tracks']:raise ValueError(ui_text('Aucune piste audio à importer. Dans REAPER, rends les instruments MIDI en audio avant l’import.', 'No audio tracks to import. Render MIDI instruments to audio in REAPER first.'))
+    if len(p['tracks'])>125:raise ValueError(ui_text('Le projet contient trop de clips audio. Consolide les pistes dans REAPER avant l’import.', 'Too many audio clips. Consolidate tracks in REAPER before importing.'))
     duration=max(t['offset']+t['duration'] for t in p['tracks']);starts={}
     for row in tree['lines']:
         if row[0]!='MARKER' or len(row)<4:continue
@@ -662,6 +663,6 @@ def import_reaper(path,output,engine,snapshot):
             if saved.get('timingVersion')==1:
                 p['beats']=[t+shift for t in saved.get('beats') or []]
                 p['bpm']=saved.get('bpm',p['bpm'])
-        else:warnings.append('Le RPP a été modifié : les anciennes annotations de paroles et d’accords doivent être resynchronisées.')
-    p['notes']='Import audio du projet REAPER. Les régions et repères gardent leurs temps d’origine.\n'+'\n'.join(dict.fromkeys(warnings))
+        else:warnings.append(ui_text('Le RPP a été modifié : les anciennes annotations de paroles et d’accords doivent être resynchronisées.', 'The RPP has changed. Resync the old lyrics and chord annotations.'))
+    p['notes']=ui_text('Import audio du projet REAPER. Les régions et repères gardent leurs temps d’origine.\n', 'Audio imported from the REAPER project. Regions and markers keep their original times.\n')+'\n'.join(dict.fromkeys(warnings))
     atomic(folder/'project.json',p);atomic(output,dict(project=str(folder),warnings=list(dict.fromkeys(warnings))))

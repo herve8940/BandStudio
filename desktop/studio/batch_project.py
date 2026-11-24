@@ -1,4 +1,5 @@
 """Prepare private queue projects with the same workers and document format as Studio."""
+from ui_language import ui_text
 import json
 import shutil
 from pathlib import Path
@@ -10,16 +11,16 @@ from windows import project as model
 ENVIRONMENTS = {'separate': '.venv-demucs', 'smartgrid': '.venv-demucs',
                 'structure': '.venv-structure', 'lyrics': '.venv-words', 'chords': '.venv',
                 'drumsep': '.venv-demucs','vocalsplit': '.venv-creative'}
-LABELS = {'import': 'Import', 'separate': 'Séparation des instruments', 'grid': 'Tempo',
-          'smartgrid': 'Temps et mesures', 'structure': 'Structure', 'key': 'Tonalité',
-          'lyrics': 'Paroles', 'chords': 'Accords', 'guides': 'Click et annonces',
-          'drumsep':'Éléments de batterie','vocalsplit':'Chant et chœurs','prepareReview':'Vérification finale des sections et accords'}
+LABELS = {'import': 'Import', 'separate': ui_text('Séparation des instruments', 'Instrument separation'), 'grid': 'Tempo',
+          'smartgrid': ui_text('Temps et mesures', 'Beats and bars'), 'structure': 'Structure', 'key': ui_text('Tonalité', 'Key'),
+          'lyrics': ui_text('Paroles', 'Lyrics'), 'chords': ui_text('Accords', 'Chords'), 'guides': ui_text('Click et annonces', 'Click and announcements'),
+          'drumsep':ui_text('Éléments de batterie', 'Drum kit pieces'),'vocalsplit':ui_text('Chant et chœurs', 'Lead and backing vocals'),'prepareReview':ui_text('Vérification finale des sections et accords', 'Final check of sections and chords')}
 
 
 def plan(engine):
     engine = Path(engine)
     if not python_for(engine, '.venv-demucs').is_file():
-        raise ValueError('Installe Séparer les stems dans Réglages → Analyses locales, puis réessaie.')
+        raise ValueError(ui_text('Installe Séparer les stems dans Réglages → Analyses locales, puis réessaie.', 'Install Separate stems in Settings → Local analysis, then try again.'))
     smart = any((engine / '.venv-demucs').glob('**/site-packages/beat_this'))
     extra=[]
     if (engine/'drumsep/49469ca8.th').is_file():extra.append('drumsep')
@@ -55,12 +56,12 @@ def request(item, stage, root, folder, engine, library):
         command = 'decode'
         source = item['source']
         if item.get('kind') != 'file' or not Path(source).is_file():
-            raise ValueError('Fichier source introuvable. Remets-le à son emplacement puis réessaie.')
+            raise ValueError(ui_text('Fichier source introuvable. Remets-le à son emplacement puis réessaie.', 'Source file not found. Put it back in its original location and try again.'))
     elif stage not in ('guides','prepareReview'):
         role = ('vocal_lead' if any(t['role']=='vocal_lead' for t in p['tracks']) else 'vocals') if stage=='lyrics' else 'vocals' if stage=='vocalsplit' else 'drums' if stage=='drumsep' else 'source'
         track = next((t for t in p['tracks'] if t['role'] == role), None)
         if not track:
-            raise ValueError('Piste nécessaire absente : ' + role)
+            raise ValueError(ui_text('Piste nécessaire absente : ', 'Required track missing: ') + role)
         source = str(model.relative_file(root, track['file']))
     snap = folder / 'snapshot.json'
     atomic(snap, {**p, '_root': str(root)})
@@ -84,7 +85,7 @@ def apply(item, stage, root, folder, library):
     def copy_media(path, category, name):
         source = Path(path).resolve()
         if not source.is_relative_to(folder.resolve()) or not source.is_file():
-            raise ValueError('Résultat audio hors du dossier de traitement.')
+            raise ValueError(ui_text('Résultat audio hors du dossier de traitement.', 'Audio result is outside the processing folder.'))
         target = root / category / name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
@@ -99,36 +100,36 @@ def apply(item, stage, root, folder, library):
             copy_media(result['artwork'], '.', 'Artwork.jpg')
         atomic(root / 'Artwork.json', {**(result.get('musicMetadata') or {}), 'title': p['name']})
     elif stage == 'separate':
-        names = {'vocals': 'Chant', 'bass': 'Basse', 'drums': 'Batterie',
-                 'guitar': 'Guitare', 'piano': 'Piano', 'other': 'Autres instruments'}
+        names = {'vocals': ui_text('Chant', 'Vocals'), 'bass': ui_text('Basse', 'Bass'), 'drums': ui_text('Batterie', 'Drums'),
+                 'guitar': ui_text('Guitare', 'Guitar'), 'piano': 'Piano', 'other': ui_text('Autres instruments', 'Other instruments')}
         tracks = []
         for row in result['tracks']:
             role = row['role']
             if role not in names:
-                raise ValueError('Instrument séparé inconnu.')
+                raise ValueError(ui_text('Instrument séparé inconnu.', 'Unknown separated instrument.'))
             target = copy_media(row['path'], 'Audio', role + '.wav')
             tracks.append(model.track(target, root, names[role], role))
         if not tracks:
-            raise ValueError('La séparation n’a produit aucune piste.')
+            raise ValueError(ui_text('La séparation n’a produit aucune piste.', 'Separation produced no tracks.'))
         p['tracks'] = [t for t in p['tracks'] if t['role'] == 'source'] + tracks
         p['preparation'] = dict(rate=1, pitch=0, mode='mix')
     elif stage in ('drumsep','vocalsplit'):
-        names={'drum_kick':'Grosse caisse','drum_snare':'Caisse claire','drum_toms':'Toms','drum_cymbals':'Cymbales / charleston'} if stage=='drumsep' else {'vocal_lead':'Chant principal','vocal_backing':'Chœurs'}
+        names={'drum_kick':ui_text('Grosse caisse', 'Kick'),'drum_snare':ui_text('Caisse claire', 'Snare'),'drum_toms':'Toms','drum_cymbals':ui_text('Cymbales / charleston', 'Cymbals / hi-hat')} if stage=='drumsep' else {'vocal_lead':ui_text('Chant principal', 'Lead vocals'),'vocal_backing':ui_text('Chœurs', 'Backing vocals')}
         parent=next(t for t in p['tracks'] if t['role']==('drums' if stage=='drumsep' else 'vocals'))
         tracks=[]
         for row in result['tracks']:
             role=row['role']
-            if role not in names:raise ValueError('Sous-piste inconnue.')
+            if role not in names:raise ValueError(ui_text('Sous-piste inconnue.', 'Unknown subtrack.'))
             target=copy_media(row['path'],'Audio',role+'.wav')
             track=model.track(target,root,names[role],role,parent['offset']);track.update({k:parent[k] for k in ('gain','pan','muted')})
             previous=next((t for t in p['tracks'] if t['role']==role),None)
             if previous:track.update({k:previous[k] for k in ('id','gain','pan','muted','solo')})
             tracks.append(track)
-        if {t['role'] for t in tracks}!=set(names):raise ValueError('Séparation incomplète.')
+        if {t['role'] for t in tracks}!=set(names):raise ValueError(ui_text('Séparation incomplète.', 'Separation incomplete.'))
         p['tracks']=[t for t in p['tracks'] if t['role'] not in names]+tracks
     elif stage=='prepareReview':
         prepared=result['project']
-        if prepared['id']!=p['id']:raise ValueError('Préparation d’un autre morceau.')
+        if prepared['id']!=p['id']:raise ValueError(ui_text('Préparation d’un autre morceau.', 'This preparation belongs to another song.'))
         model.validate(prepared,root);p=prepared
     elif stage in ('grid', 'smartgrid'):
         if not model.analysis_done(p, stage):
@@ -151,10 +152,10 @@ def apply(item, stage, root, folder, library):
         p['guideFiles'] = {
             key: copy_media(path, 'Guides', f'{index:03}.wav').relative_to(root).as_posix()
             for index, (key, path) in enumerate(result['files'].items())}
-        for key, name, role in [('click', 'Métronome', 'guide_click'),
-                                ('calls', 'Appels de régions', 'guide_voice'),
+        for key, name, role in [('click', ui_text('Métronome', 'Metronome'), 'guide_click'),
+                                ('calls', ui_text('Appels de régions', 'Region announcements'), 'guide_voice'),
                                 ('cues', 'Cues', 'guide_cue'),
-                                ('counts', 'Décomptes', 'guide_count')]:
+                                ('counts', ui_text('Décomptes', 'Count-ins'), 'guide_count')]:
             if key not in p['guideFiles']:continue
             target = root / p['guideFiles'][key]
             p['tracks'].append(model.guide_track(target, root, name, role, previous_guides))

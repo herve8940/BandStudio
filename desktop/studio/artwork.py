@@ -4,6 +4,7 @@ Artwork.json is a portable sidecar: it cannot race with project/analysis saves.
 Only exact title + artist matches are applied automatically; other results need
 the musician's choice. Existing artwork is never replaced by a background scan.
 """
+from ui_language import ui_text
 import json
 from pathlib import Path
 import re
@@ -33,14 +34,14 @@ def allowed(url):
 
 class Redirects(HTTPRedirectHandler):
     def redirect_request(self,req,fp,code,msg,headers,newurl):
-        if not allowed(newurl):raise ValueError('Redirection de pochette non autorisée.')
+        if not allowed(newurl):raise ValueError(ui_text('Redirection de pochette non autorisée.', 'Cover art redirect is not allowed.'))
         return super().redirect_request(req,fp,code,msg,headers,newurl)
 
 
 def _fetch(url,image=False):
     """Bound requests, downloads and redirects; identify the client and rate-limit."""
     global _last_request
-    if not allowed(url):raise ValueError('Adresse de pochette non autorisée.')
+    if not allowed(url):raise ValueError(ui_text('Adresse de pochette non autorisée.', 'Cover art address is not allowed.'))
     # This gate is shared by all requests in the Windows host. macOS serializes
     # one helper at a time, with an additional 1.1 s gap between helper launches.
     with _gate:
@@ -50,10 +51,10 @@ def _fetch(url,image=False):
         with build_opener(Redirects()).open(req,timeout=10) as response:
             kind=response.headers.get_content_type()
             if image and kind not in ('image/jpeg','image/png','image/webp'):
-                raise ValueError('Le service n’a pas renvoyé une image.')
+                raise ValueError(ui_text('Le service n’a pas renvoyé une image.', 'The service did not return an image.'))
             limit=2_000_000 if image else 1_500_000
             data=response.read(limit+1)
-            if len(data)>limit:raise ValueError('Pochette ou réponse trop volumineuse.')
+            if len(data)>limit:raise ValueError(ui_text('Pochette ou réponse trop volumineuse.', 'The cover art or response is too large.'))
     return data if image else json.loads(data)
 
 
@@ -80,7 +81,7 @@ def read(project):
 def write(project,value):
     # Do not recreate a project removed while the network request was running.
     project=Path(project)
-    if project.is_symlink() or not (project/'project.json').is_file():raise ValueError('Ce morceau a été déplacé.')
+    if project.is_symlink() or not (project/'project.json').is_file():raise ValueError(ui_text('Ce morceau a été déplacé.', 'This song was moved.'))
     temp=project/('artwork-'+uuid.uuid4().hex+'.json')
     try:
         temp.write_text(json.dumps(value,ensure_ascii=False),encoding='utf-8')
@@ -206,21 +207,21 @@ def save_image(library,project,engine,item,replace=False):
 
 def run(library,engine,args):
     project=catalog.member(library,args['path']);action=args.get('action','sync');data=read(project)
-    if action not in ('sync','search','apply'):raise ValueError('Action de pochette inconnue.')
-    if action=='sync' and catalog.cover(project):return dict(message='Pochette conservée.')
+    if action not in ('sync','search','apply'):raise ValueError(ui_text('Action de pochette inconnue.', 'Unknown artwork action.'))
+    if action=='sync' and catalog.cover(project):return dict(message=ui_text('Pochette conservée.', 'Cover art kept.'))
     if action=='sync' and not args.get('force'):
         delay=3600 if data.get('artworkStatus')=='offline' else 7*86400
         if time.time()-float(data.get('checkedAt',0))<delay:return dict(message=data.get('artworkMessage',''))
     try:
         if action=='apply':
             item=next((c for c in data.get('candidates',[]) if c['id']==args.get('id')),None)
-            if not item:raise ValueError('Relance la recherche avant de choisir cet album.')
+            if not item:raise ValueError(ui_text('Relance la recherche avant de choisir cet album.', 'Run the search again before choosing this album.'))
             choices=[item]
         else:
             name=json.loads((project/'project.json').read_text(encoding='utf-8')).get('name') or project.stem
             if action=='search':
                 title,artist=clean(args.get('title')),clean(args.get('artist'))
-                if not title:raise ValueError('Renseigne le titre du morceau.')
+                if not title:raise ValueError(ui_text('Renseigne le titre du morceau.', 'Enter the song title.'))
                 data.update(title=title,artist=artist,album='')
                 queries=[(title,artist)]
             else:queries=[(data.get('title') or name,data.get('artist',''))] if data.get('title') or data.get('artist') else guesses(name)
@@ -237,7 +238,7 @@ def run(library,engine,args):
             if not choices and search_error:raise search_error
             choices=sorted(choices,key=lambda x:[-v for v in x['rank']])[:12]
             data.update(candidates=choices,checkedAt=time.time(),artworkStatus='choice' if choices else 'missing',
-                        artworkMessage='Choisis un album ou précise le titre et l’artiste.' if choices else 'Aucune pochette trouvée. Vérifie le titre et l’artiste.')
+                        artworkMessage=ui_text('Choisis un album ou précise le titre et l’artiste.', 'Choose an album or enter a more specific title and artist.') if choices else ui_text('Aucune pochette trouvée. Vérifie le titre et l’artiste.', 'No cover art found. Check the title and artist.'))
         if action!='search':
             eligible=[c for c in choices if c['automatic']]
             # If the same query matches different performers, let the user choose.
@@ -246,14 +247,14 @@ def run(library,engine,args):
                 if save_image(library,project,engine,item,replace=action=='apply'):
                     data.update(title=item['title'],artist=item['artist'],album=item['album'],
                                 source='https://musicbrainz.org/release-group/'+item['id'],
-                                artworkStatus='found',artworkMessage='Pochette enregistrée.');break
+                                artworkStatus='found',artworkMessage=ui_text('Pochette enregistrée.', 'Cover art saved.'));break
             else:
-                if action=='apply':data.update(artworkStatus='missing',artworkMessage='Cet album n’a pas de pochette disponible. Essaie une autre édition.')
+                if action=='apply':data.update(artworkStatus='missing',artworkMessage=ui_text('Cet album n’a pas de pochette disponible. Essaie une autre édition.', 'No cover art is available for this album. Try another edition.'))
         catalog.member(library,project);write(project,data)
     except (OSError,ValueError,KeyError,TypeError) as error:
         import diagnostics
         diagnostics.event('artwork.lookup',kind=type(error).__name__,error=str(error)[:300])
-        data.update(checkedAt=time.time(),artworkStatus='offline',artworkMessage='Recherche indisponible. Tu peux réessayer plus tard ou choisir une image.')
+        data.update(checkedAt=time.time(),artworkStatus='offline',artworkMessage=ui_text('Recherche indisponible. Tu peux réessayer plus tard ou choisir une image.', 'Search unavailable. Try again later or choose an image.'))
         # A concurrent delete is normal: never restore the old directory.
         try:catalog.member(library,project);write(project,data)
         except (OSError,ValueError):pass
@@ -269,5 +270,5 @@ if __name__=='__main__':
         # Preserve the caller's spelling (macOS may enumerate a different
         # Unicode normalization); it is also the UI's stable row identifier.
         result['entry']=catalog.entry(args['path'])
-    except Exception:result={'message':'Ce morceau n’est plus disponible.'}
+    except Exception:result={'message':ui_text('Ce morceau n’est plus disponible.', 'This song is no longer available.')}
     print(json.dumps(result,ensure_ascii=True))

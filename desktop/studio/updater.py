@@ -3,6 +3,7 @@
 Only application code changes. Models, Python runtimes, projects and preferences
 are excluded from the payload. A failed replacement restores every touched file.
 """
+from ui_language import ui_text
 import argparse
 import hashlib
 import json
@@ -44,14 +45,14 @@ def platform_key():
     return 'windows-x64' if sys.platform=='win32' else 'macos-arm64' if platform.machine()=='arm64' else 'macos-x64'
 
 def download(url,path,limit):
-    if not url.startswith(BASE):raise ValueError('Source de mise à jour non autorisée.')
+    if not url.startswith(BASE):raise ValueError(ui_text('Source de mise à jour non autorisée.', 'Update source is not allowed.'))
     request=urllib.request.Request(url,headers={'User-Agent':'BandStudio-Updater','Cache-Control':'no-cache'})
     with urllib.request.urlopen(request,timeout=20) as response,path.open('wb') as target:
-        if not response.geturl().startswith('https://'):raise ValueError('Téléchargement non sécurisé.')
+        if not response.geturl().startswith('https://'):raise ValueError(ui_text('Téléchargement non sécurisé.', 'Insecure download.'))
         size=0
         while chunk:=response.read(1024*1024):
             size+=len(chunk)
-            if size>limit:raise ValueError('Mise à jour trop volumineuse.')
+            if size>limit:raise ValueError(ui_text('Mise à jour trop volumineuse.', 'Update too large.'))
             target.write(chunk)
 
 def allowed_path(name):
@@ -73,44 +74,44 @@ def extract(archive,destination):
         for item in z.infolist():
             if item.is_dir():continue
             mode=item.external_attr>>16
-            if not allowed_path(item.filename) or stat.S_ISLNK(mode) or item.filename.casefold() in seen:raise ValueError('Archive de mise à jour invalide.')
+            if not allowed_path(item.filename) or stat.S_ISLNK(mode) or item.filename.casefold() in seen:raise ValueError(ui_text('Archive de mise à jour invalide.', 'Invalid update archive.'))
             seen.add(item.filename.casefold());total+=item.file_size
-            if total>MAX_ARCHIVE*3:raise ValueError('Archive décompressée trop volumineuse.')
+            if total>MAX_ARCHIVE*3:raise ValueError(ui_text('Archive décompressée trop volumineuse.', 'Unpacked update is too large.'))
             target=destination/item.filename;target.parent.mkdir(parents=True,exist_ok=True)
             with z.open(item) as source,target.open('wb') as output:shutil.copyfileobj(source,output)
             target.chmod(0o755 if mode&0o111 else 0o644)
-        if not (destination/'engine/build.json').is_file():raise ValueError('Version absente du paquet.')
+        if not (destination/'engine/build.json').is_file():raise ValueError(ui_text('Version absente du paquet.', 'Version missing from package.'))
 
 def check(engine,app=None):
     if (engine/'local-overlay.json').is_file():
-        return {'state':'local','message':'Version locale en cours de test ; mises à jour en attente pour conserver les corrections.'}
+        return {'state':'local','message':ui_text('Version locale en cours de test ; mises à jour en attente pour conserver les corrections.', 'Local build under test. Updates are paused to preserve local changes.')}
     folder=data_dir();folder.mkdir(parents=True,exist_ok=True)
     # mkdir is an interprocess lock, removed in finally; ignore stale locks after a crash.
     lock=folder/'checking'
     try:lock.mkdir()
     except FileExistsError:
-        if time.time()-lock.stat().st_mtime<3600:return {'state':'checking','message':'Vérification en cours…'}
+        if time.time()-lock.stat().st_mtime<3600:return {'state':'checking','message':ui_text('Vérification en cours…', 'Checking…')}
         lock.rmdir();lock.mkdir()
     stage=None
     try:
         current=read_json(engine/'build.json',{})
         with tempfile.TemporaryDirectory(dir=folder) as scratch:
             feed=Path(scratch)/'update.json';download(FEED,feed,100_000);manifest=read_json(feed,{})
-            if manifest.get('schema')!=1 or manifest.get('runtime')!=1:raise ValueError('Une nouvelle installation complète est nécessaire.')
+            if manifest.get('schema')!=1 or manifest.get('runtime')!=1:raise ValueError(ui_text('Une nouvelle installation complète est nécessaire.', 'A new full installation is required.'))
             revision=manifest.get('commit','')
-            if not re.fullmatch('[0-9a-f]{40}',revision):raise ValueError('Révision de mise à jour invalide.')
-            if current.get('commit')==revision:return {'state':'current','message':'BandStudio est à jour.'}
+            if not re.fullmatch('[0-9a-f]{40}',revision):raise ValueError(ui_text('Révision de mise à jour invalide.', 'Invalid update revision.'))
+            if current.get('commit')==revision:return {'state':'current','message':ui_text('BandStudio est à jour.', 'BandStudio is up to date.')}
             asset=manifest['platforms'][platform_key()]
-            if not re.fullmatch('[0-9a-f]{64}',asset['sha256']):raise ValueError('Empreinte invalide.')
+            if not re.fullmatch('[0-9a-f]{64}',asset['sha256']):raise ValueError(ui_text('Empreinte invalide.', 'Invalid checksum.'))
             archive=Path(scratch)/'update.zip';download(asset['url'],archive,MAX_ARCHIVE)
-            if hashlib.sha256(archive.read_bytes()).hexdigest()!=asset['sha256']:raise ValueError('Empreinte incorrecte : mise à jour refusée.')
+            if hashlib.sha256(archive.read_bytes()).hexdigest()!=asset['sha256']:raise ValueError(ui_text('Empreinte incorrecte : mise à jour refusée.', 'Checksum mismatch. Update refused.'))
             stage=folder/('stage-'+uuid.uuid4().hex);stage.mkdir();extract(archive,stage)
-            if read_json(stage/'engine/build.json',{}).get('commit')!=revision:raise ValueError('Révision différente du manifeste.')
-            if app and not (stage/'mac-app/Contents/MacOS/BandStudio').is_file():raise ValueError('Application macOS absente.')
+            if read_json(stage/'engine/build.json',{}).get('commit')!=revision:raise ValueError(ui_text('Révision différente du manifeste.', 'Revision differs from the manifest.'))
+            if app and not (stage/'mac-app/Contents/MacOS/BandStudio').is_file():raise ValueError(ui_text('Application macOS absente.', 'macOS app missing.'))
             pending={'stage':str(stage),'engine':str(engine.resolve()),'app':str(app.resolve()) if app else None,'commit':revision,'sha256':asset['sha256']}
             # Retain the verified archive and recheck on apply, so no staged executable is trusted blindly.
             shutil.copy2(archive,stage/'verified.zip');write_json(folder/'pending.json',pending)
-        return {'state':'ready','message':'Mise à jour téléchargée. Installation à la fermeture de BandStudio.'}
+        return {'state':'ready','message':ui_text('Mise à jour téléchargée. Installation à la fermeture de BandStudio.', 'Update downloaded. BandStudio will install it when you quit.')}
     except Exception:
         if stage:shutil.rmtree(stage,ignore_errors=True)
         raise
@@ -121,9 +122,9 @@ def apply_pending():
     if not pending:return False
     if (Path(pending['engine'])/'local-overlay.json').is_file():return False
     stage=Path(pending['stage']).resolve()
-    if stage.parent!=folder.resolve() or not stage.name.startswith('stage-'):raise ValueError('Zone de mise à jour invalide.')
+    if stage.parent!=folder.resolve() or not stage.name.startswith('stage-'):raise ValueError(ui_text('Zone de mise à jour invalide.', 'Invalid update staging area.'))
     archive=stage/'verified.zip'
-    if hashlib.sha256(archive.read_bytes()).hexdigest()!=pending['sha256']:raise ValueError('Paquet modifié après téléchargement.')
+    if hashlib.sha256(archive.read_bytes()).hexdigest()!=pending['sha256']:raise ValueError(ui_text('Paquet modifié après téléchargement.', 'Package changed after download.'))
     verified=stage/'apply';verified.mkdir();extract(archive,verified)
     engine=Path(pending['engine']).resolve();app=Path(pending['app']).resolve() if pending.get('app') else None
     backup=folder/('backup-'+uuid.uuid4().hex);backup.mkdir()
@@ -132,9 +133,9 @@ def apply_pending():
         for source in sorted(verified.rglob('*')):
             if not source.is_file():continue
             relative=source.relative_to(verified);base=engine if relative.parts[0]=='engine' else app
-            if base is None:raise ValueError('Cible macOS manquante.')
+            if base is None:raise ValueError(ui_text('Cible macOS manquante.', 'macOS target missing.'))
             target=base.joinpath(*relative.parts[1:]);resolved=target.resolve()
-            if not resolved.is_relative_to(base):raise ValueError('Lien symbolique hors de l’application.')
+            if not resolved.is_relative_to(base):raise ValueError(ui_text('Lien symbolique hors de l’application.', 'Symbolic link outside the app.'))
             previous=backup/relative
             if target.exists():previous.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(target,previous)
             target.parent.mkdir(parents=True,exist_ok=True)
@@ -187,4 +188,4 @@ if __name__=='__main__':
             from diagnostics import event
             event('update.error',error=error)
         except Exception:pass
-        print(json.dumps({'state':'error','message':'Mise à jour indisponible : '+str(error)[:300]},ensure_ascii=False));sys.exit(1)
+        print(json.dumps({'state':'error','message':ui_text('Mise à jour indisponible : ', 'Update unavailable: ')+str(error)[:300]},ensure_ascii=False));sys.exit(1)

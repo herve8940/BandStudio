@@ -299,7 +299,9 @@ def report_decode_attempts(model, temperatures, status, index, count):
         if value in temperatures[1:]:
             attempt=temperatures.index(value)+1
             _write_status(status,'running',done=index,total=count,
-                          step=f'Extrait {index+1} sur {count} · lecture vocale {attempt} sur {len(temperatures)}')
+                          step=(f'Excerpt {index+1} of {count} · vocal pass {attempt} of {len(temperatures)}'
+                                if os.environ.get('BANDSTUDIO_UI_LANGUAGE') == 'en' else
+                                f'Extrait {index+1} sur {count} · lecture vocale {attempt} sur {len(temperatures)}'))
         return original(mel,*args,**kwargs)
     model.decode=observed
     try:yield

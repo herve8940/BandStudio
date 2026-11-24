@@ -3,6 +3,7 @@
 No trained chord model and no new chord names: audio only distinguishes the
 published candidates. Ambiguous placements remain visibly marked for review.
 """
+from ui_language import ui_text
 import re
 
 
@@ -103,17 +104,17 @@ def place(project,audio,labels,source_url,offset=0,transitions=None,sections=Non
     from services import beat_grid
     candidates=[(label,tones(label)) for label in labels if tones(label)]
     beats,duration=beat_grid(project)
-    if len(beats)<2 or not candidates:return [],dict(status='needs_grid',message='Grille rythmique ou accords compatibles manquants : calage à compléter.')
+    if len(beats)<2 or not candidates:return [],dict(status='needs_grid',message=ui_text('Grille rythmique ou accords compatibles manquants : calage à compléter.', 'Rhythm grid or compatible chords missing. Complete alignment manually.'))
     # Eighth notes use two cells per quarter, three per dotted quarter. Boundaries
     # always come from the existing grid, including variable tempo and pickups.
     subdivision=3 if project.get('settings',{}).get('pulseUnit')=='dottedQuarter' else 2
     edges=np.array(sorted(set([*beats,*[a+(b-a)*part/subdivision for a,b in zip(beats,beats[1:]) for part in range(1,subdivision)],duration])))
     if sequences:edges=np.unique(np.r_[edges,[s['start'] for s in project.get('sections',[])],[s['end'] for s in project.get('sections',[])]])
     edges=edges[(edges>=0)&(edges<=duration)]
-    if len(edges)<2:return [],dict(status='needs_grid',message='Grille rythmique trop courte pour caler les accords.')
+    if len(edges)<2:return [],dict(status='needs_grid',message=ui_text('Grille rythmique trop courte pour caler les accords.', 'The rhythm grid is too short to align chords.'))
     from chord_features import peaks,bass_evidence
     features=peaks(audio,edges,offset)
-    if features is None:return [],dict(status='no_audio',message='Aucun passage audio exploitable pour le calage.')
+    if features is None:return [],dict(status='no_audio',message=ui_text('Aucun passage audio exploitable pour le calage.', 'No usable audio passage for alignment.'))
     cell,low,strength,tuning=(features[k] for k in ('chroma','bass','strength','tuning'))
     # A missing/unreadable optional stem must not prevent the original audio
     # path from producing its proposal (including interrupted separations).
@@ -305,7 +306,7 @@ def place(project,audio,labels,source_url,offset=0,transitions=None,sections=Non
         if segments and segments[-1]['label']==label and edges[i]-segments[-1]['end']<.6 and edges[i] not in boundaries:
             segment=segments[-1];segment['end']=float(edges[i+1]);segment['_scores'].append(confidence)
         else:segments.append(dict(start=float(edges[i]),end=float(edges[i+1]),label=label,sourceURL=source_url,_scores=[confidence]))
-    if not segments:return [],dict(status='no_audio',message='Grille Internet trouvée, mais aucun passage audio exploitable pour la caler.')
+    if not segments:return [],dict(status='no_audio',message=ui_text('Grille Internet trouvée, mais aucun passage audio exploitable pour la caler.', 'Online chart found, but there is no usable audio to align it to.'))
     for segment in segments:segment['confidence']=float(np.mean(segment.pop('_scores')))
     return segments,dict(status='proposed',subdivision=subdivision,tuningCents=round(float(tuning)*100,1),uncertainCells=uncertain,orderedSections=ordered_sections,orderedChart=ordered_chart,bassEvidence=bass is not None,
-        message='Accords de la source calés sur les temps et contretemps détectés. Les placements restent des propositions à vérifier à l’écoute.')
+        message=ui_text('Accords de la source calés sur les temps et contretemps détectés. Les placements restent des propositions à vérifier à l’écoute.', 'Source chords aligned to detected beats and offbeats. Check the suggested positions by ear.'))

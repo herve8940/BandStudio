@@ -1,4 +1,5 @@
 """Structured, monotonic worker progress. Percentages count work, never elapsed time."""
+from ui_language import ui_text, using_english
 from contextlib import contextmanager
 import json
 import math
@@ -14,7 +15,7 @@ class Reporter:
     def __init__(self, output, task):
         self.path = Path(output).resolve().parent / 'progress.json'
         self.state = dict(task=task, stage=task, progress=0., indeterminate=True,
-                          progressLabel='Préparation…')
+                          progressLabel=ui_text('Préparation…', 'Preparing…'))
         self.update()
 
     def update(self, *, completed=None, total=None, progress=None, **values):
@@ -28,11 +29,11 @@ class Reporter:
         self._write()
 
     def finish(self):
-        self.state.update(progress=100., indeterminate=False, progressLabel='Terminé', finished=True)
+        self.state.update(progress=100., indeterminate=False, progressLabel=ui_text('Terminé', 'Completed'), finished=True)
         self._write()
 
     def fail(self):
-        self.state.update(indeterminate=False, failed=True, progressLabel='Traitement interrompu')
+        self.state.update(indeterminate=False, failed=True, progressLabel=ui_text('Traitement interrompu', 'Processing interrupted'))
         self._write()
 
     def _write(self):
@@ -88,7 +89,7 @@ def reporting(output, task):
     try:
         yield _active
         if not Path(output).is_file():
-            raise RuntimeError('Le traitement n’a pas créé son résultat.')
+            raise RuntimeError(ui_text('Le traitement n’a pas créé son résultat.', 'Processing did not produce a result.'))
         _active.finish()
     except BaseException:
         _active.fail()
@@ -126,7 +127,7 @@ class PassProgress:
             fraction = done / count if count else 1
             self.notify(dict(completed=index - 1 + fraction, total=self.passes,
                              passIndex=index, passCount=self.passes, passProgress=100 * fraction,
-                             progressLabel=f'Passage {index} sur {self.passes}'))
+                             progressLabel=(f'Passage {index} of {self.passes}' if using_english() else f'Passage {index} sur {self.passes}')))
         report(0)
         for done, item in enumerate(iterable, 1):
             yield item
@@ -149,23 +150,24 @@ def legacy_status(module, *, phases=1):
     original = module._write_status
     def report(path, state, **values):
         original(path, state, **values)
-        label = values.get('step', '').split(' / ')[0]
+        labels = values.get('step', '').split(' / ', 1)
+        label = labels[-1] if using_english() else labels[0]
         if state == 'done':
             if phases==1:
-                emit(progress=99, progressLabel='Enregistrement du résultat…', indeterminate=True)
+                emit(progress=99, progressLabel=ui_text('Enregistrement du résultat…', 'Saving result…'), indeterminate=True)
             else:
-                emit(progress=100/phases, progressBasis='steps', progressLabel='Transcription terminée', indeterminate=False)
+                emit(progress=100/phases, progressBasis='steps', progressLabel=ui_text('Transcription terminée', 'Transcription complete'), indeterminate=False)
         elif state == 'running':
             if values.get('total', 0) > 0:
                 done, total = values.get('done', 0), values['total']
-                label=label if label and not label[:1].isdigit() else f'Extrait {min(done+1,total)} sur {total}'
+                label=label if label and not label[:1].isdigit() else (f'Excerpt {min(done + 1, total)} of {total}' if using_english() else f'Extrait {min(done+1,total)} sur {total}')
                 if phases==1:
                     emit(completed=done, total=total, progressLabel=label)
                 else:
                     emit(progress=100*min(done,total)/(total*phases), progressBasis='steps',
                          progressLabel='Transcription · '+label, indeterminate=False)
             else:
-                emit(progressLabel=label or 'Calcul en cours…', indeterminate=True)
+                emit(progressLabel=label or ui_text('Calcul en cours…', 'Processing…'), indeterminate=True)
     module._write_status = report
     try:
         yield
@@ -180,7 +182,7 @@ def track_beat_chunks(module):
         chunks, starts = original(*args, **kwargs)
         def tracked():
             for index, chunk in enumerate(chunks):
-                emit(completed=index, total=len(chunks), progressLabel=f'Extrait {index+1} sur {len(chunks)}')
+                emit(completed=index, total=len(chunks), progressLabel=(f'Excerpt {index + 1} of {len(chunks)}' if using_english() else f'Extrait {index+1} sur {len(chunks)}'))
                 yield chunk
                 emit(completed=index+1, total=len(chunks))
         return tracked(), starts
@@ -213,7 +215,7 @@ def track_structure(app, audio, window):
             def wrapped(*args, **kwargs):
                 nonlocal done
                 emit(completed=done, total=total, progressBasis='steps',
-                     progressLabel=f'Analyse musicale · étape {min(done+1,total)} sur {total}')
+                     progressLabel=(f'Music analysis · step {min(done + 1, total)} of {total}' if using_english() else f'Analyse musicale · étape {min(done+1,total)} sur {total}'))
                 # Real completed encoder layers give feedback inside each long call.
                 conformer = getattr(getattr(model, 'model', model), 'conformer', None)
                 layers = getattr(conformer, 'layers', ())

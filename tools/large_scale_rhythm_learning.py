@@ -26,7 +26,7 @@ import numpy as np
 CHECKPOINT_SHA = '8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331'
 HARD_ROCK = {'acdc', 'ledzeppelin', 'queen', 'defleppard', 'deeppurple', 'bonjovi', 'gunsnroses', 'scorpions'}
 METRICS = ('beatF1', 'barF1', 'cueAccuracy')
-DECODER_FILES = ('advanced.py', 'services.py', 'listening.py', 'musical_timing.py',
+DECODER_FILES = ('ui_language.py', 'advanced.py', 'services.py', 'listening.py', 'musical_timing.py',
                  'platform_tools.py', 'analysis_progress.py', 'rhythm_quality.py', 'rhythm_adapter.py')
 
 

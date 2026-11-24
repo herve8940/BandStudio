@@ -4,14 +4,14 @@ extension StudioApp {
     var automaticUpdates:Bool {UserDefaults.standard.object(forKey:"automaticUpdates") as? Bool ?? true}
     func sendUpdate(_ message:String="") {send(["type":"update","automatic":automaticUpdates,"message":message])}
     func checkUpdates() {
-        guard !checkingUpdate else{return};checkingUpdate=true;sendUpdate("Vérification des mises à jour…")
+        guard !checkingUpdate else{return};checkingUpdate=true;sendUpdate(uiText("Vérification des mises à jour…", "Checking for updates…"))
         let engine=runtime!,application=Bundle.main.bundleURL
         DispatchQueue.global(qos:.utility).async { [weak self] in
             let process=Process(),output=Pipe()
             process.executableURL=engine.appendingPathComponent(".venv/bin/python")
             process.arguments=[engine.appendingPathComponent("updater.py").path,"check","--engine",engine.path,"--app",application.path]
             process.standardOutput=output;process.standardError=FileHandle.nullDevice
-            var message="Impossible de vérifier les mises à jour."
+            var message=uiText("Impossible de vérifier les mises à jour.", "Could not check for updates.")
             do {
                 try process.run();let data=output.fileHandleForReading.readDataToEndOfFile();process.waitUntilExit()
                 if let value=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any]{message=value["message"] as? String ?? message}

@@ -3,6 +3,7 @@
 Public ratings are only a small tie-breaker. Harmonic agreement with the actual
 recording comes first; a source explicitly chosen by the musician always wins.
 """
+from ui_language import ui_text
 from html.parser import HTMLParser
 import json
 import math
@@ -75,7 +76,7 @@ def recording_shift(features, templates, roots):
 
 
 def choose(project,sources,features=None):
-    if not sources:raise ValueError('Aucune grille à comparer.')
+    if not sources:raise ValueError(ui_text('Aucune grille à comparer.', 'No charts to compare.'))
     reference=project.get('chordReference') or {}
     selected=next((s for s in sources if s['url']==reference.get('selectedURL')),None)
     manual=selected is not None and reference.get('selectionMode','manual')=='manual'
@@ -111,10 +112,10 @@ def choose(project,sources,features=None):
         ranked.append((score,-index,source,acoustic))
     _,_,chosen,acoustic=max(ranked,key=lambda row:row[:2])
     if manual:
-        reason='Ta grille choisie est conservée.'
+        reason=ui_text('Ta grille choisie est conservée.', 'Your selected chart has been kept.')
     elif acoustic is None:
-        reason='Source publiée retenue parmi '+str(len(sources))+' grilles disponibles ; concordance audio non mesurable.'
+        reason=ui_text('Source publiée retenue parmi ', 'Published source selected from ')+str(len(sources))+ui_text(' grilles disponibles ; concordance audio non mesurable.', ' charts available. Audio agreement could not be measured.')
     else:
-        reason='Grille retenue parmi '+str(len(sources))+' sources pour sa concordance harmonique avec ton enregistrement.'
-        if acoustic<.65:reason+=' Concordance limitée : accords à écouter.'
+        reason=ui_text('Grille retenue parmi ', 'Chart selected from ')+str(len(sources))+ui_text(' sources pour sa concordance harmonique avec ton enregistrement.', ' sources for its harmonic match with your recording.')
+        if acoustic<.65:reason+=ui_text(' Concordance limitée : accords à écouter.', ' Limited agreement. Check the chords by ear.')
     return chosen,reason

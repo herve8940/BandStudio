@@ -1,4 +1,5 @@
 """Conservative one-time recovery of the withdrawn whole-bar migration."""
+from ui_language import ui_text
 import copy
 import json
 import math
@@ -28,7 +29,7 @@ def _legacy_sections(project, *, force=False, protected_ids=()):
             (s.get('locked') or s.get('reviewed') or s.get('origin')=='manual'))
     def nonmusical(s):
         return s.get('announce') is False or s['name'].strip().casefold() in (
-            'silence','silence initial','avant départ','levée')
+            'silence',ui_text('silence initial', 'opening silence'),'avant départ',ui_text('levée', 'pickup'))
     for previous,current in zip(rows,rows[1:]):
         old=current['start']
         if (protected(previous) or protected(current) or nonmusical(previous) or nonmusical(current)

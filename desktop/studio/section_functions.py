@@ -3,6 +3,7 @@
 No title-specific rules. A web heading supplies a name, never a timestamp.
 Unconfirmed proposals and protection of accepted regions remain distinct.
 """
+from ui_language import ui_text
 import copy
 from difflib import SequenceMatcher
 import math
@@ -133,8 +134,8 @@ def lyric_events(project,features,anchors):
         # arbitrary line wrap never determines the boundary.
         estimate=a['time']+np.clip(donor['start']-b['time'],-dt,dt)
         events.append(dict(time=float(estimate),kind=target,method='lyrics-repeat',support=2,
-                           reason='Paroles répétées retrouvées dans un '+donor['name'].lower()+
-                                  ' et accompagnement harmonique concordant ; repère à écouter.',publisher=a['publisher']))
+                           reason=ui_text('Paroles répétées retrouvées dans un ', 'Repeated lyrics found in a ')+donor['name'].lower()+
+                                  ui_text(' et accompagnement harmonique concordant ; repère à écouter.', ' and matching harmony. Check this marker by ear.'),publisher=a['publisher']))
     return events
 
 
@@ -228,10 +229,10 @@ def timed_events(project,reference,features,extra,anchors):
             at=float(np.clip(closest['time'],at-dt,at+dt))
         conflicts=sorted({a['kind'] for a in anchors if abs(a['time']-at)<=2.5 and a['score']>=.8 and
                           a['kind'] not in (target,'unknown','intro') and not (target=='postchorus' and a['kind']=='chorus')})
-        reason='Fonction « '+entry['name']+' » publiée par '+reference['publisher']+', adaptée aux repères locaux ; concordance des instruments ou du chant, à écouter.'
+        reason='Fonction « '+entry['name']+' » publiée par '+reference['publisher']+ui_text(', adaptée aux repères locaux ; concordance des instruments ou du chant, à écouter.', ', adapted to local markers. Instruments or vocals agree. Check by ear.')
         if conflicts:
             from structure_review import label
-            reason+=' Autre lecture publiée : '+', '.join(label(k) for k in conflicts)+'.'
+            reason+=ui_text(' Autre lecture publiée : ', ' Other published interpretation: ')+', '.join(label(k) for k in conflicts)+'.'
         events.append(dict(time=at,kind=target,method='timed-reference',support=votes,reason=reason,
                            disputed=bool(conflicts),allowRepeat=bool(nearby and target=='verse' and re.search(r'\d',entry['name'])),publisher=reference['publisher']))
     return events,fit
@@ -258,7 +259,7 @@ def break_events(project,features):
         covering=next((s for s in project['sections'] if s['start']+4*dt<at<end<s['end']-4*dt),None)
         if not covering:continue
         events.append(dict(time=at,end=end,kind='break',method='band-break',support=3,
-                           reason='Interruption brève de l’accompagnement, suivie de sa reprise sur les pistes séparées ; à écouter.',publisher='Audio local'))
+                           reason=ui_text('Interruption brève de l’accompagnement, suivie de sa reprise sur les pistes séparées ; à écouter.', 'Brief break in the accompaniment, followed by its return on the separated tracks. Check by ear.'),publisher='Audio local'))
     return events
 
 
@@ -276,14 +277,14 @@ def place_events(project,events,features,protected_ids=None):
         near=next((e for e in reduced if abs(e['time']-event['time'])<2*dt),None)
         if near:
             if near['kind']!=event['kind']:
-                warnings.append('Fonction discutée autour de '+f"{event['time']:.1f}"+' s : écouter la proposition et ses sources.')
+                warnings.append(ui_text('Fonction discutée autour de ', 'Section function unclear around ')+f"{event['time']:.1f}"+ui_text(' s : écouter la proposition et ses sources.', ' s: listen to the suggestion and its sources.'))
                 if event['method']=='timed-reference':reduced.remove(near);reduced.append(event)
             elif event['method']=='timed-reference':reduced.remove(near);reduced.append(event)
         else:reduced.append(event)
     # Return events are resolved when placing the break, after preceding edits.
     for event in list(reduced):
         if event['kind']=='break' and 'end' in event:
-            reduced.append({**event,'time':event['end'],'kind':'return','from':event['time'],'reason':'Reprise après le break ; fonction du passage conservée.'})
+            reduced.append({**event,'time':event['end'],'kind':'return','from':event['time'],'reason':ui_text('Reprise après le break ; fonction du passage conservée.', 'Music resumes after the break. The passage keeps its function.')})
     break_returns={}
     for event in sorted(reduced,key=lambda e:e['time']):
         target=event['kind'];estimate=event['time'];nearest=min(rows,key=lambda s:abs(s['start']-estimate),default=None)
@@ -291,7 +292,7 @@ def place_events(project,events,features,protected_ids=None):
             target=break_returns.get(event['from'])
             if not target:continue
         if nearest is None:continue
-        if event.get('disputed'):warnings.append('Noms différents selon les sources autour de '+f'{estimate:.1f}'+' s : écouter avant de valider.')
+        if event.get('disputed'):warnings.append(ui_text('Noms différents selon les sources autour de ', 'Sources give different names around ')+f'{estimate:.1f}'+ui_text(' s : écouter avant de valider.', ' s: listen before approving.'))
         close=abs(nearest['start']-estimate)<=(.1 if event['method']=='band-break' else max(.75,2*dt))
         if close:
             if nearest['id'] in fixed or kind(nearest['name'])==target:continue
@@ -335,7 +336,7 @@ def analyse(project,features=None,reference=None,placement=None):
     rows,changes,warnings=place_events({**project,'sections':placement} if placement is not None else project,events,features,
                                       {s['id'] for s in project['sections'] if protected(s)})
     if fit and not fit['whole']:
-        warnings.append('Version de durée différente : comparaison limitée aux repères intérieurs concordants, sans extrapoler le début ni la fin.')
+        warnings.append(ui_text('Version de durée différente : comparaison limitée aux repères intérieurs concordants, sans extrapoler le début ni la fin.', 'The reference has a different duration. Only matching interior markers were compared.'))
     return dict(sections=rows,changes=changes,warnings=warnings,
                 evidence=dict(lyricAnchors=len(anchors),repeatedEntries=len(lyrics),timedAnchors=len(fit['anchors']) if fit else 0,
                               referenceOffset=fit['offset'] if fit else None,wholeReference=fit['whole'] if fit else False),events=events)

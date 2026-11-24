@@ -4,6 +4,7 @@ Timed maps, ordered chart headings and unordered section examples are distinct:
 an untimed page is never interpreted as a timeline. Existing chart discovery
 handles publisher-specific artist addresses and its bounded network budget.
 """
+from ui_language import ui_text
 from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
 import hashlib
@@ -33,7 +34,7 @@ def hook_address(url):
 
 class HookRedirects(HTTPRedirectHandler):
     def redirect_request(self,req,fp,code,msg,headers,newurl):
-        if not hook_address(newurl):raise ValueError('Adresse de référence refusée.')
+        if not hook_address(newurl):raise ValueError(ui_text('Adresse de référence refusée.', 'Reference address refused.'))
         return super().redirect_request(req,fp,code,msg,headers,newurl)
 
 
@@ -69,12 +70,12 @@ def hook_lookup(project):
     try:
         req=Request(url,headers={'User-Agent':'BandStudio/1.1 (structure reference reader)','Accept':'text/html'})
         with build_opener(HookRedirects()).open(req,timeout=6) as response:
-            if response.status!=200 or not hook_address(response.url):raise ValueError('Page indisponible.')
+            if response.status!=200 or not hook_address(response.url):raise ValueError(ui_text('Page indisponible.', 'Page unavailable.'))
             data=response.read(MAX_BYTES+1)
-            if len(data)>MAX_BYTES:raise ValueError('Page trop volumineuse.')
+            if len(data)>MAX_BYTES:raise ValueError(ui_text('Page trop volumineuse.', 'Page too large.'))
             parser=HookSections();parser.feed(data.decode('utf-8',errors='replace'))
             heading=re.sub(r'\s+Chords,\s*Melody,\s*and\s*Music Theory Analysis\s*[-–—]\s*Hooktheory.*$','',parser.title,flags=re.I)
-            if not chord_sources.matches_heading(heading,title,artist):raise ValueError('Morceau différent.')
+            if not chord_sources.matches_heading(heading,title,artist):raise ValueError(ui_text('Morceau différent.', 'Different song.'))
             if not parser.names:return None,{**check,'status':'no_sections'}
             result=dict(title=title+' — '+artist,publisher='Hooktheory',url=response.url,
                         format='types',entries=parser.names,identity=[title,artist],retrievedAt=time.time())

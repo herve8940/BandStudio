@@ -1,4 +1,5 @@
 """Bounded local diagnostics. No audio, project contents or credentials are collected."""
+from ui_language import ui_text
 import json
 import logging
 from logging.handlers import RotatingFileHandler
@@ -28,18 +29,18 @@ COMMUNITY = {
 # END GENERATED COMMUNITY
 
 def community_url(destination='invite'):
-    if destination not in COMMUNITY:raise ValueError('Destination Discord inconnue.')
+    if destination not in COMMUNITY:raise ValueError(ui_text('Destination Discord inconnue.', 'Unknown Discord destination.'))
     return COMMUNITY[destination]
 
 def compact_debug():
     """Metadata only: never include free-form error messages, paths or project data."""
     file=directory()/'application.log'
-    if file.is_symlink():return 'Journal indisponible.'
+    if file.is_symlink():return ui_text('Journal indisponible.', 'Log unavailable.')
     try:
         with file.open('rb') as source:
             source.seek(0,2);size=source.tell();source.seek(max(0,size-32_000))
             lines=source.read(32_000).decode('utf-8',errors='replace').splitlines()
-    except OSError:return 'Aucun événement récent.'
+    except OSError:return ui_text('Aucun événement récent.', 'No recent events.')
     result=[]
     for line in lines:
         match=re.search(r'\b(?:INFO|ERROR|WARNING) ([a-z][a-zA-Z0-9_.-]{0,50}) (\{.*\})$',line)
@@ -54,7 +55,7 @@ def compact_debug():
             value=str(fields.get(key,''))
             if re.fullmatch(r'[a-zA-Z0-9_.-]{1,50}',value):parts.append(key+'='+value)
         result.append(' '.join(parts))
-    return '\n'.join(result[-6:])[-650:] or 'Aucun événement récent.'
+    return '\n'.join(result[-6:])[-650:] or ui_text('Aucun événement récent.', 'No recent events.')
 
 def support_info():
     info=summary()
@@ -64,7 +65,7 @@ def support_info():
 
 def validate_discord_report(text):
     if not isinstance(text,str) or not text.strip() or len(text.encode('utf-16-le'))//2>2000:
-        raise ValueError('Le rapport doit contenir entre 1 et 2 000 caractères.')
+        raise ValueError(ui_text('Le rapport doit contenir entre 1 et 2 000 caractères.', 'The report must be between 1 and 2,000 characters.'))
     return text
 
 def copy_report_windows(text):
@@ -128,7 +129,7 @@ def export_report(destination):
 
 def issue_url():
     info=summary()
-    body=('## Problème\nDécris le problème ici.\n\n## Pour reproduire\n1. \n\n'
-          '## Résultat attendu\n\n## Environnement\n'+json.dumps(info,ensure_ascii=False,indent=2)+
-          '\n\n## Diagnostic\nTu peux joindre le ZIP depuis Réglages → Exporter le diagnostic après l’avoir vérifié.\n')
+    body=(ui_text('## Problème\nDécris le problème ici.\n\n## Pour reproduire\n1. \n\n'
+          '## Résultat attendu\n\n## Environnement\n', '## Issue\nDescribe the issue here.\n\n## Steps to reproduce\n1. \n\n## Expected result\n\n## Environment\n')+json.dumps(info,ensure_ascii=False,indent=2)+
+          ui_text('\n\n## Diagnostic\nTu peux joindre le ZIP depuis Réglages → Exporter le diagnostic après l’avoir vérifié.\n', '\n\n## Diagnostics\nAfter reviewing the ZIP, attach it from Settings → Export diagnostics.\n'))
     return 'https://github.com/'+REPOSITORY+'/issues/new?'+urlencode({'title':'[Bug] ', 'labels':'bug', 'body':body})

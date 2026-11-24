@@ -1,3 +1,4 @@
+from ui_language import ui_text
 from listening import included, guide_audible
 """Portable audio timeline: the same block mixer is used offline and by PortAudio."""
 import copy
@@ -22,9 +23,9 @@ def pcm(path):
     with warnings.catch_warnings():
         warnings.simplefilter('ignore');rate,data=wavfile.read(path,mmap=True)
     try:
-        if rate!=SR or data.dtype!=np.float32:raise ValueError('Le média doit être converti en WAV flottant 44,1 kHz.')
+        if rate!=SR or data.dtype!=np.float32:raise ValueError(ui_text('Le média doit être converti en WAV flottant 44,1 kHz.', 'Media must be converted to 44.1 kHz floating-point WAV.'))
         if data.ndim==1:data=data[:,None]
-        if data.shape[1]!=2:raise ValueError('Le lecteur attend un média stéréo.')
+        if data.shape[1]!=2:raise ValueError(ui_text('Le lecteur attend un média stéréo.', 'The player needs stereo audio.'))
     except Exception:
         release_pcm(data);raise
     return data

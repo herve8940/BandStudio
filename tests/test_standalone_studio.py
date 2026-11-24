@@ -12,9 +12,8 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 ROOT=Path(__file__).resolve().parents[1]
-spec=importlib.util.spec_from_file_location('studio_worker',ROOT/'desktop/studio/worker.py')
-worker=importlib.util.module_from_spec(spec)
-spec.loader.exec_module(worker)
+sys.path.insert(0, str(ROOT/'desktop/studio'))
+import worker
 
 
 def test_structure_keeps_short_breaks_and_exact_boundaries():

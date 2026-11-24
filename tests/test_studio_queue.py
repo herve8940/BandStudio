@@ -213,7 +213,7 @@ def test_real_decode_step_and_staging_remain_outside_visible_library(queue_setup
 
 def test_pipe_service_persists_entries_and_reopens_paused(queue_setup, monkeypatch):
     work, source = queue_setup
-    for name in ('batch_queue.py', 'batch_project.py', 'services.py', 'listening.py', 'platform_tools.py', 'musical_timing.py'):
+    for name in ('ui_language.py', 'batch_queue.py', 'batch_project.py', 'services.py', 'listening.py', 'platform_tools.py', 'musical_timing.py'):
         shutil.copy2(ROOT / 'desktop/studio' / name, work.engine / name)
     (work.engine / 'windows').mkdir()
     for name in ('project.py', '__init__.py'):

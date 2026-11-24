@@ -1,5 +1,7 @@
 BandStudio 1.1.0 — préparer les morceaux pour REAPER
 
+English instructions: README.en.txt. Langue de l’interface : Réglages → Langue de l’interface.
+
 DÉMARRER
 Extrais tout le ZIP dans un dossier accessible en écriture, puis ouvre BandStudio.exe.
 WebView2 et .NET Framework 4.8 sont nécessaires. Importe un fichier audio ou une vidéo, ou ouvre

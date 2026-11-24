@@ -1,4 +1,5 @@
 """Conservative audio checks for proposed structure, never manual boundaries."""
+from ui_language import ui_text, using_english
 import copy
 import math
 import uuid
@@ -129,7 +130,7 @@ def align_bar_arrivals(project):
         if source:
             previous['end'] = current['start'] = bar
             changes.append(dict(id=str(uuid.uuid4()), kind='adjust', time=bar, before=current['name'], after=current['name'],
-                                reason=f'Début ramené de {old:.3f} s à {bar:.3f} s sur le premier temps entendu dans {source}.'))
+                                reason=(f'Start moved from {old:.3f} s to {bar:.3f} s, on the downbeat heard in {source}.' if using_english() else f'Début ramené de {old:.3f} s à {bar:.3f} s sur le premier temps entendu dans {source}.')))
     # The structure model reports its last analysis frame; keep the final audio samples in the section.
     tail = rows[-1]
     duration = clock.basis['duration']
@@ -181,5 +182,5 @@ def refine(project,features=None):
         if not ranked or (len(ranked)>1 and ranked[0][0]-ranked[1][0]<.10):continue
         _,at=ranked[0];previous['end']=at;current['start']=at
         changes.append(dict(id=str(uuid.uuid4()),kind='adjust',time=at,before=current['name'],after=current['name'],
-                            reason=f'Début proposé à {at:.2f} s au lieu de {old:.2f} s : harmonie et basse concordantes sur une mesure locale, à deux échelles d’écoute.'))
+                            reason=(f'Suggested start at {at:.2f} s instead of {old:.2f} s: harmony and bass agree over a local bar at two listening scales.' if using_english() else f'Début proposé à {at:.2f} s au lieu de {old:.2f} s : harmonie et basse concordantes sur une mesure locale, à deux échelles d’écoute.')))
     return rows,changes

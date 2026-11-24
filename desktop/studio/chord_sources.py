@@ -4,6 +4,7 @@ Only artist/title leave the computer. Read chord names from a matching public
 chart; the complete arrangement remains on the publisher's page. A failed
 lookup is explicit and never falls back to the former audio model.
 """
+from ui_language import ui_text, using_english
 import copy
 import codecs
 import json
@@ -111,7 +112,7 @@ def search_url(query,kind='chords',provider=''):
     site=''
     if provider:
         entry=next((p for p in PROVIDERS if p['id']==provider),None)
-        if not entry:raise ValueError('Source de recherche inconnue.')
+        if not entry:raise ValueError(ui_text('Source de recherche inconnue.', 'Unknown search source.'))
         site=' site:'+entry['domain']
     return 'https://www.google.com/search?'+urlencode({'q':query[:300]+(' chords accords' if kind=='chords' else ' lyrics paroles')+site})
 
@@ -150,7 +151,7 @@ def matches_heading(heading,title,artist):
 class Redirects(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         if not safe_url(newurl) or not same_publisher(req.full_url,newurl):
-            raise ValueError('Redirection de grille refusée.')
+            raise ValueError(ui_text('Redirection de grille refusée.', 'Chart redirect refused.'))
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
@@ -163,23 +164,23 @@ def same_publisher(a,b):
 
 def request_timeout():
     remaining = getattr(_network, 'deadline', float('inf')) - time.monotonic()
-    if remaining <= 0:raise TimeoutError('Délai de recherche des grilles dépassé.')
+    if remaining <= 0:raise TimeoutError(ui_text('Délai de recherche des grilles dépassé.', 'Chart search timed out.'))
     return min(4., remaining)
 
 
 def fetch(url):
-    if not safe_url(url):raise ValueError('Adresse de grille invalide.')
+    if not safe_url(url):raise ValueError(ui_text('Adresse de grille invalide.', 'Invalid chart address.'))
     request = Request(url, headers={'User-Agent':'BandStudio/1.1 (chord reference reader)', 'Accept':'text/html'})
     with build_opener(Redirects()).open(request, timeout=request_timeout()) as response:
-        if response.status != 200 or not safe_url(response.url) or not same_publisher(url,response.url):raise ValueError('Grille indisponible.')
+        if response.status != 200 or not safe_url(response.url) or not same_publisher(url,response.url):raise ValueError(ui_text('Grille indisponible.', 'Chart unavailable.'))
         data = response.read(MAX_BYTES+1)
-        if len(data)>MAX_BYTES:raise ValueError('Page de grille trop volumineuse.')
+        if len(data)>MAX_BYTES:raise ValueError(ui_text('Page de grille trop volumineuse.', 'Chart page too large.'))
         return data.decode('utf-8', errors='replace'), response.url
 
 
 class SearchRedirects(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        if not search_address(newurl):raise ValueError('Redirection de recherche refusée.')
+        if not search_address(newurl):raise ValueError(ui_text('Redirection de recherche refusée.', 'Search redirect refused.'))
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
@@ -198,9 +199,9 @@ def fetch_discovery(query):
                       headers={'User-Agent':'BandStudio/1.1 (chord reference reader)', 'Accept':'text/html'})
     with build_opener(SearchRedirects()).open(request, timeout=request_timeout()) as response:
         if response.status != 200 or not search_address(response.url):
-            raise ValueError('Recherche de grilles indisponible.')
+            raise ValueError(ui_text('Recherche de grilles indisponible.', 'Chart search unavailable.'))
         data = response.read(MAX_BYTES+1)
-        if len(data)>MAX_BYTES:raise ValueError('Réponse de recherche trop volumineuse.')
+        if len(data)>MAX_BYTES:raise ValueError(ui_text('Réponse de recherche trop volumineuse.', 'Search response too large.'))
         return data.decode('utf-8', errors='replace')
 
 
@@ -230,7 +231,7 @@ def discover_urls(provider,title,artist):
     # Resolve the actual address instead of trying permutations of the name.
     query='site:'+provider['domain']+' '+ ' '.join('"'+value.replace('"','')+'"' for value in (artist,title))
     results=SearchLinks(provider);results.feed(fetch_discovery(query))
-    if not results.recognized:raise ValueError('Le moteur de recherche n’a pas fourni de résultats lisibles.')
+    if not results.recognized:raise ValueError(ui_text('Le moteur de recherche n’a pas fourni de résultats lisibles.', 'The search engine returned no readable results.'))
     return results.urls
 
 
@@ -271,7 +272,7 @@ def catalog_urls(provider,title,artist):
         request=Request(url,headers={'User-Agent':'BandStudio/1.1 (chord reference reader)', 'Accept':'text/html'})
         with build_opener(Redirects()).open(request,timeout=request_timeout()) as response:
             if response.status!=200 or not safe_url(response.url) or not same_publisher(url,response.url):
-                raise ValueError('Catalogue d’artistes indisponible.')
+                raise ValueError(ui_text('Catalogue d’artistes indisponible.', 'Artist catalog unavailable.'))
             # These indexes can exceed a normal chart's size. Stream them and
             # stop at the matching name; never retain the whole directory.
             decoder=codecs.getincrementaldecoder('utf-8')('replace');size=0
@@ -393,10 +394,10 @@ def _read_chart(provider,title,artist,url):
     status='not_found';source=None
     try:
         if not safe_url(url) or not same_publisher(url,'https://'+provider['domain']):
-            raise ValueError('Adresse de grille invalide.')
+            raise ValueError(ui_text('Adresse de grille invalide.', 'Invalid chart address.'))
         page,url=fetch(url)
         if not safe_url(url) or not same_publisher(url,'https://'+provider['domain']):
-            raise ValueError('Adresse de grille invalide.')
+            raise ValueError(ui_text('Adresse de grille invalide.', 'Invalid chart address.'))
         chart=Chart(provider['id']);chart.feed(page)
         if provider['id']=='ukuleletabs' and urlsplit(url).path.endswith('-uke-tabs.html') and not chart.chords:
             for edition in chart_titles(title):
@@ -416,7 +417,7 @@ def _read_chart(provider,title,artist,url):
             source.update(reputation(page,title))
             if chart.capo:
                 source=transposed_chart(source,chart.capo)
-                source['note']=f'Grille écrite avec capo {chart.capo} : accords convertis en tonalité entendue.'
+                source['note']=(f'Chart written with capo {chart.capo} : chords converted to concert pitch.' if using_english() else f'Grille écrite avec capo {chart.capo} : accords convertis en tonalité entendue.')
             status='found'
     except HTTPError as error:status='not_found' if error.code==404 else 'unavailable'
     except (OSError,ValueError):status='unavailable'
@@ -502,7 +503,7 @@ def _search(title,artist,only=None):
         try:identifier,status,source=completed.get(timeout=remaining)
         except Empty:break
         results[identifier]=(status,source)
-        emit(progressLabel=f'Recherche de grilles · {len(results)} sources sur {len(automatic)}',indeterminate=True)
+        emit(progressLabel=(f'Chart search · {len(results)} sources out of {len(automatic)}' if using_english() else f'Recherche de grilles · {len(results)} sources sur {len(automatic)}'),indeterminate=True)
     return results
 
 
@@ -518,7 +519,7 @@ def lookup(project, *, reanalyze=False):
         if not retry or time.time()-previous.get('checkedAt',0)<CACHE_RETRY_SECONDS:
             return dict(engine='web-reference',segments=[],reference=copy.deepcopy(previous),cacheHit=True)
     reference = dict(query=query,status='not_found',sources=[],checkedAt=time.time(),catalogVersion=CATALOG_VERSION,checks=[],
-        message='Aucune grille correspondante trouvée. Recherche une autre source sur Internet ; aucun accord n’a été inventé.')
+        message=ui_text('Aucune grille correspondante trouvée. Recherche une autre source sur Internet ; aucun accord n’a été inventé.', 'No matching chart found. Try another online source.'))
     if artist and title:
         results=_search(title,artist,only=retry)
         preferred=previous.get('selectedURL')
@@ -540,9 +541,9 @@ def lookup(project, *, reanalyze=False):
             kept=next((s for s in reference['sources'] if s['url']==preferred),None)
             reference.update(status='found',selectedURL=(kept or reference['sources'][0])['url'],
                 selectionMode='manual' if kept and manual else 'automatic',
-                message=f"{len(reference['sources'])} grille(s) trouvée(s). Les versions restent séparées ; choisis la source à caler.")
+                message=(f"{len(reference['sources'])} chart(s) found. Choose which version to align." if using_english() else f"{len(reference['sources'])} grille(s) trouvée(s). Les versions restent séparées ; choisis la source à caler."))
         elif any(c['status']=='unavailable' for c in reference['checks']):
-            reference.update(status='unavailable',message='Aucune grille récupérée : certaines sources sont indisponibles. Tu peux ouvrir les recherches ciblées ou réessayer.')
+            reference.update(status='unavailable',message=ui_text('Aucune grille récupérée : certaines sources sont indisponibles. Tu peux ouvrir les recherches ciblées ou réessayer.', 'No chart retrieved. Some sources are unavailable. Open a targeted search or try again.'))
     offline=reference['checks'] and all(check['status']=='unavailable' for check in reference['checks'])
     if (offline or reference['status']=='unavailable') and previous.get('status')=='found':
         return dict(engine='web-reference',segments=[],reference=copy.deepcopy(previous),cacheHit=True,cachedAfterFailure=True)
@@ -553,7 +554,7 @@ def lookup(project, *, reanalyze=False):
 
 
 def apply(project, result):
-    if result.get('engine')!='web-reference':raise ValueError('La détection audio des accords est désactivée. Recherche une grille Internet.')
+    if result.get('engine')!='web-reference':raise ValueError(ui_text('La détection audio des accords est désactivée. Recherche une grille Internet.', 'Audio chord detection is disabled. Find a chart online.'))
     project['chordReference']=copy.deepcopy(result['reference'])
     if not result.get('segments'):return  # A failed lookup/alignment is not an instruction to erase music.
     from windows.project import ident,duration
@@ -570,7 +571,7 @@ def apply(project, result):
 def analyze(project,audio,*,reanalyze=False,source_url='',ordered=False,phrase_groups=None):
     result=lookup(project,reanalyze=reanalyze and not source_url)
     sources=result['reference']['sources']
-    if source_url and not any(s['url']==source_url for s in sources):raise ValueError('Cette grille ne fait pas partie des sources trouvées pour le morceau.')
+    if source_url and not any(s['url']==source_url for s in sources):raise ValueError(ui_text('Cette grille ne fait pas partie des sources trouvées pour le morceau.', 'This chart is outside the sources found for this song.'))
     if sources:
         if source_url:
             result['reference'].update(selectedURL=source_url,selectionMode='manual')
@@ -592,9 +593,9 @@ def analyze(project,audio,*,reanalyze=False,source_url='',ordered=False,phrase_g
         shift=chosen.get('recordingTranspose',0)
         if shift:
             alignment['chartTranspose']=shift
-            alignment['message']+=f' Grille transposée de {shift:+d} demi-tons pour cet enregistrement.'
-        result['reference']['message']=f"{len(sources)} grille(s) trouvée(s) · source utilisée : {chosen['publisher']}. "+alignment['message']
+            alignment['message']+=(f' Chart transposed by {shift:+d} semitones for this recording.' if using_english() else f' Grille transposée de {shift:+d} demi-tons pour cet enregistrement.')
+        result['reference']['message']=(f"{len(sources)} chart(s) found · source used: {chosen['publisher']}. " if using_english() else f"{len(sources)} grille(s) trouvée(s) · source utilisée : {chosen['publisher']}. ")+alignment['message']
         result['reference']['message']+=' '+result['reference']['selectionReason']
-        if result.get('cachedAfterFailure'):result['reference']['message']='Internet indisponible : utilisation de la source déjà enregistrée. '+alignment['message']
+        if result.get('cachedAfterFailure'):result['reference']['message']=ui_text('Internet indisponible : utilisation de la source déjà enregistrée. ', 'Internet unavailable. Using the saved source. ')+alignment['message']
         result['reference']['alignment']=alignment
     return result

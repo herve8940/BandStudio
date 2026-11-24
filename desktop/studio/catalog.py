@@ -1,4 +1,5 @@
 """Local artwork and reversible library removal. Never deletes project contents."""
+from ui_language import ui_text
 import base64
 import json
 from pathlib import Path
@@ -10,8 +11,8 @@ from platform_tools import executable, creation_flags
 def member(library, path, include_trashed=False):
     library=Path(library).resolve();path=Path(path)
     if path.is_symlink() or path.resolve().parent!=library or path.suffix!='.bandstudio' or not (path/'project.json').is_file():
-        raise ValueError('Morceau hors de la bibliothèque.')
-    if not include_trashed and path.resolve() in pending(library):raise ValueError('Morceau dans la corbeille de la bibliothèque.')
+        raise ValueError(ui_text('Morceau hors de la bibliothèque.', 'Song outside the library.'))
+    if not include_trashed and path.resolve() in pending(library):raise ValueError(ui_text('Morceau dans la corbeille de la bibliothèque.', 'Song in the library trash.'))
     return path.resolve()
 
 
@@ -64,7 +65,7 @@ def trash_records(library):
     """
     library=Path(library).resolve()
     root=library/'.Trash'
-    if root.is_symlink():raise ValueError('Corbeille invalide.')
+    if root.is_symlink():raise ValueError(ui_text('Corbeille invalide.', 'Invalid trash folder.'))
     records=[]
     for folder in root.glob('*'):
         if folder.is_symlink() or not folder.is_dir():continue
@@ -103,7 +104,7 @@ def remove(library,path):
         except PermissionError:
             # REAPER, an antivirus or another reader may retain a Windows handle.
             # No copy/unlink fallback: audio must stay intact and restorable.
-            if not project.get('id'):raise ValueError('Le projet est verrouillé et son identifiant est manquant. Le morceau est conservé.')
+            if not project.get('id'):raise ValueError(ui_text('Le projet est verrouillé et son identifiant est manquant. Le morceau est conservé.', 'The project is locked and its ID is missing. The song was kept.'))
             return str(path)
     except Exception:
         (folder/'removal.json').unlink(missing_ok=True)
@@ -115,12 +116,12 @@ def remove(library,path):
 def rename(library,path,name):
     """Change the display name; stable paths preserve media and setlists."""
     path=member(library,path)
-    if not isinstance(name,str):raise ValueError('Donne un nom au morceau.')
+    if not isinstance(name,str):raise ValueError(ui_text('Donne un nom au morceau.', 'Enter a name for the song.'))
     name=name.strip()
     if not name or len(name)>200 or any(ord(c)<32 for c in name):
-        raise ValueError('Le nom doit contenir entre 1 et 200 caractères, sur une seule ligne.')
+        raise ValueError(ui_text('Le nom doit contenir entre 1 et 200 caractères, sur une seule ligne.', 'Use a single-line name between 1 and 200 characters.'))
     target=path/'project.json'
-    if target.is_symlink():raise ValueError('Fichier de morceau invalide.')
+    if target.is_symlink():raise ValueError(ui_text('Fichier de morceau invalide.', 'Invalid song file.'))
     project=json.loads(target.read_text(encoding='utf-8'))
     approval=project.get('preparation') or {}
     if approval.get('validatedAt'):
@@ -141,12 +142,12 @@ def rename(library,path,name):
 
 def restore(library):
     items=trash_records(library)
-    if not items:raise ValueError('La corbeille BandStudio est vide.')
+    if not items:raise ValueError(ui_text('La corbeille BandStudio est vide.', 'The BandStudio trash is empty.'))
     folder,source,in_place=items[0]
     if in_place:
         (folder/'removal.json').unlink();folder.rmdir();return str(source)
     target=Path(library)/source.name
-    if target.exists():target=target.with_name(target.stem+' restauré '+uuid.uuid4().hex[:6]+'.bandstudio')
+    if target.exists():target=target.with_name(target.stem+ui_text(' restauré ', ' restored ')+uuid.uuid4().hex[:6]+'.bandstudio')
     source.rename(target)
     (folder/'removal.json').unlink(missing_ok=True);folder.rmdir();return str(target)
 
@@ -161,5 +162,5 @@ if __name__=='__main__':
     elif action=='remove':value=remove(library,sys.argv[3])
     elif action=='rename':value=rename(library,sys.argv[3],sys.argv[4])
     elif action=='restore':value=restore(library)
-    else:raise ValueError('Action inconnue.')
+    else:raise ValueError(ui_text('Action inconnue.', 'Unknown action.'))
     print(json.dumps(value,ensure_ascii=True))

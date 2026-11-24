@@ -1,4 +1,5 @@
 """Version-1 BandStudio documents, compatible with the native Mac application."""
+from ui_language import ui_text
 import copy
 import hashlib
 import json
@@ -13,8 +14,8 @@ GUIDE_DEFAULTS.update(pulseUnit=None,referenceBPM=None)
 
 def ident():return str(uuid.uuid4())
 
-def fresh(name='Nouveau morceau'):
-    return dict(version=1,sectionGridVersion=2,id=ident(),name=name,tracks=[],sections=[],cues=[],bpm=0,beats=[],notes='',settings=GUIDE_DEFAULTS.copy(),guideFiles={},guideKey='',lyrics=[],chords=[],drumHits=[],key='',sourceURL='',capo=0,analysesCompleted=[],gridLocked=False,downbeats=[],analysisNote='')
+def fresh(name=ui_text('Nouveau morceau', 'New song')):
+    return dict(version=1,sectionGridVersion=2,id=ident(),name=name,tracks=[],sections=[],cues=[],bpm=0,beats=[],notes='',settings={**GUIDE_DEFAULTS, "language": ui_text("fr", "en")},guideFiles={},guideKey='',lyrics=[],chords=[],drumHits=[],key='',sourceURL='',capo=0,analysesCompleted=[],gridLocked=False,downbeats=[],analysisNote='')
 
 def duration(p):return max(p.get('sessionDuration',0),max((t['offset']+t['duration'] for t in p['tracks'] if not t['role'].startswith('guide_')),default=0))
 
@@ -42,19 +43,19 @@ def apply_lyrics(p,result):
 
 def relative_file(root,relative):
     root=Path(root).resolve();value=Path(relative)
-    if value.is_absolute() or '..' in value.parts:raise ValueError('Fichier hors du projet.')
+    if value.is_absolute() or '..' in value.parts:raise ValueError(ui_text('Fichier hors du projet.', 'File outside the project.'))
     path=(root/value).resolve()
-    if not path.is_relative_to(root):raise ValueError('Fichier hors du projet.')
+    if not path.is_relative_to(root):raise ValueError(ui_text('Fichier hors du projet.', 'File outside the project.'))
     return path
 
 def number(value,low,high):
     value=float(value)
-    if not math.isfinite(value) or not low<=value<=high:raise ValueError('Une valeur est hors limites.')
+    if not math.isfinite(value) or not low<=value<=high:raise ValueError(ui_text('Une valeur est hors limites.', 'A value is out of range.'))
     return value
 
 def validate(p,root=None):
-    if p.get('version')!=1 or len(p['tracks'])>128:raise ValueError('Format de projet non pris en charge.')
-    if len({t['id'] for t in p['tracks']})!=len(p['tracks']):raise ValueError('Identifiants de piste dupliqués.')
+    if p.get('version')!=1 or len(p['tracks'])>128:raise ValueError(ui_text('Format de projet non pris en charge.', 'Unsupported project format.'))
+    if len({t['id'] for t in p['tracks']})!=len(p['tracks']):raise ValueError(ui_text('Identifiants de piste dupliqués.', 'Duplicate track IDs.'))
     number(p.get('sessionDuration',0),0,43200)
     if p.get('preparation'):
         prep=p['preparation'];number(prep['rate'],.5,1.5);number(prep['pitch'],-12,12)
@@ -64,13 +65,13 @@ def validate(p,root=None):
         from windows.recording import settings
         settings(p['capture'])
     length=duration(p)
-    if int(p.get('capo',0))!=number(p.get('capo',0),0,12):raise ValueError('Position de capo entière attendue.')
+    if int(p.get('capo',0))!=number(p.get('capo',0),0,12):raise ValueError(ui_text('Position de capo entière attendue.', 'The capo position must be a whole number.'))
     for value in p.get('downbeats',[]):number(value,0,length+.1)
     for t in p['tracks']:
         number(t['duration'],.00001,43200);number(t['offset'],-120,43200);number(t['gain'],0,2);number(t['pan'],-1,1)
         if root:
             f=relative_file(root,t['file'])
-            if not f.is_file():raise ValueError('Média introuvable : '+t['name'])
+            if not f.is_file():raise ValueError(ui_text('Média introuvable : ', 'Media not found: ')+t['name'])
     for s in p['sections']:
         number(s['start'],0,length);number(s['end'],s['start']+.000001,length+.1)
     for c in p['cues']:number(c['time'],0,length)
@@ -78,12 +79,12 @@ def validate(p,root=None):
     for x in p['drumHits']:number(x['time'],0,length);number(x['pitch'],0,127);number(x['velocity'],1,127)
     for v in p['beats']:number(v,0,length+.1)
     s={**GUIDE_DEFAULTS,**p['settings']}
-    if s.get('pulseUnit') not in (None,'quarter','dottedQuarter'):raise ValueError('Unité de pulsation invalide.')
+    if s.get('pulseUnit') not in (None,'quarter','dottedQuarter'):raise ValueError(ui_text('Unité de pulsation invalide.', 'Invalid pulse unit.'))
     if s.get('referenceBPM') is not None:number(s['referenceBPM'],20,400)
     for key,low,high in [('clickGain',0,1.5),('callsGain',0,1.5),('cuesGain',0,1.5),('countGain',0,1.5),('clickPan',-1,1),('callsPan',-1,1),('countPan',-1,1),('firstBeat',-30,43200),('manualBPM',20,400),('loopStep',0,.25),('loopMaxRate',.5,1.5)]:number(s[key],low,high)
     for key,low,high in [('subdivision',1,4),('beatsPerBar',1,12),('countBars',0,8),('regionCountBeats',1,12),('leadBeats',0,32),('speechRate',100,360),('loopEvery',1,32)]:
-        if int(s[key])!=number(s[key],low,high):raise ValueError('Nombre entier attendu : '+key)
-    if s['gridMode'] not in ('detected','fixed') or s['language'] not in ('fr','en'):raise ValueError('Réglages de guidage invalides.')
+        if int(s[key])!=number(s[key],low,high):raise ValueError(ui_text('Nombre entier attendu : ', 'Whole number expected: ')+key)
+    if s['gridMode'] not in ('detected','fixed') or s['language'] not in ('fr','en'):raise ValueError(ui_text('Réglages de guidage invalides.', 'Invalid guide settings.'))
     if root:
         for path in p['guideFiles'].values():relative_file(root,path)
 
@@ -95,7 +96,7 @@ def load(root):
     p['settings']={**GUIDE_DEFAULTS,**p['settings']};validate(p,root)
     for t in p['tracks']:
         info=sf.info(relative_file(root,t['file']))
-        if abs(info.duration-t['duration'])>.1:raise ValueError('La durée d’un média a changé : '+t['name'])
+        if abs(info.duration-t['duration'])>.1:raise ValueError(ui_text('La durée d’un média a changé : ', 'Media duration changed: ')+t['name'])
         # Old Windows builds used int32 indices: multiplying by 720 overflowed
         # after 67 seconds at 44.1 kHz. Repair the cached display, never the audio.
         if t.get('peaksVersion',0)<2:
@@ -202,10 +203,10 @@ def apply_grid(p,result,offset=0,*,reanalyze=False):
 
 def edit_marker(p,args,review=False):
     kind=args.get('kind')
-    if kind not in ('section','cue'):raise ValueError('Repère inconnu.')
+    if kind not in ('section','cue'):raise ValueError(ui_text('Repère inconnu.', 'Unknown marker.'))
     rows=p['sections' if kind=='section' else 'cues']
     item=next((v for v in rows if v['id']==args.get('id')),None)
-    if item is None:raise ValueError('Ce repère n’existe plus.')
+    if item is None:raise ValueError(ui_text('Ce repère n’existe plus.', 'This marker no longer exists.'))
     if review:
         item['reviewed']=True
         if kind=='section':item['locked']=True
@@ -216,11 +217,11 @@ def edit_marker(p,args,review=False):
         rows.sort(key=lambda x:x['start']);index=rows.index(item)
         previous=rows[index-1] if index else None
         if at>=item['end']-.01 or (previous and at<=previous['start']+.01):
-            raise ValueError('Le début doit rester entre les sections voisines.')
+            raise ValueError(ui_text('Le début doit rester entre les sections voisines.', 'The start must stay between the neighboring sections.'))
         if previous:
             if abs(previous['end']-item['start'])<.001:
                 previous['end']=at;previous['locked']=True;previous['origin']='manual';previous['reviewed']=False
-            elif at<previous['end']:raise ValueError('Cette position chevauche la section précédente.')
+            elif at<previous['end']:raise ValueError(ui_text('Cette position chevauche la section précédente.', 'This position overlaps the previous section.'))
         item['start']=at;item['locked']=True;item['origin']='manual'
     item['reviewed']=False
 

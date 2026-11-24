@@ -414,7 +414,7 @@ def run(out: Path | None, check_only: bool) -> list[str]:
                         errors.append(f"{lang}/light: cue list missing")
                     if role == "light" and not page.is_visible("#lCues .row.cur"):
                         errors.append(f"{lang}/light: current cue not highlighted")
-                    if out and not check_only and role in ("drums", "bass", "vocals", "guitars", "light"):
+                    if out and not check_only and role in ("drums", "vocals", "light"):
                         f = out / f"prompter_{role}_{lang}{'_tablet' if kind == 'tablet' else ''}.png"
                         page.screenshot(path=str(f))
                         shots.append(f.name)

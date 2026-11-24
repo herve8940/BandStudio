@@ -1,4 +1,5 @@
 """Persistent, explicitly started preparation queue. JSON-line IPC, no network listener."""
+from ui_language import ui_text, using_english
 import argparse
 import json
 import os
@@ -23,7 +24,7 @@ def options(value):
                          ('quality', ('fast', 'standard', 'careful')),
                          ('language', ('auto', 'fr', 'en'))]:
         if result[key] not in allowed:
-            raise ValueError('Réglage de préparation invalide : ' + key)
+            raise ValueError(ui_text('Réglage de préparation invalide : ', 'Invalid preparation setting: ') + key)
     return result
 
 
@@ -53,14 +54,14 @@ class PreparationQueue:
         self.engine, self.library = Path(engine).resolve(), Path(library).resolve()
         self.directory = self.library / '.PreparationQueue'
         if self.directory.is_symlink():
-            raise ValueError('Dossier de file d’attente invalide.')
+            raise ValueError(ui_text('Dossier de file d’attente invalide.', 'Invalid queue folder.'))
         self.directory.mkdir(parents=True, exist_ok=True)
         self.file = self.directory / 'queue.json'
         self.items = json.loads(self.file.read_text(encoding='utf-8'))['items'] if self.file.exists() else []
         if not isinstance(self.items, list) or any(
                 not isinstance(e, dict) or len(e.get('id', '')) != 32 or
                 any(c not in '0123456789abcdef' for c in e['id']) for e in self.items):
-            raise ValueError('File enregistrée illisible. Le fichier a été conservé.')
+            raise ValueError(ui_text('File enregistrée illisible. Le fichier a été conservé.', 'The saved queue could not be read. Its file was kept.'))
         self.enabled = False  # A restart always waits for the musician's button.
         self.ready = False
         self.heartbeat = 0.0
@@ -88,7 +89,7 @@ class PreparationQueue:
         if item.get('destination') and item['status'] != 'done':
             target = self.library / item['destination']
             if target.parent != self.library or target.is_symlink():
-                raise ValueError('Destination de file invalide.')
+                raise ValueError(ui_text('Destination de file invalide.', 'Invalid queue destination.'))
             if (target / 'project.json').is_file():
                 p = json.loads((target / 'project.json').read_text(encoding='utf-8'))
                 if p.get('_queueID') == item['id']:
@@ -100,9 +101,9 @@ class PreparationQueue:
     def state(self):
         from batch_project import LABELS
         running = self.current is not None
-        status = 'Traitement en cours' if running else (
-            'En attente : lecture ou traitement dans BandStudio' if self.enabled and not self.available()
-            else 'File démarrée' if self.enabled else 'En pause · démarrage manuel')
+        status = ui_text('Traitement en cours', 'Task in progress') if running else (
+            ui_text('En attente : lecture ou traitement dans BandStudio', 'Waiting for playback or processing in BandStudio') if self.enabled and not self.available()
+            else ui_text('File démarrée', 'Queue started') if self.enabled else ui_text('En pause · démarrage manuel', 'Paused · start manually'))
         progress={}
         if running:
             try:
@@ -130,18 +131,18 @@ class PreparationQueue:
             sources = value.get('sources', [])
             kind = value.get('kind')
             if kind != 'file' or not isinstance(sources, list) or not 1 <= len(sources) <= 100:
-                raise ValueError('Ajoute de 1 à 100 fichiers à la fois.')
+                raise ValueError(ui_text('Ajoute de 1 à 100 fichiers à la fois.', 'Add between 1 and 100 files at a time.'))
             if len(self.items) + len(sources) > 500:
-                raise ValueError('Vide les tâches terminées avant d’ajouter d’autres morceaux (500 maximum).')
+                raise ValueError(ui_text('Vide les tâches terminées avant d’ajouter d’autres morceaux (500 maximum).', 'Clear completed tasks before adding more songs (maximum 500).'))
             settings = options(value.get('options') or {})
             added = []
             keys = {(e['kind'], e['source']) for e in self.items}
             for source in sources:
                 if not isinstance(source, str) or not source.strip():
-                    raise ValueError('Source vide ou invalide.')
+                    raise ValueError(ui_text('Source vide ou invalide.', 'Empty or invalid source.'))
                 source = str(Path(source).expanduser().resolve())
                 if not Path(source).is_file():
-                    raise ValueError('Fichier source introuvable : ' + Path(source).name)
+                    raise ValueError(ui_text('Fichier source introuvable : ', 'Source file not found: ') + Path(source).name)
                 key = (kind, source)
                 if key in keys:
                     continue
@@ -150,9 +151,9 @@ class PreparationQueue:
                                   title=Path(source).stem,
                                   options=settings.copy(), status='pending', completed=[], error=''))
             self.items.extend(added)
-            self.message = f'{len(added)} morceau(x) ajouté(s).'
+            self.message = (f'{len(added)} song(s) added.' if using_english() else f'{len(added)} morceau(x) ajouté(s).')
             if not self.enabled:
-                self.message += ' Clique sur Démarrer la file quand ta liste est prête.'
+                self.message += ui_text(' Clique sur Démarrer la file quand ta liste est prête.', ' Choose Start queue when your list is ready.')
             self.ack = dict(id=value.get('requestID'), ok=True)
         elif action in ('start', 'pause'):
             self.enabled = action == 'start'
@@ -163,12 +164,12 @@ class PreparationQueue:
         elif action in ('retry', 'remove', 'up'):
             item = next((e for e in self.items if e['id'] == value.get('id')), None)
             if item is None:
-                raise ValueError('Cette tâche n’existe plus.')
+                raise ValueError(ui_text('Cette tâche n’existe plus.', 'This task no longer exists.'))
             if item is self.current:
                 self.interrupt()
             if action == 'retry':
                 if item['status'] != 'error':
-                    raise ValueError('Seules les tâches en erreur peuvent être réessayées.')
+                    raise ValueError(ui_text('Seules les tâches en erreur peuvent être réessayées.', 'Only failed tasks can be retried.'))
                 item.update(status='pending', error='')
             elif action == 'remove':
                 self.items.remove(item)
@@ -178,7 +179,7 @@ class PreparationQueue:
                 if index:
                     self.items[index - 1], self.items[index] = item, self.items[index - 1]
         else:
-            raise ValueError('Commande de file inconnue.')
+            raise ValueError(ui_text('Commande de file inconnue.', 'Unknown queue command.'))
         self.save()
 
     def interrupt(self):
@@ -200,7 +201,7 @@ class PreparationQueue:
             self.save()
         target = self.library / item['destination']
         if target.exists():
-            raise ValueError('La destination existe déjà. Aucun projet n’a été remplacé.')
+            raise ValueError(ui_text('La destination existe déjà. Aucun projet n’a été remplacé.', 'The destination already exists. No project was replaced.'))
         root.rename(target)
         item.update(status='done', project=str(target), stage='', error='')
         self.library_changed = True
@@ -219,7 +220,7 @@ class PreparationQueue:
                     with (folder / 'traitement.log').open('rb') as f:
                         f.seek(0, 2); f.seek(max(0, f.tell() - 4000))
                         lines = f.read().decode(errors='replace').strip().splitlines()
-                    raise RuntimeError(lines[-1] if lines else 'Traitement interrompu. Réessaie cette tâche.')
+                    raise RuntimeError(lines[-1] if lines else ui_text('Traitement interrompu. Réessaie cette tâche.', 'Processing interrupted. Retry this task.'))
                 p = apply(item, stage, self.root(item), folder, self.library)
                 item.update(completed=p['_queueCompleted'], title=p['name'], status='pending', error='')
                 self.save()
@@ -295,7 +296,7 @@ class Client:
     def send(self, message):
         with self.lock:
             if self.proc.poll() is not None:
-                raise ValueError('La file s’est arrêtée. Ferme puis rouvre BandStudio pour la reprendre.')
+                raise ValueError(ui_text('La file s’est arrêtée. Ferme puis rouvre BandStudio pour la reprendre.', 'The queue stopped. Quit and reopen BandStudio to resume.'))
             self.proc.stdin.write(json.dumps(message, ensure_ascii=True) + '\n')
             self.proc.stdin.flush()
 
@@ -350,7 +351,7 @@ def main():
                 try:
                     if line:
                         if len(line) > 1_000_000:
-                            raise ValueError('Liste trop longue.')
+                            raise ValueError(ui_text('Liste trop longue.', 'List too long.'))
                         value = json.loads(line)
                         work.command(value)
                     work.tick()
@@ -375,5 +376,5 @@ if __name__ == '__main__':
         main()
     except Exception as error:
         print(json.dumps(dict(type='batchQueue', enabled=False, running=False, items=[],
-                              status='File indisponible', message=str(error))), flush=True)
+                              status=ui_text('File indisponible', 'Queue unavailable'), message=str(error))), flush=True)
         sys.exit(1)

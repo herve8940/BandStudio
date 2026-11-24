@@ -17,7 +17,7 @@ struct CaptureSettings: Codable {
               latencyMS.isFinite,(-2000...2000).contains(latencyMS),preRoll.isFinite,(0...30).contains(preRoll),
               punchStart.isFinite,punchEnd.isFinite,punchStart>=0,punchEnd>=0,punchEnd<=43200,
               channels.count<=32,Set(channels.map(\.input)).count==channels.count,
-              channels.allSatisfy({(1...32).contains($0.input) && !$0.name.trimmingCharacters(in:.whitespaces).isEmpty && $0.name.count<=120}) else {throw StudioError("Configuration d’enregistrement invalide.")}
+              channels.allSatisfy({(1...32).contains($0.input) && !$0.name.trimmingCharacters(in:.whitespaces).isEmpty && $0.name.count<=120}) else {throw StudioError(uiText("Configuration d’enregistrement invalide.", "Invalid recording settings."))}
     }
 }
 
@@ -66,16 +66,16 @@ final class Recorder {
         engine=AVAudioEngine()
         let input=engine.inputNode
         if !settings.deviceUID.isEmpty {
-            guard let device=captureDevices().first(where:{$0.uid==settings.deviceUID}),let unit=input.audioUnit else{throw StudioError("L’interface sélectionnée est débranchée. Choisis une entrée disponible.")}
+            guard let device=captureDevices().first(where:{$0.uid==settings.deviceUID}),let unit=input.audioUnit else{throw StudioError(uiText("L’interface sélectionnée est débranchée. Choisis une entrée disponible.", "The selected interface is disconnected. Choose an available input."))}
             var id=device.id
-            guard AudioUnitSetProperty(unit,kAudioOutputUnitProperty_CurrentDevice,kAudioUnitScope_Global,0,&id,UInt32(MemoryLayout<AudioDeviceID>.size))==noErr else{throw StudioError("Impossible d’ouvrir cette interface audio.")}
+            guard AudioUnitSetProperty(unit,kAudioOutputUnitProperty_CurrentDevice,kAudioUnitScope_Global,0,&id,UInt32(MemoryLayout<AudioDeviceID>.size))==noErr else{throw StudioError(uiText("Impossible d’ouvrir cette interface audio.", "Could not open this audio interface."))}
         }
         let format=input.outputFormat(forBus:0)
-        guard format.sampleRate>0,format.channelCount>0 else{throw StudioError("Aucune entrée audio disponible.")}
+        guard format.sampleRate>0,format.channelCount>0 else{throw StudioError(uiText("Aucune entrée audio disponible.", "No audio input available."))}
         selected=settings.channels
-        guard !selected.isEmpty,selected.allSatisfy({$0.input<=Int(format.channelCount)}) else {throw StudioError("Arme au moins une entrée disponible sur l’interface sélectionnée.")}
+        guard !selected.isEmpty,selected.allSatisfy({$0.input<=Int(format.channelCount)}) else {throw StudioError(uiText("Arme au moins une entrée disponible sur l’interface sélectionnée.", "Arm at least one available input on the selected interface."))}
         let free=(try? root.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage) ?? Int64.max
-        guard free>100_000_000 else{throw StudioError("Moins de 100 Mo disponibles pour la prise.")}
+        guard free>100_000_000 else{throw StudioError(uiText("Moins de 100 Mo disponibles pour la prise.", "Less than 100 MB available for recording."))}
         paths=[];files=[];error=nil;firstHost=0;frames=0;levels=Array(repeating:0,count:selected.count);sampleRate=format.sampleRate
         let mono=AVAudioFormat(standardFormatWithSampleRate:format.sampleRate,channels:1)!
         let take=UUID().uuidString
@@ -91,10 +91,10 @@ final class Recorder {
     }
     func ingest(_ buffer:AVAudioPCMBuffer,when:AVAudioTime,mono:AVAudioFormat) {
         guard error==nil else{return}
-        guard pending.wait(timeout:.now()) == .success else{error=StudioError("Le disque ne suit pas : prise arrêtée, fichiers capturés conservés.");return}
+        guard pending.wait(timeout:.now()) == .success else{error=StudioError(uiText("Le disque ne suit pas : prise arrêtée, fichiers capturés conservés.", "Disk too slow. Recording stopped and captured files were kept."));return}
         var copies:[AVAudioPCMBuffer]=[],peaks:[Float]=[]
         for channel in selected {
-            guard let b=AVAudioPCMBuffer(pcmFormat:mono,frameCapacity:buffer.frameLength),let src=buffer.floatChannelData?[channel.input-1],let dst=b.floatChannelData?[0] else{pending.signal();error=StudioError("Format d’entrée audio non pris en charge.");return}
+            guard let b=AVAudioPCMBuffer(pcmFormat:mono,frameCapacity:buffer.frameLength),let src=buffer.floatChannelData?[channel.input-1],let dst=b.floatChannelData?[0] else{pending.signal();error=StudioError(uiText("Format d’entrée audio non pris en charge.", "Unsupported audio input format."));return}
             b.frameLength=buffer.frameLength;dst.update(from:src,count:Int(buffer.frameLength));copies.append(b)
             var peak:Float=0;for i in 0..<Int(buffer.frameLength){peak=max(peak,abs(src[i]))};peaks.append(peak)
         }
@@ -110,7 +110,7 @@ final class Recorder {
 func cropCapture(_ source:URL,to target:URL,start:Double,end:Double) throws {
     let file=try AVAudioFile(forReading:source),rate=file.processingFormat.sampleRate
     let first=max(0,Int64((start*rate).rounded())),last=min(file.length,Int64((end*rate).rounded()))
-    guard last>first else{throw StudioError("La prise ne contient pas de son dans la plage choisie.")}
+    guard last>first else{throw StudioError(uiText("La prise ne contient pas de son dans la plage choisie.", "The take contains no audio in the selected range."))}
     file.framePosition=first
     let output=try AVAudioFile(forWriting:target,settings:file.fileFormat.settings)
     let block=AVAudioPCMBuffer(pcmFormat:file.processingFormat,frameCapacity:16384)!
@@ -125,29 +125,29 @@ extension StudioApp {
     func setCapture(_ args:[String:Any]) throws {
         try requireIdle();let data=try JSONSerialization.data(withJSONObject:args)
         let config=try JSONDecoder().decode(CaptureSettings.self,from:data);try config.validate()
-        if config.mode=="punch"{guard config.punchEnd>config.punchStart,config.punchEnd<=project.duration else{throw StudioError("La plage de punch doit être dans le morceau.")}}
+        if config.mode=="punch"{guard config.punchEnd>config.punchStart,config.punchEnd<=project.duration else{throw StudioError(uiText("La plage de punch doit être dans le morceau.", "The punch range must stay within the song."))}}
         remember();project.capture=config;try changed()
     }
     func newSession(_ name:String) throws {
-        try requireIdle();let clean=safeName(name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty ? "Répétition" : name)
+        try requireIdle();let clean=safeName(name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty ? uiText("Répétition", "Rehearsal") : name)
         let folder=library.appendingPathComponent(clean+"-"+String(UUID().uuidString.prefix(8))+".bandstudio")
         try FileManager.default.createDirectory(at:folder.appendingPathComponent("Audio"),withIntermediateDirectories:true)
         var p=StudioProject();p.name=clean;p.capture.mode="live";p.settings.countBars=0
-        try p.save(folder);try load(folder);notice="Session créée. Choisis l’interface USB et arme les entrées avant REC.";sendState()
+        try p.save(folder);try load(folder);notice=uiText("Session créée. Choisis l’interface USB et arme les entrées avant REC.", "Recording project created. Choose the USB interface and arm the inputs before recording.");sendState()
     }
     func startRecord() throws {
-        try requireIdle();guard root != nil else{throw StudioError("Crée une session ou ouvre un morceau.")}
+        try requireIdle();guard root != nil else{throw StudioError(uiText("Crée une session ou ouvre un morceau.", "Create a recording project or open a song."))}
         try project.capture.validate()
-        guard !project.capture.channels.isEmpty else{throw StudioError("Choisis les entrées à enregistrer dans Prises.")}
-        guard project.tracks.count+project.capture.channels.count<=128 else{throw StudioError("Le projet atteindrait la limite de 128 pistes.")}
-        guard audio.rate==1,audio.pitch==0,!audio.loop else{throw StudioError("Enregistre à 100 %, sans transposition ni boucle.")}
+        guard !project.capture.channels.isEmpty else{throw StudioError(uiText("Choisis les entrées à enregistrer dans Prises.", "Choose inputs in Takes."))}
+        guard project.tracks.count+project.capture.channels.count<=128 else{throw StudioError(uiText("Le projet atteindrait la limite de 128 pistes.", "The project would reach the 128-track limit."))}
+        guard audio.rate==1,audio.pitch==0,!audio.loop else{throw StudioError(uiText("Enregistre à 100 %, sans transposition ni boucle.", "Record at 100% speed with transpose and looping off."))}
         let settings=project.capture
-        if settings.mode != "live" && project.duration<=0{throw StudioError("Ouvre un morceau pour enregistrer par-dessus.")}
-        if settings.mode=="punch" {guard settings.punchEnd>settings.punchStart,settings.punchEnd<=project.duration else{throw StudioError("Plage de punch invalide.")}}
+        if settings.mode != "live" && project.duration<=0{throw StudioError(uiText("Ouvre un morceau pour enregistrer par-dessus.", "Open a song to record over it."))}
+        if settings.mode=="punch" {guard settings.punchEnd>settings.punchStart,settings.punchEnd<=project.duration else{throw StudioError(uiText("Plage de punch invalide.", "Invalid punch range."))}}
         let request=UUID().uuidString;recordRequest=request;recordPending=true;sendState()
         AVCaptureDevice.requestAccess(for:.audio){[weak self] granted in DispatchQueue.main.async {
             guard let self=self,self.recordRequest==request,self.recordPending else{return};self.recordPending=false
-            if !granted{self.notice="Autorise le microphone pour BandStudio dans Réglages Système → Confidentialité et sécurité.";self.sendState();return}
+            if !granted{self.notice=uiText("Autorise le microphone pour BandStudio dans Réglages Système → Confidentialité et sécurité.", "Allow microphone access for BandStudio in System Settings → Privacy & Security.");self.sendState();return}
             self.perform {
                 guard let root=self.root else{return}
                 if settings.mode=="live"{self.audio.pause();self.audio.position=0}
@@ -161,7 +161,7 @@ extension StudioApp {
                         self.recordingHost=self.audio.playbackHost;self.recordingStart=self.audio.position-lead
                     }
                 } catch {_ = try? self.recorder.stop();throw error}
-                self.notice="Prise en cours · \(self.recorder.selected.count) entrées · \(Int(self.recorder.sampleRate)) Hz · WAV 24 bits. Retour d’écoute sur la console.";self.sendState()
+                self.notice=uiText("Prise en cours · \(self.recorder.selected.count) entrées · \(Int(self.recorder.sampleRate)) Hz · WAV 24 bits. Retour d’écoute sur la console.", "Recording · \(self.recorder.selected.count) inputs · \(Int(self.recorder.sampleRate)) Hz · 24-bit WAV. Monitor on your mixer.");self.sendState()
             }
         }}
     }
@@ -181,11 +181,11 @@ extension StudioApp {
                 url=raw.deletingPathExtension().appendingPathExtension("punch.wav");try cropCapture(raw,to:url,start:from,end:to);at=offset+from
             }
             let(duration,peaks)=try inspectAudio(url)
-            additions.append(Track(name:recorder.selected[i].name+" · prise",file:"Audio/"+url.lastPathComponent,role:"take",duration:duration,offset:at,gain:1,peaks:peaks))
+            additions.append(Track(name:recorder.selected[i].name+uiText(" · prise", " · take"),file:"Audio/"+url.lastPathComponent,role:"take",duration:duration,offset:at,gain:1,peaks:peaks))
         }
         remember();project.tracks += additions;project.sessionDuration=max(project.sessionDuration,additions.map{$0.offset+$0.duration}.max() ?? 0)
         try project.save(root);try audio.load(project,root:root);audio.mode="mix";audio.applyMix()
-        notice=recorder.error?.localizedDescription ?? "\(additions.count) pistes enregistrées. Les captures originales sont conservées dans Audio."
+        notice=recorder.error?.localizedDescription ?? uiText("\(additions.count) pistes enregistrées. Les captures originales sont conservées dans Audio.", "\(additions.count) tracks recorded. Original takes are saved in Audio.")
         try changed()
     }
 }

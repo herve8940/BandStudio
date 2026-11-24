@@ -3,6 +3,16 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows.Forms;
 class Bootstrap {
+    static bool English() {
+        try {
+            string file = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BandStudio", "ui-language.txt");
+            if (File.Exists(file)) {
+                string language = File.ReadAllText(file).Trim();
+                if (language == "fr" || language == "en") return language == "en";
+            }
+        } catch (IOException) {} catch (UnauthorizedAccessException) {}
+        return System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName != "fr";
+    }
     [STAThread] static void Main() {
         string root=AppDomain.CurrentDomain.BaseDirectory;
         string logs=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"BandStudio","Logs");
@@ -19,9 +29,9 @@ class Bootstrap {
                     process.OutputDataReceived+=(s,e)=>{if(e.Data!=null)lock(gate){writer.WriteLine(e.Data);writer.Flush();}};
                     process.ErrorDataReceived+=(s,e)=>{if(e.Data!=null)lock(gate){writer.WriteLine(e.Data);writer.Flush();}};
                     process.Start();process.BeginOutputReadLine();process.BeginErrorReadLine();process.WaitForExit();
-                    if(process.ExitCode!=0)MessageBox.Show("BandStudio n’a pas pu démarrer.\n\nLe journal de diagnostic est ici :\n"+log,"BandStudio",MessageBoxButtons.OK,MessageBoxIcon.Error);
+                    if(process.ExitCode!=0)MessageBox.Show((English() ? "BandStudio could not start.\n\nDiagnostic log:\n" : "BandStudio n’a pas pu démarrer.\n\nLe journal de diagnostic est ici :\n")+log,"BandStudio",MessageBoxButtons.OK,MessageBoxIcon.Error);
                 }
             }
-        } catch(Exception e) {MessageBox.Show(e.Message+"\n\nDécompresse tout le dossier avant de lancer BandStudio.","BandStudio",MessageBoxButtons.OK,MessageBoxIcon.Error);}
+        } catch(Exception e) {MessageBox.Show(e.Message+(English() ? "\n\nExtract the entire folder before launching BandStudio." : "\n\nDécompresse tout le dossier avant de lancer BandStudio."),"BandStudio",MessageBoxButtons.OK,MessageBoxIcon.Error);}
     }
 }

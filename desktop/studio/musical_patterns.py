@@ -3,6 +3,7 @@
 Similarity is evidence for a proposal, not a calibrated correctness probability.
 Only individually confirmed sections/manual chords can teach another occurrence.
 """
+from ui_language import ui_text
 import copy
 import hashlib
 import json
@@ -220,7 +221,7 @@ def analyse(project,features=None):
             if protected(target) or kind(target['name']) not in ('intro','instrumental'):continue
             before=target['name'];target.update(name=donor['name'],origin='reference',locked=True,reviewed=False)
             changes.append(dict(id=str(uuid.uuid4()),kind='rename',time=target['start'],before=before,after=target['name'],
-                                reason='Passage comparable à « '+donor['name']+' » confirmé : harmonie, basse, batterie et chant concordants.'))
+                                reason=ui_text('Passage comparable à « ', 'Passage similar to “ ')+donor['name']+ui_text(' » confirmé : harmonie, basse, batterie et chant concordants.', ' ” confirmed by matching harmony, bass, drums and vocals.')))
     return dict(sections=result,changes=changes,pairs=pairs,groups=[g for g in groups if len(g)>1])
 
 

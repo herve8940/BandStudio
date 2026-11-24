@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$RequestFile)
+﻿param([Parameter(Mandatory=$true)][string]$RequestFile)
 $ErrorActionPreference = 'Stop'
 $request = Get-Content -LiteralPath $RequestFile -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($request.language -notin @('fr','en')) { throw 'Unsupported speech language.' }
@@ -45,6 +45,7 @@ try {
         $voices = @($fallback.GetInstalledVoices() | Where-Object Enabled | ForEach-Object VoiceInfo | Where-Object { $_.Culture.TwoLetterISOLanguageName -eq $request.language })
         $wanted = $voices | Where-Object Name -eq $request.voice | Select-Object -First 1
         if (-not $wanted) { $wanted = $voices | Select-Object -First 1 }
+        if (-not $wanted -and $env:BANDSTUDIO_UI_LANGUAGE -eq 'en') { throw ('Missing voice for '+$request.language+'. Open Settings > Windows voices, install the language, then prepare the guides again.') }
         if (-not $wanted) { throw ('Voix '+$request.language+' absente. Ouvre Reglages > Voix Windows et ajoute Francais ou Anglais dans Gerer les voix, puis relance la preparation.') }
         $fallback.SelectVoice($wanted.Name)
         $fallback.Rate = [Math]::Max(-5,[Math]::Min(5,[int](($request.rate-180)/30)))

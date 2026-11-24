@@ -18,6 +18,8 @@ La version **1.1.0 du 24 novembre 2026** ouvre directement l’éditeur et optim
 
 ## Préparer ton premier morceau
 
+Pour choisir la langue de l’application, ouvre **Réglages → Langue de l’interface**, choisis **Français** ou **English**, puis quitte et rouvre BandStudio.
+
 1. Dans **Mes morceaux**, importe ton fichier audio. Laisse **Préparer automatiquement après l’import** activé pour utiliser les moteurs installés. Pour plusieurs fichiers, ouvre **Préparer une série** et démarre la file.
 2. Dans **Éditeur du morceau**, isole une piste, boucle une section ou ralentis la lecture. Réécoute les passages signalés avant de corriger un repère, une parole ou un accord.
 3. Ouvre **Fiche morceau** pour exporter un PDF avec les accords et les paroles par mesure. Dans **Projet REAPER**, exporte les pistes et leurs médias pour poursuivre le travail dans REAPER.

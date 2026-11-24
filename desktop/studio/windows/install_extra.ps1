@@ -1,5 +1,6 @@
 param([ValidateSet('rhythm','drumsep','creative')][string]$Component)
 $ErrorActionPreference = 'Stop'
+function T([string]$fr,[string]$en) { if ($env:BANDSTUDIO_UI_LANGUAGE -eq 'en') { $en } else { $fr } }
 $StudioRoot = Split-Path $PSScriptRoot -Parent
 if ($Component -eq 'creative') {
     $StudioUv = Join-Path $StudioRoot 'tools\uv.exe'
@@ -7,17 +8,17 @@ if ($Component -eq 'creative') {
     $CreativePython = Join-Path $CreativeEnv 'Scripts\python.exe'
     if (-not (Test-Path $CreativePython)) {
         & $StudioUv venv --python (Join-Path $StudioRoot 'python\python.exe') $CreativeEnv
-        if ($LASTEXITCODE -ne 0) { throw 'Creation du moteur creatif impossible.' }
+        if ($LASTEXITCODE -ne 0) { throw (T 'Creation du moteur creatif impossible.' 'Could not create the creative engine.') }
     }
     & $StudioUv pip install --python $CreativePython 'torch==2.2.2' 'torchaudio==2.2.2' 'numpy==1.26.4' 'soundfile==0.13.1' 'transformers==4.44.2' 'sentencepiece==0.2.0' 'safetensors==0.4.5' 'onnxruntime==1.19.2'
-    if ($LASTEXITCODE -ne 0) { throw 'Installation des dependances creatives interrompue.' }
+    if ($LASTEXITCODE -ne 0) { throw (T 'Installation des dependances creatives interrompue.' 'Creative dependencies installation interrupted.') }
     & $CreativePython (Join-Path $StudioRoot 'tools\setup_studio_creative.py') $StudioRoot
-    if ($LASTEXITCODE -ne 0) { throw 'Installation des modeles creatives interrompue.' }
-    Write-Host 'Creation musicale et separation vocale pretes. MusicGen : usage non commercial.'
+    if ($LASTEXITCODE -ne 0) { throw (T 'Installation des modeles creatives interrompue.' 'Creative model installation interrupted.') }
+    Write-Host (T 'Creation musicale et separation vocale pretes. MusicGen : usage non commercial.' 'Music creation and vocal separation ready. MusicGen is for noncommercial use.')
     exit 0
 }
 $StudioPython = Join-Path $StudioRoot '.venv-demucs\Scripts\python.exe'
-if (-not (Test-Path $StudioPython)) { throw 'Installe le composant Separer les stems, puis relance cette installation.' }
+if (-not (Test-Path $StudioPython)) { throw (T 'Installe le composant Separer les stems, puis relance cette installation.' 'Install Separate stems first, then run this installer again.') }
 $StudioUv = Join-Path $StudioRoot 'tools\uv.exe'
 if ($Component -eq 'rhythm') {
     # Explicit NumPy pin also repairs existing environments created with NumPy 2.
@@ -25,11 +26,11 @@ if ($Component -eq 'rhythm') {
 } else {
     & $StudioUv pip install --python $StudioPython 'gdown==5.2.0'
 }
-if ($LASTEXITCODE -ne 0) { throw 'Installation des dependances interrompue.' }
+if ($LASTEXITCODE -ne 0) { throw (T 'Installation des dependances interrompue.' 'Dependency installation interrupted.') }
 if ($Component -eq 'rhythm') {
-    & $StudioPython -c "import numpy,soxr; from beat_this.inference import Audio2Beats; print('NumPy',numpy.__version__,'Beat This pret')"
-    if ($LASTEXITCODE -ne 0) { throw 'Le moteur rythmique ne se charge pas. Relance cette installation pour le reparer.' }
+    & $StudioPython -c "import numpy,soxr; from beat_this.inference import Audio2Beats; print('NumPy',numpy.__version__,'Beat This OK')"
+    if ($LASTEXITCODE -ne 0) { throw (T 'Le moteur rythmique ne se charge pas. Relance cette installation pour le reparer.' 'The rhythm engine could not load. Run the installer again to repair it.') }
 }
 & $StudioPython (Join-Path $StudioRoot 'tools\setup_studio_models.py') $StudioRoot $Component
-if ($LASTEXITCODE -ne 0) { throw 'Le modele ne peut pas etre installe. Consulte le message ci-dessus.' }
-Write-Host 'Composant pret. Ferme cette fenetre et relance ton analyse dans BandStudio.'
+if ($LASTEXITCODE -ne 0) { throw (T 'Le modele ne peut pas etre installe. Consulte le message ci-dessus.' 'Could not install the model. Check the message above.') }
+Write-Host (T 'Composant pret. Ferme cette fenetre et relance ton analyse dans BandStudio.' 'Component ready. Close this window and run your analysis in BandStudio.')

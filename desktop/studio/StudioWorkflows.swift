@@ -6,16 +6,16 @@ extension StudioApp {
         try requireIdle();audio.pause()
         let checkedRevision=revision
         try startJob("structureMemory") {result in
-            guard self.revision==checkedRevision else {throw StudioError("Le morceau a changé. Relance la vérification.")}
+            guard self.revision==checkedRevision else {throw StudioError(uiText("Le morceau a changé. Relance la vérification.", "The song has changed. Run the check again."))}
             let recalled=try JSONDecoder().decode(StructureMemoryResult.self,from:Data(contentsOf:result))
             if recalled.proposal != nil {
                 try self.prepareAll(args,only:["separate"]) {
                     let preparedRevision=self.revision
                     try self.startJob("structureMemory") {fresh in
-                        guard self.revision==preparedRevision else {throw StudioError("Le morceau a changé. Relance la vérification.")}
-                        guard let proposal=try JSONDecoder().decode(StructureMemoryResult.self,from:Data(contentsOf:fresh)).proposal else {throw StudioError("Le morceau a changé pendant la préparation. Relance la vérification.")}
+                        guard self.revision==preparedRevision else {throw StudioError(uiText("Le morceau a changé. Relance la vérification.", "The song has changed. Run the check again."))}
+                        guard let proposal=try JSONDecoder().decode(StructureMemoryResult.self,from:Data(contentsOf:fresh)).proposal else {throw StudioError(uiText("Le morceau a changé pendant la préparation. Relance la vérification.", "The song changed during preparation. Run the check again."))}
                         self.project.structureProposal=proposal;try self.changed(invalidate:false)
-                        self.notice="Préparation du même enregistrement retrouvée. Valide la proposition pour la réutiliser."
+                        self.notice=uiText("Préparation du même enregistrement retrouvée. Valide la proposition pour la réutiliser.", "Found a saved preparation for this recording. Approve the suggestion to reuse it.")
                     }
                 }
                 return
@@ -23,7 +23,7 @@ extension StudioApp {
             try self.prepareAll(args,only:["separate","grid","smartgrid","structure","chords"]) {
                 let checkedRevision=self.revision
                 try self.startJob("structureReview") {result in
-                    guard self.revision==checkedRevision else {throw StudioError("Le morceau a changé. Relance Vérifier et compléter.")}
+                    guard self.revision==checkedRevision else {throw StudioError(uiText("Le morceau a changé. Relance Vérifier et compléter.", "The song has changed. Run Check and complete again."))}
                     self.project.structureProposal=try JSONDecoder().decode(StructureProposal.self,from:Data(contentsOf:result))
                     try self.changed(invalidate:false)
                     self.notice=self.project.structureProposal!.reviewNotice
@@ -34,35 +34,35 @@ extension StudioApp {
     func applyStructure(_ args:[String:Any]) throws {
         try requireIdle()
         guard let proposal=project.structureProposal,args["reviewed"] as? Bool == true,
-              args["proposalID"] as? String == proposal.id else {throw StudioError("Valide la proposition affichée dans Pistes & structure.")}
+              args["proposalID"] as? String == proposal.id else {throw StudioError(uiText("Valide la proposition affichée dans Pistes & structure.", "Approve the suggestion shown in Tracks & structure."))}
         audio.pause();let checkedRevision=revision
         try startJob("structureApply") {result in
-            guard self.revision==checkedRevision else {throw StudioError("Le morceau a changé. Relance la vérification.")}
+            guard self.revision==checkedRevision else {throw StudioError(uiText("Le morceau a changé. Relance la vérification.", "The song has changed. Run the check again."))}
             let object=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
-            guard let value=object["project"] else {throw StudioError("La proposition n’est pas complète.")}
+            guard let value=object["project"] else {throw StudioError(uiText("La proposition n’est pas complète.", "The suggestion is incomplete."))}
             let prepared=try JSONDecoder().decode(StudioProject.self,from:JSONSerialization.data(withJSONObject:value))
-            guard prepared.id==self.project.id else {throw StudioError("La proposition appartient à un autre morceau.")}
+            guard prepared.id==self.project.id else {throw StudioError(uiText("La proposition appartient à un autre morceau.", "The suggestion belongs to a different song."))}
             try prepared.validate();self.remember();self.project=prepared
             try self.reloadAudio();try self.changed()
-            self.notice="Proposition enregistrée dans le morceau. Annuler permet de retrouver les repères précédents."
+            self.notice=uiText("Proposition enregistrée dans le morceau. Annuler permet de retrouver les repères précédents.", "Suggestion saved in the song. Use Undo to restore the previous markers.")
         }
     }
     func exportStructure(_ args:[String:Any]) throws {
         try requireIdle()
         guard let proposal=project.structureProposal,args["reviewed"] as? Bool == true,
-              args["proposalID"] as? String == proposal.id else {throw StudioError("Valide la proposition affichée dans Pistes & structure.")}
+              args["proposalID"] as? String == proposal.id else {throw StudioError(uiText("Valide la proposition affichée dans Pistes & structure.", "Approve the suggestion shown in Tracks & structure."))}
         audio.pause();let checkedRevision=revision
         try startJob("structureExport") {result in
-            guard self.revision==checkedRevision else {throw StudioError("Le morceau a changé pendant l’export. Relance la vérification.")}
+            guard self.revision==checkedRevision else {throw StudioError(uiText("Le morceau a changé pendant l’export. Relance la vérification.", "The song changed during export. Run the check again."))}
             let object=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
-            guard let path=object["path"] as? String,let value=object["project"] else {throw StudioError("L’export de la proposition n’est pas complet.")}
+            guard let path=object["path"] as? String,let value=object["project"] else {throw StudioError(uiText("L’export de la proposition n’est pas complet.", "The suggested export is incomplete."))}
             var prepared=try JSONDecoder().decode(StudioProject.self,from:JSONSerialization.data(withJSONObject:value))
-            guard prepared.id==self.project.id else {throw StudioError("L’export appartient à un autre morceau.")}
+            guard prepared.id==self.project.id else {throw StudioError(uiText("L’export appartient à un autre morceau.", "The export belongs to another song."))}
             try prepared.validate()
             if prepared.settings.exportGuides {prepared.guideKey=prepared.desiredGuideKey()}
             self.remember();self.project=prepared
             try self.reloadAudio();try self.changed(invalidate:false)
-            self.lastExport=path;self.notice="Proposition appliquée et projet REAPER exporté. Afficher l’export permet de le retrouver."
+            self.lastExport=path;self.notice=uiText("Proposition appliquée et projet REAPER exporté. Afficher l’export permet de le retrouver.", "Suggestion applied and REAPER project exported. Choose Show export to find it.")
         }
     }
     func snapshot(at url:URL) throws {
@@ -104,15 +104,15 @@ extension StudioApp {
                 StudioDiagnostics.shared.event("job.finish",["kind":kind,"exit":process.terminationStatus]);let cancelled=self.job == nil
                 self.send(["type":"job","task":kind,"jobID":folder.lastPathComponent,"finished":!cancelled && process.terminationStatus==0,"failed":cancelled || process.terminationStatus != 0,"progress":!cancelled && process.terminationStatus==0 ? 100 : 0])
                 self.busy=false;self.job=nil;self.jobName=""
-                if cancelled {self.notice="Traitement annulé. Le projet est conservé.";self.sendState();return}
+                if cancelled {self.notice=uiText("Traitement annulé. Le projet est conservé.", "Task canceled. Your project has been kept.");self.sendState();return}
                 guard self.project.id == identity else{self.sendState();return}
-                guard process.terminationStatus == 0 else {self.notice="Le traitement a échoué : "+self.jobDetail();self.sendState();return}
+                guard process.terminationStatus == 0 else {self.notice=uiText("Le traitement a échoué : ", "Task failed: ")+self.jobDetail();self.sendState();return}
                 self.perform{try completion(result);self.sendState()}
             }
         }
         StudioDiagnostics.shared.event("job.start",["kind":kind]);try p.run();job=p;busy=true;jobLog=log;jobStarted=ProcessInfo.processInfo.systemUptime;lastBroadcast=0
-        let titles=["prepareReview":"Vérification finale des sections et accords","structureApply":"Application de la proposition","structureMemory":"Recherche d’une préparation mémorisée","structureReview":"Comparaison de la structure","structureExport":"Validation et export REAPER","validate":"Vérification du morceau et des médias","generate":"Création musicale locale","vocalsplit":"Séparation chant principal et chœurs","smartgrid":"Détection des temps et débuts de mesure","drumsep":"Séparation des éléments de batterie","key":"Estimation de la tonalité","lyricsimport":"Import des paroles synchronisées","lyricsexport":"Export des paroles","stemsexport":"Export des stems","master":"Normalisation du mix","report":"Analyse des niveaux audio","portable":"Création du projet portable","sheet":"Création de la fiche PDF","guides":"Préparation du click, des appels et du décompte","separate":"Séparation des instruments","structure":"Analyse de la structure","grid":"Détection du tempo et des temps","reaper":"Création du projet REAPER","lyrics":"Transcription et vérification des paroles","lyricscorrect":"Correction des paroles et recalage vocal","chords":"Recherche de grille Internet","drums":"Transcription de la batterie","midi":"Export MIDI","decode":"Conversion du fichier audio"]
-        jobName=kind == "rpp" ? "Import des pistes et régions REAPER" : (titles[kind] ?? kind);notice="";sendState()
+        let titles:[String:String]=["prepareReview":uiText("Vérification finale des sections et accords", "Final check of sections and chords"),"structureApply":uiText("Application de la proposition", "Applying suggestion"),"structureMemory":uiText("Recherche d’une préparation mémorisée", "Looking for a saved preparation"),"structureReview":uiText("Comparaison de la structure", "Structure comparison"),"structureExport":uiText("Validation et export REAPER", "REAPER review and export"),"validate":uiText("Vérification du morceau et des médias", "Checking song and media"),"generate":uiText("Création musicale locale", "Creating music locally"),"vocalsplit":uiText("Séparation chant principal et chœurs", "Separating lead and backing vocals"),"smartgrid":uiText("Détection des temps et débuts de mesure", "Detecting beats and downbeats"),"drumsep":uiText("Séparation des éléments de batterie", "Separating drum kit"),"key":uiText("Estimation de la tonalité", "Estimating key"),"lyricsimport":uiText("Import des paroles synchronisées", "Importing synced lyrics"),"lyricsexport":uiText("Export des paroles", "Exporting lyrics"),"stemsexport":uiText("Export des stems", "Exporting stems"),"master":uiText("Normalisation du mix", "Normalizing mix"),"report":uiText("Analyse des niveaux audio", "Analyzing audio levels"),"portable":uiText("Création du projet portable", "Creating portable project"),"sheet":uiText("Création de la fiche PDF", "Creating PDF song sheet"),"guides":uiText("Préparation du click, des appels et du décompte", "Preparing click, announcements and count-in"),"separate":uiText("Séparation des instruments", "Instrument separation"),"structure":uiText("Analyse de la structure", "Analyzing structure"),"grid":uiText("Détection du tempo et des temps", "Detecting tempo and beats"),"reaper":uiText("Création du projet REAPER", "Creating REAPER project"),"lyrics":uiText("Transcription et vérification des paroles", "Transcribing and checking lyrics"),"lyricscorrect":uiText("Correction des paroles et recalage vocal", "Correcting and aligning vocals"),"chords":uiText("Recherche de grille Internet", "Finding an online chord chart"),"drums":uiText("Transcription de la batterie", "Transcribing drums"),"midi":uiText("Export MIDI", "Exporting MIDI"),"decode":uiText("Conversion du fichier audio", "Converting audio file")]
+        jobName=kind == "rpp" ? uiText("Import des pistes et régions REAPER", "Importing REAPER tracks and regions") : (titles[kind] ?? kind);notice="";sendState()
     }
     // Stop revokes a queued transport action while guides are still rendering.
     func afterPreparation(_ action:@escaping() throws -> Void)->() throws -> Void {
@@ -126,7 +126,7 @@ extension StudioApp {
         }
         let key=project.desiredGuideKey()
         try startJob("guides") {result in
-            guard self.project.desiredGuideKey()==key else {throw StudioError("Les sections ou les réglages ont changé pendant la préparation. Relance la lecture pour les actualiser.")}
+            guard self.project.desiredGuideKey()==key else {throw StudioError(uiText("Les sections ou les réglages ont changé pendant la préparation. Relance la lecture pour les actualiser.", "Sections or settings changed during preparation. Start playback again to refresh them."))}
             try self.applyGuides(result,key:key)
             try action()
         }
@@ -139,19 +139,19 @@ extension StudioApp {
     func applyGuides(_ result:URL,key:String) throws {
         guard let root=root else{return}
         let obj=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
-        guard let mapping=obj["files"] as? [String:String],mapping["click"] != nil,mapping["calls"] != nil else {throw StudioError("Les pistes de guidage n’ont pas été créées.")}
+        guard let mapping=obj["files"] as? [String:String],mapping["click"] != nil,mapping["calls"] != nil else {throw StudioError(uiText("Les pistes de guidage n’ont pas été créées.", "Audio guides were not created."))}
         let timingChanged=project.timingGrid?.version != 1 || (!project.gridLocked && (obj["firstBeatCorrection"] as? Double).map{$0 != project.settings.firstBeat} == true)
         let prefix="Guides/"+UUID().uuidString,folder=root.appendingPathComponent(prefix)
         try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
         var paths:[String:String]=[:]
         for (name,path) in mapping {
             let source=URL(fileURLWithPath:path).resolvingSymlinksInPath()
-            guard source.path.hasPrefix(result.deletingLastPathComponent().resolvingSymlinksInPath().path+"/") else {throw StudioError("Un guide audio est hors du dossier de traitement.")}
+            guard source.path.hasPrefix(result.deletingLastPathComponent().resolvingSymlinksInPath().path+"/") else {throw StudioError(uiText("Un guide audio est hors du dossier de traitement.", "An audio guide is outside the processing folder."))}
             let file=UUID().uuidString+".wav";try FileManager.default.copyItem(at:source,to:folder.appendingPathComponent(file));paths[name]=prefix+"/"+file
         }
         let previousGuides=project.tracks.filter{$0.role.hasPrefix("guide_")}
         project.tracks.removeAll{$0.role.hasPrefix("guide_")}
-        for (name,title,role) in [("click","Métronome","guide_click"),("calls","Appels de régions","guide_voice"),("cues","Cues","guide_cue"),("counts","Décompte des régions","guide_count")] {
+        for (name,title,role) in [("click",uiText("Métronome", "Metronome"),"guide_click"),("calls",uiText("Appels de régions", "Region announcements"),"guide_voice"),("cues","Cues","guide_cue"),("counts",uiText("Décompte des régions", "Region count-in"),"guide_count")] {
             let relative=paths[name]!,url=root.appendingPathComponent(relative)
             let (duration,peaks)=try inspectAudio(url)
             var track=Track(name:title,file:relative,role:role,duration:duration,peaks:peaks)
@@ -163,9 +163,9 @@ extension StudioApp {
         if !project.gridLocked,let first=obj["firstBeatCorrection"] as? Double {project.settings.firstBeat=first}
         if let grid=obj["timingGrid"] {project.timingGrid=try JSONDecoder().decode(TimingGrid.self,from:JSONSerialization.data(withJSONObject:grid))}
         project.guideFiles=paths;project.guideKey=project.desiredGuideKey()
-        try reloadAudio();try changed(invalidate:timingChanged);notice="Click, appels et décompte prêts."
+        try reloadAudio();try changed(invalidate:timingChanged);notice=uiText("Click, appels et décompte prêts.", "Click, announcements and count-in ready.")
         if let warnings=obj["guideWarnings"] as? [[String:Any]], !warnings.isEmpty {
-            notice="Guides prêts · \(warnings.count) annonce(s) sans place avant l’entrée : raccourcis le texte ou le décompte."
+            notice=uiText("Guides prêts · \(warnings.count) annonce(s) sans place avant l’entrée : raccourcis le texte ou le décompte.", "Guides ready · \(warnings.count) announcement(s) have no room before the entry. Shorten the text or count-in.")
         }
     }
     func settingsCommand(_ args:[String:Any]) throws {
@@ -176,47 +176,47 @@ extension StudioApp {
         audio.pause();remember()
         if settings.firstBeat != project.settings.firstBeat || settings.gridMode != project.settings.gridMode || settings.beatsPerBar != project.settings.beatsPerBar || settings.manualBPM != project.settings.manualBPM || (settings.gridMode == "fixed" && settings.pulseUnit != project.settings.pulseUnit) {project.gridLocked=true}
         project.settings=settings;audio.project=project;audio.applyMix();try changed()
-        try withGuides{self.notice="Réglages appliqués et guides actualisés."}
+        try withGuides{self.notice=uiText("Réglages appliqués et guides actualisés.", "Settings applied and guides refreshed.")}
     }
     func decodeFile(_ url:URL,to target:URL) throws {
         let p=Process();p.executableURL=runtime.appendingPathComponent("import-tools/ffmpeg")
         p.arguments=["-nostdin","-hide_banner","-loglevel","error","-y","-protocol_whitelist","file,pipe,crypto,data","-i",url.path,"-map","0:a:0","-vn","-ac","2","-ar","44100","-c:a","pcm_f32le",target.path]
         let pipe=Pipe();p.standardError=pipe;p.standardOutput=FileHandle.nullDevice
         try p.run();let data=pipe.fileHandleForReading.readDataToEndOfFile();p.waitUntilExit()
-        guard p.terminationStatus==0 else {throw StudioError("Format audio illisible ou protégé. "+(String(data:data.suffix(800),encoding:.utf8) ?? ""))}
+        guard p.terminationStatus==0 else {throw StudioError(uiText("Format audio illisible ou protégé. ", "Unreadable or protected audio format. ")+(String(data:data.suffix(800),encoding:.utf8) ?? ""))}
     }
     func validatePreparation() throws {
         try requireIdle();audio.pause()
         try withGuides {
             let checkedRevision=self.revision
             try self.startJob("validate") {result in
-                guard self.revision==checkedRevision else {throw StudioError("Le morceau a changé pendant la vérification. Valide à nouveau la préparation.")}
+                guard self.revision==checkedRevision else {throw StudioError(uiText("Le morceau a changé pendant la vérification. Valide à nouveau la préparation.", "The song changed during review. Approve the preparation again."))}
                 let obj=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
                 let data=try JSONSerialization.data(withJSONObject:obj["preparation"] ?? [:])
                 self.project.preparation=try JSONDecoder().decode(Preparation.self,from:data)
-                self.notice="Morceau validé. Tu peux maintenant l’envoyer dans REAPER."
+                self.notice=uiText("Morceau validé. Tu peux maintenant l’envoyer dans REAPER.", "Song approved. You can now send it to REAPER.")
                 try self.changed(invalidate:false)
             }
         }
     }
     func exportRPP(open:Bool=false,preflight:Bool=false) throws {
         try requireIdle()
-        guard preflight || project.preparation?.fingerprint != nil else {throw StudioError("Valide d’abord le morceau dans Valider & envoyer.")}
+        guard preflight || project.preparation?.fingerprint != nil else {throw StudioError(uiText("Valide d’abord le morceau dans Valider & envoyer.", "Approve the song in Review & send first."))}
         audio.pause()
         try withGuides {
             try self.startJob("reaper",arguments:preflight ? ["--preflight"] : []) {result in
                 let obj=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
-                guard let path=obj["path"] as? String else {throw StudioError("Le projet REAPER n’a pas été créé.")}
+                guard let path=obj["path"] as? String else {throw StudioError(uiText("Le projet REAPER n’a pas été créé.", "The REAPER project was not created."))}
                 self.lastExport=path
-                self.notice="Projet REAPER prêt : pistes, tempo, transposition, régions, repères et guides conservés."
+                self.notice=uiText("Projet REAPER prêt : pistes, tempo, transposition, régions, repères et guides conservés.", "REAPER project ready with tracks, tempo, transposition, regions, markers and guides.")
                 if open {
                     let file=URL(fileURLWithPath:path)
                     guard let app=NSWorkspace.shared.urlForApplication(withBundleIdentifier:"com.cockos.reaper") ?? (["/Applications/REAPER.app",NSHomeDirectory()+"/Applications/REAPER.app"].first(where:{FileManager.default.fileExists(atPath:$0)}).map{URL(fileURLWithPath:$0)}) else {
-                        self.notice="Projet exporté. Installe REAPER pour l’ouvrir ; Afficher l’export permet de retrouver le dossier."
+                        self.notice=uiText("Projet exporté. Installe REAPER pour l’ouvrir ; Afficher l’export permet de retrouver le dossier.", "Project exported. Install REAPER to open it. Choose Show export to find the folder.")
                         return
                     }
                     NSWorkspace.shared.open([file],withApplicationAt:app,configuration:NSWorkspace.OpenConfiguration()){_,error in
-                        if let error=error {DispatchQueue.main.async {self.notice="Projet exporté. Ouverture de REAPER impossible : "+error.localizedDescription;self.sendState()}}
+                        if let error=error {DispatchQueue.main.async {self.notice=uiText("Projet exporté. Ouverture de REAPER impossible : ", "Project exported. Could not open REAPER: ")+error.localizedDescription;self.sendState()}}
                     }
                 }
             }
@@ -226,21 +226,21 @@ extension StudioApp {
         audio.pause()
         try startJob("rpp",input:url) {result in
             let obj=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
-            guard let path=obj["project"] as? String else{throw StudioError("Le projet REAPER n’a pas été importé.")}
+            guard let path=obj["project"] as? String else{throw StudioError(uiText("Le projet REAPER n’a pas été importé.", "The REAPER project was not imported."))}
             let from=URL(fileURLWithPath:path).resolvingSymlinksInPath()
-            guard from.path.hasPrefix(result.deletingLastPathComponent().resolvingSymlinksInPath().path+"/") else{throw StudioError("Dossier d’import invalide.")}
+            guard from.path.hasPrefix(result.deletingLastPathComponent().resolvingSymlinksInPath().path+"/") else{throw StudioError(uiText("Dossier d’import invalide.", "Invalid import folder."))}
             let imported=try StudioProject.load(from)
             var dest=self.library.appendingPathComponent(self.safeName(imported.name)+".bandstudio")
             if FileManager.default.fileExists(atPath:dest.path){dest=self.library.appendingPathComponent(self.safeName(imported.name)+" "+String(imported.id.prefix(6))+".bandstudio")}
             try FileManager.default.moveItem(at:from,to:dest);try self.load(dest)
             let warnings=obj["warnings"] as? [String] ?? []
-            self.notice="Pistes audio, régions, repères et tempo importés de REAPER. "+warnings.joined(separator:" ")
+            self.notice=uiText("Pistes audio, régions, repères et tempo importés de REAPER. ", "Audio tracks, regions, markers and tempo imported from REAPER. ")+warnings.joined(separator:" ")
         }
     }
     func applyTextAnalysis(_ kind:String,result:URL) throws {
         let obj=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
         if kind == "chords" {
-            guard obj["engine"] as? String == "web-reference",let reference=obj["reference"] else{throw StudioError("La détection audio des accords est désactivée. Recherche une grille Internet.")}
+            guard obj["engine"] as? String == "web-reference",let reference=obj["reference"] else{throw StudioError(uiText("La détection audio des accords est désactivée. Recherche une grille Internet.", "Audio chord detection is disabled. Find a chart online."))}
             let value=try JSONDecoder().decode(ChordReference.self,from:JSONSerialization.data(withJSONObject:reference))
             let manual=project.chords.filter{$0.manual}
             let entries=(obj["segments"] as? [[String:Any]] ?? []).compactMap{row -> TimedText? in
@@ -292,7 +292,7 @@ extension StudioApp {
             project.lyricsReference=try JSONDecoder().decode(LyricsReference.self,from:JSONSerialization.data(withJSONObject:reference))
         }
         project.analysisCompleted(kind)
-        try changed();notice=kind == "lyrics" ? (project.lyricsReference?.message ?? "Transcription ajoutée.") : "Analyse ajoutée. Tu peux corriger chaque entrée dans le prompteur."
+        try changed();notice=kind == "lyrics" ? (project.lyricsReference?.message ?? uiText("Transcription ajoutée.", "Transcription added.")) : uiText("Analyse ajoutée. Tu peux corriger chaque entrée dans le prompteur.", "Analysis added. Edit individual entries in the teleprompter.")
     }
     func annotation(_ args:[String:Any]) throws {
         guard let kind=args["kind"] as? String,["lyrics","chords"].contains(kind) else{return}
@@ -301,14 +301,14 @@ extension StudioApp {
         if args["delete"] as? Bool == true {entries.removeAll{$0.id==id}}
         else {
             let a=try number(args,"start",range:0...project.duration),b=try number(args,"end",range:0...project.duration)
-            guard b>a,let text=args["text"] as? String,!text.isEmpty else{throw StudioError("Saisis un texte et des temps valides.")}
+            guard b>a,let text=args["text"] as? String,!text.isEmpty else{throw StudioError(uiText("Saisis un texte et des temps valides.", "Enter text and valid times."))}
             var words:[TimedWord]?=nil
             if kind == "lyrics",let raw=args["words"] as? [[String:Any]] {
-                guard raw.count<=300 else{throw StudioError("Trop de mots pour cette ligne.")}
+                guard raw.count<=300 else{throw StudioError(uiText("Trop de mots pour cette ligne.", "Too many words for this line."))}
                 var previous=a;words=[]
                 for row in raw {
                     let start=try number(row,"start",range:a...b),end=try number(row,"end",range:a...b)
-                    guard start>=previous,end>start,let word=row["text"] as? String,!word.isEmpty,word.count<=120 else{throw StudioError("Les mots doivent se suivre sans se chevaucher, dans les limites de la ligne.")}
+                    guard start>=previous,end>start,let word=row["text"] as? String,!word.isEmpty,word.count<=120 else{throw StudioError(uiText("Les mots doivent se suivre sans se chevaucher, dans les limites de la ligne.", "Words must stay in order within the line and cannot overlap."))}
                     words!.append(TimedWord(start:start,end:end,text:word));previous=end
                 }
             }
@@ -328,14 +328,14 @@ extension StudioApp {
         remember();if kind == "lyrics"{project.lyrics=entries}else{project.chords=entries};try changed()
     }
     func editStructure(_ command:String,args:[String:Any]) throws {
-        guard let id=args["id"] as? String,let index=project.sections.firstIndex(where:{$0.id==id}) else{throw StudioError("Sélectionne une section dans l’atelier.")}
+        guard let id=args["id"] as? String,let index=project.sections.firstIndex(where:{$0.id==id}) else{throw StudioError(uiText("Sélectionne une section dans l’atelier.", "Select a section in the editor."))}
         if command == "splitSection" {
             let point=try number(args,"time",range:0...project.duration),section=project.sections[index]
-            guard point>section.start+0.01,point<section.end-0.01 else{throw StudioError("Place la tête de lecture à l’intérieur de la section à scinder.")}
-            remember();var next=section;next.id=UUID().uuidString;next.start=point;next.name += " · suite";next.locked=true;next.origin="manual";next.reviewed=false
+            guard point>section.start+0.01,point<section.end-0.01 else{throw StudioError(uiText("Place la tête de lecture à l’intérieur de la section à scinder.", "Place the playhead inside the section to split."))}
+            remember();var next=section;next.id=UUID().uuidString;next.start=point;next.name += uiText(" · suite", " · continued");next.locked=true;next.origin="manual";next.reviewed=false
             project.sections[index].end=point;project.sections[index].locked=true;project.sections[index].origin="manual";project.sections[index].reviewed=false;project.sections.insert(next,at:index+1)
         } else {
-            guard index+1<project.sections.count else{throw StudioError("Il n’y a pas de section suivante.")}
+            guard index+1<project.sections.count else{throw StudioError(uiText("Il n’y a pas de section suivante.", "There is no next section."))}
             remember();project.sections[index].end=project.sections[index+1].end;project.sections[index].locked=true;project.sections[index].origin="manual";project.sections[index].reviewed=false;project.sections.remove(at:index+1)
         }
         try changed()
@@ -347,15 +347,15 @@ extension StudioApp {
         try changed()
     }
     func updateSetlist(_ args:[String:Any]) throws {
-        guard let name=args["name"] as? String,!name.trimmingCharacters(in:.whitespaces).isEmpty,let paths=args["paths"] as? [String],paths.count<=500 else{throw StudioError("Donne un nom à ta setlist.")}
+        guard let name=args["name"] as? String,!name.trimmingCharacters(in:.whitespaces).isEmpty,let paths=args["paths"] as? [String],paths.count<=500 else{throw StudioError(uiText("Donne un nom à ta setlist.", "Enter a name for the setlist."))}
         let allowed=Set(projectList().compactMap{$0["path"]})
-        guard paths.allSatisfy({allowed.contains($0)}) else{throw StudioError("Un morceau de la setlist n’est plus dans la bibliothèque.")}
+        guard paths.allSatisfy({allowed.contains($0)}) else{throw StudioError(uiText("Un morceau de la setlist n’est plus dans la bibliothèque.", "A song in the setlist is no longer in the library."))}
         let id=args["id"] as? String ?? UUID().uuidString
         let item=StudioSetlist(id:id,name:String(name.prefix(120)),paths:paths)
         var updated=setlists
         if let i=updated.firstIndex(where:{$0.id==id}){updated[i]=item}else{updated.append(item)}
         try JSONEncoder().encode(updated).write(to:library.appendingPathComponent("setlists.json"),options:.atomic)
-        setlists=updated;notice="Setlist enregistrée. Chaque morceau s’arrête à sa fin.";sendState()
+        setlists=updated;notice=uiText("Setlist enregistrée. Chaque morceau s’arrête à sa fin.", "Setlist saved. Playback stops at the end of each song.");sendState()
     }
 }
 
@@ -365,7 +365,7 @@ extension StudioApp {
         p.arguments=[runtime.appendingPathComponent("catalog.py").path]+arguments
         let pipe=Pipe();p.standardOutput=pipe;p.standardError=FileHandle.nullDevice
         try p.run();let data=pipe.fileHandleForReading.readDataToEndOfFile();p.waitUntilExit()
-        guard p.terminationStatus==0 else {throw StudioError("La bibliothèque n’a pas pu être modifiée. Le projet est conservé.")}
+        guard p.terminationStatus==0 else {throw StudioError(uiText("La bibliothèque n’a pas pu être modifiée. Le projet est conservé.", "Could not update the library. Your project has been kept."))}
         return try JSONSerialization.jsonObject(with:data,options:.fragmentsAllowed)
     }
     func pendingTrashedProjects()->Set<URL> {
@@ -400,14 +400,14 @@ extension StudioApp {
     func catalogCommand(_ command:String,_ args:[String:Any]) throws {
         try requireIdle()
         if command=="restoreProject" {
-            _ = try catalogCall(["restore",library.path]);notice="Morceau restauré dans la bibliothèque.";sendState();return
+            _ = try catalogCall(["restore",library.path]);notice=uiText("Morceau restauré dans la bibliothèque.", "Song restored to the library.");sendState();return
         }
-        guard let path=args["path"] as? String,projectList().contains(where:{$0["path"]==path}) else {throw StudioError("Morceau hors de la bibliothèque.")}
+        guard let path=args["path"] as? String,projectList().contains(where:{$0["path"]==path}) else {throw StudioError(uiText("Morceau hors de la bibliothèque.", "Song outside the library."))}
         if command=="renameProject" {
-            guard let name=args["name"] as? String else{throw StudioError("Donne un nom au morceau.")}
+            guard let name=args["name"] as? String else{throw StudioError(uiText("Donne un nom au morceau.", "Enter a name for the song."))}
             let active=root?.standardizedFileURL.path==URL(fileURLWithPath:path).standardizedFileURL.path
             if active{try save()}
-            guard let renamed=try catalogCall(["rename",library.path,path,name]) as? String else{throw StudioError("Nom du morceau invalide.")}
+            guard let renamed=try catalogCall(["rename",library.path,path,name]) as? String else{throw StudioError(uiText("Nom du morceau invalide.", "Invalid song name."))}
             if active {
                 project.name=renamed;audio.project.name=renamed
                 project.preparation=try StudioProject.load(URL(fileURLWithPath:path)).preparation
@@ -416,22 +416,22 @@ extension StudioApp {
                 for i in future.indices{future[i].name=renamed;future[i].preparation=nil}
                 revision += 1
             }
-            notice="Morceau renommé.";sendState();return
+            notice=uiText("Morceau renommé.", "Song renamed.");sendState();return
         }
         if command=="deleteProject" {
             let active=root?.standardizedFileURL.path==URL(fileURLWithPath:path).standardizedFileURL.path
             if active{audio.pause()}
             _ = try catalogCall(["remove",library.path,path])
             if active {project=StudioProject();try audio.load(project,root:library);root=nil;history=[];future=[];lastExport="";revision += 1;UserDefaults.standard.removeObject(forKey:"project")}
-            notice="Morceau retiré de la bibliothèque. Tu peux le restaurer depuis Mes morceaux.";sendState();return
+            notice=uiText("Morceau retiré de la bibliothèque. Tu peux le restaurer depuis Mes morceaux.", "Song removed from the library. Restore it from My songs.");sendState();return
         }
-        let panel=NSOpenPanel();panel.allowedFileTypes=["jpg","jpeg","png","webp"];panel.message="Choisis la pochette du morceau."
+        let panel=NSOpenPanel();panel.allowedFileTypes=["jpg","jpeg","png","webp"];panel.message=uiText("Choisis la pochette du morceau.", "Choose cover art for the song.")
         panel.beginSheetModal(for:window){answer in
             guard answer == .OK,let image=panel.url else{return}
-            self.busy=true;self.jobName="Ajout de la pochette";self.sendState()
+            self.busy=true;self.jobName=uiText("Ajout de la pochette", "Adding cover art");self.sendState()
             DispatchQueue.global(qos:.userInitiated).async {
                 let ok=(try? self.catalogCall(["extract",path,image.path,self.runtime.path])) as? Bool ?? false
-                DispatchQueue.main.async {self.busy=false;self.jobName="";self.notice=ok ? "Pochette enregistrée." : "Image illisible. Choisis une image JPG, PNG ou WebP.";self.sendState()}
+                DispatchQueue.main.async {self.busy=false;self.jobName="";self.notice=ok ? uiText("Pochette enregistrée.", "Cover art saved.") : uiText("Image illisible. Choisis une image JPG, PNG ou WebP.", "Unreadable image. Choose a JPG, PNG or WebP file.");self.sendState()}
             }
         }
     }
@@ -468,7 +468,7 @@ extension StudioApp {
         let finish:()throws->Void = {
             guard self.project.id==identity,self.transportGeneration==generation else{return}
             try self.withGuides{
-                self.notice="Import terminé. "+self.project.analysisNote
+                self.notice=uiText("Import terminé. ", "Import complete. ")+self.project.analysisNote
                 self.sendState()
             }
         }
@@ -477,14 +477,14 @@ extension StudioApp {
     }
     func prepareAll(_ args:[String:Any],only:Set<String>?=nil,completion:(()throws->Void)?=nil) throws {
         try requireIdle()
-        guard root != nil,project.tracks.contains(where:{$0.role=="source"}) else {throw StudioError("Importe le morceau original avant de lancer la préparation complète.")}
+        guard root != nil,project.tracks.contains(where:{$0.role=="source"}) else {throw StudioError(uiText("Importe le morceau original avant de lancer la préparation complète.", "Import the original song before running complete preparation."))}
         audio.pause()
         let steps=analysisPlan().filter{only?.contains($0) ?? true},identity=project.id,generation=transportGeneration
         func next(_ index:Int) throws {
             guard self.project.id==identity,self.transportGeneration==generation else{return}
             if index==steps.count {
                 if let completion=completion {try completion();return}
-                self.notice="Ton morceau est prêt à écouter."
+                self.notice=uiText("Ton morceau est prêt à écouter.", "Your song is ready to hear.")
                 self.sendState()
                 self.send(["type":"preparationFinished","projectID":identity])
                 return
@@ -496,18 +496,18 @@ extension StudioApp {
             else if kind=="prepareReview" {
                 let checkedRevision=self.revision
                 try self.startJob(kind) {result in
-                    guard self.revision==checkedRevision else{throw StudioError("Le morceau a changé pendant la vérification finale.")}
+                    guard self.revision==checkedRevision else{throw StudioError(uiText("Le morceau a changé pendant la vérification finale.", "The song changed during the final check."))}
                     let object=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
-                    guard let value=object["project"] else{throw StudioError("Préparation finale incomplète.")}
+                    guard let value=object["project"] else{throw StudioError(uiText("Préparation finale incomplète.", "Final preparation incomplete."))}
                     let prepared=try JSONDecoder().decode(StudioProject.self,from:JSONSerialization.data(withJSONObject:value))
-                    guard prepared.id==self.project.id else{throw StudioError("Préparation d’un autre morceau.")}
+                    guard prepared.id==self.project.id else{throw StudioError(uiText("Préparation d’un autre morceau.", "This preparation belongs to another song."))}
                     try prepared.validate();self.remember();self.project=prepared;try self.reloadAudio();try self.changed(invalidate:false)
                     try finish()
                 }
             }
             else if ["smartgrid","key"].contains(kind){try self.advancedTask(["kind":kind],completion:finish)}
             else{try self.runAnalysis(kind,model:args["model"] as? String ?? "htdemucs",language:args["language"] as? String ?? "auto",quality:args["quality"] as? String ?? "standard",completion:finish)}
-            if self.busy {self.jobPlan=steps;self.jobPlanIndex=index;self.jobName="Tout préparer · \(index+1)/\(steps.count) · "+self.jobName;self.sendState()}
+            if self.busy {self.jobPlan=steps;self.jobPlanIndex=index;self.jobName=uiText("Tout préparer · \(index+1)/\(steps.count) · ", "Prepare everything · \(index+1)/\(steps.count) · ")+self.jobName;self.sendState()}
         }
         try next(0)
     }
@@ -518,10 +518,10 @@ extension StudioApp {
     func artworkCommand(_ args:[String:Any]) throws {
         guard let path=args["path"] as? String else{return}
         guard !artworkBusy,projectList().contains(where:{$0["path"]==path}) else {
-            send(["type":"artworkResult","path":path,"message":"Ce morceau n’est pas disponible pour la recherche."]);return
+            send(["type":"artworkResult","path":path,"message":uiText("Ce morceau n’est pas disponible pour la recherche.", "This song is unavailable for search.")]);return
         }
         let payload=try JSONSerialization.data(withJSONObject:args)
-        guard let text=String(data:payload,encoding:.utf8),text.utf8.count<4096 else {throw StudioError("Recherche trop longue.")}
+        guard let text=String(data:payload,encoding:.utf8),text.utf8.count<4096 else {throw StudioError(uiText("Recherche trop longue.", "Search too long."))}
         artworkBusy=true
         // Keep playback/import/analysis available while the separate helper uses
         // the network. Space helpers as well as requests to respect MusicBrainz.
@@ -532,8 +532,8 @@ extension StudioApp {
                 p.arguments=[self.runtime.appendingPathComponent("artwork.py").path,self.library.path,self.runtime.path,text]
                 let pipe=Pipe();p.standardOutput=pipe;p.standardError=FileHandle.nullDevice
                 try p.run();let data=pipe.fileHandleForReading.readDataToEndOfFile();p.waitUntilExit()
-                result=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any] ?? ["message":"Recherche indisponible. Réessaie plus tard."]
-            } catch {result=["message":"Recherche indisponible. Réessaie plus tard."]}
+                result=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any] ?? ["message":uiText("Recherche indisponible. Réessaie plus tard.", "Search unavailable. Try again later.")]
+            } catch {result=["message":uiText("Recherche indisponible. Réessaie plus tard.", "Search unavailable. Try again later.")]}
             let response=result
             DispatchQueue.main.async {
                 self.artworkBusy=false
@@ -546,7 +546,7 @@ extension StudioApp {
 
 extension StudioApp {
     func guideMix(_ args:[String:Any]) throws {
-        guard let key=args["key"] as? String,["clickGain","callsGain","cuesGain","countGain"].contains(key) else{throw StudioError("Volume inconnu.")}
+        guard let key=args["key"] as? String,["clickGain","callsGain","cuesGain","countGain"].contains(key) else{throw StudioError(uiText("Volume inconnu.", "Unknown volume."))}
         let gain=Float(try number(args,"value",range:0...1.5));remember()
         switch key {
         case "clickGain":project.settings.clickGain=gain;if gain>0{project.settings.clickEnabled=true}
@@ -557,7 +557,7 @@ extension StudioApp {
         audio.project=project;audio.applyMix();try changed()
     }
     func editMarker(_ args:[String:Any],review:Bool) throws {
-        guard let kind=args["kind"] as? String,let id=args["id"] as? String else{throw StudioError("Sélectionne un repère.")}
+        guard let kind=args["kind"] as? String,let id=args["id"] as? String else{throw StudioError(uiText("Sélectionne un repère.", "Select a marker."))}
         audio.pause()
         if kind=="cue",let i=project.cues.firstIndex(where:{$0.id==id}) {
             let at=review ? project.cues[i].time : try number(args,"time",range:0...project.duration)
@@ -566,8 +566,8 @@ extension StudioApp {
         } else if kind=="section",let i=project.sections.firstIndex(where:{$0.id==id}) {
             let at=review ? project.sections[i].start : try number(args,"time",range:0...project.duration)
             if !review {
-                guard at<project.sections[i].end-0.01,(i==0 || at>project.sections[i-1].start+0.01) else{throw StudioError("Le début doit rester entre les sections voisines.")}
-                if i>0,abs(project.sections[i-1].end-project.sections[i].start)>=0.001,at<project.sections[i-1].end {throw StudioError("Cette position chevauche la section précédente.")}
+                guard at<project.sections[i].end-0.01,(i==0 || at>project.sections[i-1].start+0.01) else{throw StudioError(uiText("Le début doit rester entre les sections voisines.", "The start must stay between the neighboring sections."))}
+                if i>0,abs(project.sections[i-1].end-project.sections[i].start)>=0.001,at<project.sections[i-1].end {throw StudioError(uiText("Cette position chevauche la section précédente.", "This position overlaps the previous section."))}
             }
             remember()
             if !review {
@@ -577,7 +577,7 @@ extension StudioApp {
                 project.sections[i].start=at;project.sections[i].origin="manual"
             }
             project.sections[i].locked=true;project.sections[i].reviewed=review
-        } else {throw StudioError("Ce repère n’existe plus.")}
+        } else {throw StudioError(uiText("Ce repère n’existe plus.", "This marker no longer exists."))}
         try changed()
     }
 }

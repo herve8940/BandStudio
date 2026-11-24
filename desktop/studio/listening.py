@@ -1,4 +1,5 @@
 """Instrument groups shared by preview, project validation and REAPER exports."""
+from ui_language import ui_text
 INSTRUMENTS = ('drums', 'bass', 'vocals', 'guitar', 'piano', 'other', 'vocal_lead', 'vocal_backing', 'drum_kick', 'drum_snare', 'drum_toms', 'drum_cymbals', 'take')
 
 def parse_mode(mode):
@@ -8,7 +9,7 @@ def parse_mode(mode):
     if isinstance(mode, str):
         kind, _, role = mode.partition(':')
         if kind in ('minus', 'solo') and role in INSTRUMENTS: return kind, role
-    raise ValueError('Mode d’écoute invalide.')
+    raise ValueError(ui_text('Mode d’écoute invalide.', 'Invalid listening mode.'))
 
 def matches(role, instrument):
     return role == instrument or (instrument == 'drums' and role.startswith('drum_')) or (instrument == 'vocals' and role.startswith('vocal_'))

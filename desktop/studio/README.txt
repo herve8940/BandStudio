@@ -1,5 +1,7 @@
 BandStudio 1.1.0 — préparer les morceaux pour REAPER
 
+English instructions: README.en.txt. Langue de l’interface : Réglages → Langue de l’interface.
+
 DÉMARRER
 Ouvre BandStudio dans Applications. Importe un fichier audio ou une vidéo, ou ouvre
 un morceau existant. Les fichiers du morceau sont copiés dans un dossier .bandstudio.

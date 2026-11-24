@@ -1,4 +1,5 @@
 """Intro boundaries and count-ins on the saved musical grid; no model inference."""
+from ui_language import ui_text
 import bisect
 import copy
 import math
@@ -226,7 +227,7 @@ def align_intro_sections(project,entry,force=False):
     """Only touch opening intro boundaries; preserve the first verse and all later edits."""
     p=copy.deepcopy(project);rows=p.get('sections',[])
     def intro(s):return s['name'].strip().casefold().split(' ')[0] in ('intro','introduction')
-    def silence(s):return s['name'].strip().casefold() in ('silence','avant départ','levée')
+    def silence(s):return s['name'].strip().casefold() in ('silence','avant départ',ui_text('levée', 'pickup'))
     def editable(s):return force or not (s.get('locked') or s.get('reviewed') or s.get('origin')=='manual')
     if entry is None or not rows or not p.get('beats'):return p
     prefix=[]
@@ -252,7 +253,7 @@ def align_intro_sections(project,entry,force=False):
                 rows[i-1]['end']=target;rows[i]['start']=target;changes.extend([i-1,i])
     # A short pickup before the main intro is not a second full intro.
     if first==intros[0] and len(intros)>1 and rows[first]['end']-rows[first]['start']<period*.75:
-        rows[first]['name']='Levée';rows[first]['announce']=False;changes.append(first)
+        rows[first]['name']=ui_text('Levée', 'Pickup');rows[first]['announce']=False;changes.append(first)
     for i in set(changes):rows[i].update(reviewed=False,origin='intro-calibration',locked=False)
     for i in prefix:
         if silence(rows[i]):rows[i]['announce']=False

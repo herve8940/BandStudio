@@ -47,7 +47,7 @@ struct GuideSettings: Codable {
     func validate() throws {
         guard pulseUnit==nil || ["quarter","dottedQuarter"].contains(pulseUnit!),
               referenceBPM==nil || (referenceBPM!.isFinite && (20...400).contains(referenceBPM!)) else {
-            throw StudioError("Unité de pulsation ou tempo de référence invalide.")
+            throw StudioError(uiText("Unité de pulsation ou tempo de référence invalide.", "Invalid pulse unit or reference tempo."))
         }
         guard [1,2,3,4].contains(subdivision),(1...12).contains(beatsPerBar),
               (0...8).contains(countBars),(0...32).contains(leadBeats),(1...12).contains(regionCountBeats),(100...360).contains(speechRate),
@@ -57,7 +57,7 @@ struct GuideSettings: Codable {
               [clickPan,countPan,callsPan].allSatisfy({$0.isFinite && (-1...1).contains($0)}),
               loopStep.isFinite,(0...0.25).contains(loopStep),(1...32).contains(loopEvery),
               loopMaxRate.isFinite,(0.5...1.5).contains(loopMaxRate),voice.count<=120 else {
-            throw StudioError("Un réglage musical est hors limites.")
+            throw StudioError(uiText("Un réglage musical est hors limites.", "A music setting is out of range."))
         }
     }
 }
@@ -99,7 +99,7 @@ struct StructureProposal:Codable {
     var audioEvidence:[String]?=nil
     var beforeSections:[Section]?=nil
     var hasChanges:Bool {!changes.isEmpty || chordUpdate || memory != nil || restoredGrid != nil}
-    var reviewNotice:String {hasChanges ? "Proposition disponible dans Pistes & structure. Les sections actuelles sont conservées jusqu’à ta validation." : "Aucune amélioration proposée — préparation actuelle conservée."}
+    var reviewNotice:String {hasChanges ? uiText("Proposition disponible dans Pistes & structure. Les sections actuelles sont conservées jusqu’à ta validation.", "Suggestion available in Tracks & structure. Your current sections stay in place until you approve it.") : uiText("Aucune amélioration proposée — préparation actuelle conservée.", "No improvements suggested. Current preparation retained.")}
 }
 struct ChordProvider:Codable {
     var id:String;var publisher:String;var domain:String;var template:String?=nil
@@ -110,12 +110,12 @@ struct ChordProvider:Codable {
     static func searchURL(query:String,kind:String,provider:String="") throws -> URL {
         var site=""
         if !provider.isEmpty {
-            guard let entry=all.first(where:{$0.id==provider}) else{throw StudioError("Source de recherche inconnue.")}
+            guard let entry=all.first(where:{$0.id==provider}) else{throw StudioError(uiText("Source de recherche inconnue.", "Unknown search source."))}
             site=" site:"+entry.domain
         }
         var url=URLComponents(string:"https://www.google.com/search")!
         url.queryItems=[URLQueryItem(name:"q",value:String(query.prefix(300))+(kind == "chords" ? " chords accords" : " lyrics paroles")+site)]
-        guard let target=url.url else{throw StudioError("Recherche invalide.")};return target
+        guard let target=url.url else{throw StudioError(uiText("Recherche invalide.", "Invalid search."))};return target
     }
 }
 struct DrumHit:Codable {var time:Double;var pitch:Int;var velocity:Int}
@@ -193,7 +193,7 @@ extension StudioProject {
         settings.firstBeat=(result["firstBeat"] as? Double).map{$0+offset} ?? beats.first ?? 0
         let meter=result["beatsPerBar"] as? Int ?? 4
         settings.beatsPerBar=(2...12).contains(meter) ? meter : 4
-        analysisNote=result["gridStatus"] as? String ?? "« 1 » à vérifier à l’écoute · mesures non confirmées"
+        analysisNote=result["gridStatus"] as? String ?? uiText("« 1 » à vérifier à l’écoute · mesures non confirmées", "Check beat 1 by ear · bars unconfirmed")
     }
 
     enum CodingKeys:String,CodingKey {
