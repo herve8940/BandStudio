@@ -62,7 +62,12 @@ def test_missing_result_cannot_finish(tmp_path):
     assert status(out)['progress']==99 and status(out)['failed']
 
 
-def test_real_whisper_fallback_reports_its_pass_without_advancing_the_clip(tmp_path):
+@pytest.mark.parametrize(('language', 'expected'), [
+    ('fr', 'Extrait 6 sur 10 · lecture vocale 2 sur 4'),
+    ('en', 'Excerpt 6 of 10 · vocal pass 2 of 4'),
+])
+def test_real_whisper_fallback_reports_its_pass_without_advancing_the_clip(tmp_path, monkeypatch, language, expected):
+    monkeypatch.setenv('BANDSTUDIO_UI_LANGUAGE', language)
     import reacue_transcribe as recognizer
     class Model:
         def decode(self,mel,options):return (mel,options.temperature)
@@ -71,7 +76,7 @@ def test_real_whisper_fallback_reports_its_pass_without_advancing_the_clip(tmp_p
         with recognizer.report_decode_attempts(model,(0.,.2,.4,.6),None,5,10):
             assert model.decode('same frames',SimpleNamespace(temperature=.2))==('same frames',.2)
             assert status(out)['progress']==pytest.approx(100/6)
-            assert 'Extrait 6 sur 10 · lecture vocale 2 sur 4' in status(out)['progressLabel']
+            assert expected in status(out)['progressLabel']
         assert 'decode' not in vars(model)
         out.write_text('{}')
 
