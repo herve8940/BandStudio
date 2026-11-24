@@ -1,3 +1,9 @@
+## BandStudio · 2026-11-24
+
+BandStudio 1.1.0 s’ouvre directement dans l’éditeur. Le calcul des formes d’onde est optimisé sur Mac et Windows. Les paquets publics ne contiennent pas la démo Session.
+
+[Notes du 24 novembre en français et en anglais](docs/RELEASE_2026-11-24.md).
+
 ## BandStudio · 2026-11-23
 
 - L’éditeur regroupe les pistes, les sections, les paroles, les accords et le métronome. Après préparation, l’écoute ciblée permet de rejoindre un passage signalé.

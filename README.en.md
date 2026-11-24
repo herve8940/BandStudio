@@ -1,39 +1,43 @@
 # BandStudio
 
-**Your song. Your way.** Local song preparation for every musician.
+**Learn your part before rehearsal.** Import a recording, solo the bass to learn the line, then mute it and play along with the band. BandStudio brings separated tracks, a metronome, lyrics and chord charts together in a local editor for Mac and Windows.
 
-[💬 Discord · help & community](https://discord.gg/5UnQPdMUpR) · [Website](https://herve8940.github.io/BandStudio/en.html) · [Downloads](https://github.com/herve8940/BandStudio/releases/latest) · [Tutorial](docs/BANDSTUDIO_TUTORIAL_en.md) · [Français](README.md) · [Report a bug](https://github.com/herve8940/BandStudio/issues/new/choose)
+[Official website](https://herve8940.github.io/BandStudio/en.html) · [Download for Windows](https://github.com/herve8940/BandStudio/releases/latest/download/BandStudio-1.1.0-Windows-x64.zip) · [macOS setup guide in French](docs/BANDSTUDIO.md#macos) · [Français](README.md)
 
-BandStudio is free software for local stem separation and song practice: adjust tempo, work on chords and synchronized lyrics, then export the project and its media to REAPER. Vocals, guitar, bass, keyboards and drums share the same instrument selector, solo and backing-track controls.
+![The BandStudio editor showing a demo project, instrument tracks and passages to review](site/assets/editor-review.jpg)
 
-- Local 4/6-stem separation, mixing and optional drum/vocal sub-stems.
-- Tempo and key detection, speed adjustment, pitch shifting, loops and count-ins.
-- Editable sections, chords, synchronized lyrics, cues and spoken guides.
-- Audio, separate stems, LRC/SRT lyrics, PDF charts, drum MIDI and portable REAPER exports.
-- Local rotating diagnostics and a user-reviewed GitHub bug reporting flow.
-- Verified main-channel updates, downloaded in the background and applied after exit with file backups.
+## Install BandStudio
 
-**Windows:** extract the complete ZIP and run `BandStudio.exe`. Python is included; WebView2 is required. Optional models are installed separately. **macOS:** native app for an existing prepared local runtime; initial source installation is described in the [guide](docs/BANDSTUDIO.md#macos). A complete new-machine macOS installer is not yet distributed.
+| Your computer | Getting started |
+| --- | --- |
+| **Windows 11 x64** | Extract the entire ZIP to a writable folder, then open **BandStudio.exe**. Python and FFmpeg are included. WebView2 and .NET Framework 4.8 are required. Install optional engines in **Réglages → Analyses locales**. |
+| **An existing Intel or Apple Silicon Mac installation** | Open **Réglages** and check for updates. Quit BandStudio after the download finishes, then reopen it. |
+| **First-time Mac setup** | Building from source requires an existing ReaCue engine and prepared Python environments. A standalone installer for a new Mac is not currently available. [Requirements and commands](docs/BANDSTUDIO.md#macos) |
 
-Windows packaging, speech, WebView2 and offline audio are exercised in CI; actual audio devices and optional AI engines still need hardware testing. AI output needs musical review.
+**Version 1.1.0, 24 November 2026**, opens directly in the editor and optimizes track waveform calculation. Update packages preserve your projects and settings. [Release notes in English](docs/RELEASE_2026-11-24.md#english) · [Changelog](CHANGELOG.md)
 
-**[BandPilot](https://herve8940.github.io/BandPilot/en.html)** complements BandStudio with mixer control, guided sound checks and rehearsals. Both applications work independently; REAPER receives the prepared music.
+## Prepare your first song
 
-BandStudio grew from ReaCue. The [legacy REAPER documentation](README_REACUE.md) remains available. Code: [MIT](LICENSE). Optional models retain their own terms, including noncommercial restrictions for some structure/drum components: [third-party notices](THIRD_PARTY_NOTICES.md).
+The control names below match the labels in the app.
 
-## What’s new on 23 November 2026
+1. Import your audio file in **Mes morceaux**. Leave **Préparer automatiquement après l’import** selected to use the installed engines. For several files, open **Préparer une série** and start the queue.
+2. In **Éditeur du morceau**, solo a track, loop a section or slow down playback. Listen to flagged passages before adjusting a marker, a lyric or a chord.
+3. Open **Fiche morceau** to export a PDF with chords and lyrics by bar. In **Projet REAPER**, export the tracks and media to continue working in REAPER.
 
-- **Écouter et corriger** opens after preparation. Use **Écoute ciblée** to hear a flagged word, chord or section and adjust its timing.
-- Lyrics lookup tries the full title, a shortened title and several catalogues. BandStudio times words against the vocals in your recording and flags uncertain placements.
-- In **Accords**, compare charts and choose one for your arrangement. Both the song sheet and teleprompter use your capo setting.
-- The PDF sheet, count-in and REAPER project share the same beat grid. The sheet shows a pickup on the beat where the section actually begins.
+[Visual guide from import to REAPER](https://herve8940.github.io/BandStudio/tutorial.html) · [Song sheet and PDF guide](https://herve8940.github.io/BandStudio/song-sheet.html) · [Full walkthrough](docs/BANDSTUDIO_TUTORIAL_en.md)
 
-![Targeted listening in BandStudio’s song editor with a demo song](site/assets/editor-review.jpg)
+## In rehearsal
 
-[From import to REAPER](https://herve8940.github.io/BandStudio/tutorial.html) · [From lyrics to a printable PDF](https://herve8940.github.io/BandStudio/song-sheet.html) · [Written guide](docs/BANDSTUDIO_TUTORIAL_en.md) · [Release notes FR / EN](docs/RELEASE_2026-11-23.md).
+- **Listen**. Adjust volume, pan, speed and pitch. Isolate your part or play with the other tracks. Available instruments depend on the installed model.
+- **Follow the song**. Adjust tempo, section boundaries, metronome and count-in. Compare chord charts, choose a capo and align lyrics to the vocal.
+- **Export**. Save a mix, individual tracks, LRC/SRT lyrics, drum MIDI, a PDF song sheet or a REAPER project. Individually exported audio tracks keep their original speed and pitch.
 
-## Community & support
+Audio processing runs on your computer. Lyrics, chord and artwork lookups use online services. Results depend on the recording and installed engines. [Technical guide and limitations in French](docs/BANDSTUDIO.md#traitement-du-morceau)
 
-Join the [BandStudio Discord](https://discord.gg/5UnQPdMUpR), a separate server from BandPilot: help, getting started, news, bugs and ideas in French and English.
+## Help and contributions
 
-In **Aide & Discord**, describe the issue, optionally include the compact diagnostics, then copy the report and open Discord. Paste and send it in `#rapports-de-bugs`. No audio, project or raw log is attached. You can export, review and attach a detailed diagnostic file yourself. [Support](SUPPORT.md).
+Ask rehearsal questions in the [BandStudio Discord](https://discord.gg/5UnQPdMUpR). To report a reproducible issue, include your operating system and the steps you followed. **Aide & Discord** lets you review diagnostic information before you share it. [Support](SUPPORT.md) · [Report an issue](https://github.com/herve8940/BandStudio/issues/new/choose)
+
+The source code uses the [MIT license](LICENSE). Dependencies and models have their own licenses, some with non-commercial terms. [Third-party notices](THIRD_PARTY_NOTICES.md) · [Contributing and running tests](CONTRIBUTING.md) · [Security](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md)
+
+For soundchecks and stage monitoring, see [BandPilot](https://herve8940.github.io/BandPilot/). The original REAPER scripts are documented in the [ReaCue manual](README_REACUE.md).
