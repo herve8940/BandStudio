@@ -6,6 +6,8 @@
 
 **Learn your part before rehearsal.** Import a recording, solo the bass to learn the line, then mute it and play along with the band. BandStudio brings separated tracks, a metronome, lyrics and chord charts together in a local editor for Mac and Windows.
 
+**BandStudio is available in English and French on Mac and Windows.**
+
 [Official website](https://herve8940.github.io/BandStudio/en.html) · [Download for Windows](https://github.com/herve8940/BandStudio/releases/latest/download/BandStudio-1.1.0-Windows-x64.zip) · [macOS setup guide in French](docs/BANDSTUDIO.md#macos)
 
 ![The BandStudio editor showing a demo project, instrument tracks and passages to review](site/assets/editor-review.jpg)
@@ -51,6 +53,8 @@ For soundchecks and stage monitoring, see [BandPilot](https://herve8940.github.i
 ## Français
 
 **Prépare ta partie avant la répétition.** Importe un enregistrement, écoute la basse seule pour apprendre sa ligne, puis coupe-la pour jouer avec le reste du groupe. BandStudio rassemble les pistes séparées, le métronome, les paroles et la grille d’accords dans un éditeur local pour Mac et Windows.
+
+**BandStudio est disponible en français et en anglais sur Mac et Windows.**
 
 [Site officiel](https://herve8940.github.io/BandStudio/) · [Télécharger pour Windows](https://github.com/herve8940/BandStudio/releases/latest/download/BandStudio-1.1.0-Windows-x64.zip) · [Guide macOS](docs/BANDSTUDIO.md#macos)
 
