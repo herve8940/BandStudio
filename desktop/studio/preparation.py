@@ -1,4 +1,5 @@
 """Reviewed, portable handoff from the preparation workshop to REAPER."""
+from ui_language import ui_text
 import copy
 from datetime import datetime, timezone
 import hashlib
@@ -19,7 +20,7 @@ from services import atomic, export_reaper, reaper_filename, run
 def media_file(root, relative):
     path = (root / relative).resolve()
     if not path.is_relative_to(root.resolve()) or not path.is_file():
-        raise ValueError('Média absent ou hors du projet : ' + str(relative))
+        raise ValueError(ui_text('Média absent ou hors du projet : ', 'Media missing or outside the project: ') + str(relative))
     return path
 
 
@@ -29,7 +30,7 @@ def playback(p):
     pitch = float(p.get('_pitch', saved.get('pitch', 0)))
     mode = p.get('_mode', saved.get('mode', 'mix'))
     if not math.isfinite(rate) or not .5 <= rate <= 1.5 or not math.isfinite(pitch) or not -12 <= pitch <= 12:
-        raise ValueError('Vitesse ou transposition invalide.')
+        raise ValueError(ui_text('Vitesse ou transposition invalide.', 'Invalid speed or transposition.'))
     from listening import parse_mode
     parse_mode(mode)
     return rate, pitch, mode
@@ -60,32 +61,32 @@ def review(p):
     rate, pitch, mode = playback(p)
     tracks = [t for t in p['tracks'] if not t['role'].startswith('guide_')]
     if not tracks:
-        raise ValueError('Importe au moins une piste avant de valider le morceau.')
+        raise ValueError(ui_text('Importe au moins une piste avant de valider le morceau.', 'Import at least one track before approving the song.'))
     for track in tracks:
         info = sf.info(media_file(root, track['file']))
         if info.frames <= 0 or abs(info.duration - track['duration']) > .1:
-            raise ValueError('Le média a changé : ' + track['name'])
+            raise ValueError(ui_text('Le média a changé : ', 'Media changed: ') + track['name'])
     duration = max(t['offset'] + t['duration'] for t in tracks)
     settings = p['settings']
     beats = p.get('beats', [])
     if settings['gridMode'] != 'fixed':
         if len(beats) < 2 or any(not math.isfinite(b) for b in beats) or any(b <= a for a, b in zip(beats, beats[1:])):
-            raise ValueError('Détecte les temps ou choisis un tempo fixe dans Click & cues avant de valider.')
+            raise ValueError(ui_text('Détecte les temps ou choisis un tempo fixe dans Click & cues avant de valider.', 'Detect beats or choose a fixed tempo in the metronome settings before approving.'))
     bpm=tempo_info(p)['estimatedBPM']
     if not math.isfinite(bpm) or not 20 <= bpm <= 400:
-        raise ValueError('Vérifie le tempo du morceau dans Click & cues.')
+        raise ValueError(ui_text('Vérifie le tempo du morceau dans Click & cues.', 'Check the song tempo in the metronome settings.'))
     end = 0
     for section in sorted(p.get('sections', []), key=lambda x: x['start']):
         if section['start'] < end - .000001 or section['end'] <= section['start'] or section['end'] > duration + .1:
-            raise ValueError('Corrige les sections qui se chevauchent ou dépassent le morceau.')
+            raise ValueError(ui_text('Corrige les sections qui se chevauchent ou dépassent le morceau.', 'Correct sections that overlap or extend past the end of the song.'))
         end = section['end']
     if any(not 0 <= c['time'] <= duration for c in p.get('cues', [])):
-        raise ValueError('Un repère dépasse la durée du morceau.')
+        raise ValueError(ui_text('Un repère dépasse la durée du morceau.', 'A marker is beyond the end of the song.'))
     if settings['exportGuides']:
         for name in ('click', 'calls', 'cues', 'counts'):
             relative = p.get('guideFiles', {}).get(name)
             if not relative:
-                raise ValueError('Actualise les guides avant de valider le morceau.')
+                raise ValueError(ui_text('Actualise les guides avant de valider le morceau.', 'Refresh guides before approving the song.'))
             media_file(root, relative)
     return dict(rate=rate, pitch=pitch, mode=mode, tracks=len(tracks), sections=len(p.get('sections', [])),
                 cues=len(p.get('cues', [])), duration=duration / rate, bpm=bpm * rate)
@@ -194,7 +195,7 @@ def export_destination(root, name):
             target=exports/folder
             try:return target,reaper_filename(name,target)
             except ValueError:continue
-    raise ValueError('Chemin d’export trop long pour REAPER. Place le morceau dans un dossier plus court, puis relance l’export.')
+    raise ValueError(ui_text('Chemin d’export trop long pour REAPER. Place le morceau dans un dossier plus court, puis relance l’export.', 'REAPER export path is too long. Move the song to a shorter path and export again.'))
 
 
 def export_validated(snapshot, output, engine, *, preflight=False):
@@ -207,7 +208,7 @@ def export_validated(snapshot, output, engine, *, preflight=False):
         approval=dict(rate=rate,pitch=pitch,mode=mode,fingerprint=signature,
                       validatedAt=datetime.now(timezone.utc).isoformat(),kind='technical')
     if not approval.get('validatedAt') or approval.get('fingerprint') != signature:
-        raise ValueError('Le morceau a changé ou n’a pas été validé. Ouvre Valider & envoyer avant l’export.')
+        raise ValueError(ui_text('Le morceau a changé ou n’a pas été validé. Ouvre Valider & envoyer avant l’export.', 'The song has changed or needs review. Open Review & send before exporting.'))
     summary = review(p)
     target, filename = export_destination(Path(p['_root']),p['name'])
     target.parent.mkdir(exist_ok=True)
@@ -223,7 +224,7 @@ def export_validated(snapshot, output, engine, *, preflight=False):
         info = json.loads(temporary.read_text())
         staged = Path(info['folder'])
         if fingerprint(p) != signature:
-            raise ValueError('Un média a changé pendant l’export. Valide à nouveau le morceau.')
+            raise ValueError(ui_text('Un média a changé pendant l’export. Valide à nouveau le morceau.', 'Media changed during export. Approve the song again.'))
         atomic(staged / 'validation.json', dict(version=1, approval=approval, summary=summary))
         exported = Path(info['path'])
         if exported.name != filename:exported.rename(staged/filename)

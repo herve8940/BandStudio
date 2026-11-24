@@ -38,6 +38,14 @@ func selfTest(_ directory:String) throws {
     guard review.hasChanges,review.reviewNotice.hasPrefix("Proposition disponible") else{throw StudioError("Proposition d’accords masquée")}
     review.chordUpdate=false;review.memory=StructureMemory(name:"Même enregistrement",scope:"library",sections:2,chords:0)
     guard review.hasChanges else{throw StudioError("Préparation mémorisée masquée")}
+    StudioLanguage.current = "en"
+    var english = StudioProject()
+    guard english.name == "New song", review.reviewNotice.hasPrefix("Suggestion available") else { throw StudioError("English native interface unavailable") }
+    english.name = "Réglages"
+    let restored = try JSONDecoder().decode(StudioProject.self, from: JSONEncoder().encode(english))
+    guard restored.name == "Réglages" else { throw StudioError("Project title changed during localization") }
+    StudioLanguage.current = "fr"
+    print("PASS native English labels and original project text")
     print("PASS native empty review notice and real chord/memory proposals")
     let root=URL(fileURLWithPath:directory)
     try FileManager.default.createDirectory(at:root.appendingPathComponent("Audio"),withIntermediateDirectories:true)
@@ -456,5 +464,6 @@ if CommandLine.arguments.count >= 4 && CommandLine.arguments[1] == "--prepare-al
     } catch {fputs("FAIL: \(error.localizedDescription)\n",stderr);exit(1)}
 }
 let app=NSApplication.shared
+StudioLanguage.configure()
 let delegate=StudioApp();app.delegate=delegate
 app.run()

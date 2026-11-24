@@ -5,6 +5,7 @@ local landmarks, snap to the saved measures, and preserve protected boundaries.
 An accepted export is a batch decision, never beat/section training truth.
 """
 from __future__ import annotations
+from ui_language import ui_text
 
 import copy
 import hashlib
@@ -64,20 +65,20 @@ def address(url):
 class Redirects(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         if not address(newurl):
-            raise ValueError('Adresse de référence refusée.')
+            raise ValueError(ui_text('Adresse de référence refusée.', 'Reference address refused.'))
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 def fetch(url):
     if not address(url):
-        raise ValueError('Adresse de référence refusée.')
+        raise ValueError(ui_text('Adresse de référence refusée.', 'Reference address refused.'))
     request = Request(url, headers={'User-Agent': 'BandStudio/1.1 (structure reference reader)', 'Accept': 'text/html'})
     with build_opener(Redirects()).open(request, timeout=6) as response:
         if response.status != 200 or not address(response.url):
-            raise ValueError('Référence indisponible.')
+            raise ValueError(ui_text('Référence indisponible.', 'Reference unavailable.'))
         data = response.read(MAX_BYTES + 1)
         if len(data) > MAX_BYTES:
-            raise ValueError('Référence trop volumineuse.')
+            raise ValueError(ui_text('Référence trop volumineuse.', 'Reference too large.'))
         return data.decode('utf-8', errors='replace'), response.url
 
 
@@ -128,11 +129,11 @@ def parse(page, title, artist, url):
     chart = SongMap(); chart.feed(page)
     entries = chart.entries
     if not address(url) or not matches_heading(chart.heading, title, artist):
-        raise ValueError('La référence ne correspond pas au titre et à l’artiste.')
+        raise ValueError(ui_text('La référence ne correspond pas au titre et à l’artiste.', 'The reference does not match the title and artist.'))
     if (not chart.duration or not 3 <= len(entries) <= 150 or
             any(e['time'] is None or e['time'] >= chart.duration for e in entries) or
             any(b['time'] <= a['time'] for a, b in zip(entries, entries[1:]))):
-        raise ValueError('La référence ne contient pas de structure exploitable.')
+        raise ValueError(ui_text('La référence ne contient pas de structure exploitable.', 'The reference has no usable structure.'))
     return dict(schema=SCHEMA, title=title, artist=artist, publisher='DRUMY', url=url,
                 duration=chart.duration, entries=entries, retrievedAt=time.time())
 
@@ -140,7 +141,7 @@ def parse(page, title, artist, url):
 def lookup(project):
     title, artist = identity(project)
     if not title or not artist:
-        return None, 'Titre et artiste incomplets : structure Internet non comparée.'
+        return None, ui_text('Titre et artiste incomplets : structure Internet non comparée.', 'Title and artist incomplete. Online structure was not compared.')
     key = hashlib.sha256((title + '\n' + artist).encode()).hexdigest()
     cache = Path(project['_root']) / 'References' / ('structure-' + key + '.json')
     slug = lambda text: normalized(re.sub(r"['’`′]", '', text)).replace(' ', '-')
@@ -161,10 +162,10 @@ def lookup(project):
                     and all(math.isfinite(x['time']) and 0 <= x['time'] < saved['duration']
                             and isinstance(x['name'],str) and 0 < len(x['name']) <= 80 for x in saved['entries'])
                     and all(b['time'] > a['time'] for a, b in zip(saved['entries'], saved['entries'][1:]))):
-                return saved, 'Référence de structure enregistrée utilisée ; Internet non actualisé.'
+                return saved, ui_text('Référence de structure enregistrée utilisée ; Internet non actualisé.', 'Using saved structure reference. Online data has not been refreshed.')
         except (OSError, ValueError, KeyError, TypeError):
             pass
-        return None, 'Repères minutés non récupérés auprès de DRUMY.'
+        return None, ui_text('Repères minutés non récupérés auprès de DRUMY.', 'Timed markers could not be retrieved from DRUMY.')
 
 
 def kind(name):
@@ -194,9 +195,9 @@ def kind(name):
 
 
 def label(name):
-    names = dict(intro='Intro', preverse='Riff avant couplet', presolo='Riff avant solo',
-                 verse='Couplet', chorus='Refrain', solo='Solo', outro='Outro',
-                 bridge='Pont', prechorus='Pré-refrain', postchorus='Post-refrain', break_='Break', instrumental='Instrumental')
+    names = dict(intro='Intro', preverse=ui_text('Riff avant couplet', 'Riff before verse'), presolo=ui_text('Riff avant solo', 'Riff before solo'),
+                 verse=ui_text('Couplet', 'Verse'), chorus=ui_text('Refrain', 'Chorus'), solo='Solo', outro='Outro',
+                 bridge=ui_text('Pont', 'Bridge'), prechorus=ui_text('Pré-refrain', 'Pre-chorus'), postchorus=ui_text('Post-refrain', 'Post-chorus'), break_='Break', instrumental='Instrumental')
     names['break']=names.pop('break_')
     return names.get(kind(name), name)
 
@@ -283,21 +284,21 @@ def complete_sections(project, reference):
     warnings = []; changes = []
     if not reference: return sections, changes, warnings, 0
     if not bars:
-        return sections, changes, ['Débuts de mesure insuffisants pour caler la référence.'], 0
-    musical = [s for s in sections if normalized(s['name']) not in ('silence', 'silence initial','avant depart')]
+        return sections, changes, [ui_text('Débuts de mesure insuffisants pour caler la référence.', 'Not enough downbeats to align the reference.')], 0
+    musical = [s for s in sections if normalized(s['name']) not in ('silence', ui_text('silence initial', 'opening silence'),'avant depart')]
     if not musical:
-        return sections, changes, ['Repères locaux insuffisants pour comparer la structure.'], 0
+        return sections, changes, [ui_text('Repères locaux insuffisants pour comparer la structure.', 'Not enough local markers to compare structure.')], 0
     entries = reference['entries']; start = musical[0]['start']
     if abs((length - start) - reference['duration']) > max(4, reference['duration'] * .025):
-        return sections, changes, ['Durées incompatibles : la référence peut décrire une autre version.'], 0
+        return sections, changes, [ui_text('Durées incompatibles : la référence peut décrire une autre version.', 'Incompatible durations. The reference may describe a different version.')], 0
     anchors=reference_anchors(musical,entries,bars,length)
     trusted=sum(a[2] for a in anchors)>=2
     if ((not trusted and (len(anchors)<3 or anchors[-1][0]-anchors[0][0]<reference['duration']*.55))
             or (trusted and anchors[-1][0]-anchors[0][0]<8)):
-        return sections, changes, ['Pas assez de repères concordants répartis dans le morceau.'], len(anchors)
+        return sections, changes, [ui_text('Pas assez de repères concordants répartis dans le morceau.', 'Too few matching markers across the song.')], len(anchors)
     if any(b[1]<=a[1] or (abs((b[1]-a[1])-(b[0]-a[0]))>max(2.5,.06*(b[0]-a[0])) if trusted
                           else not .94<=(b[1]-a[1])/(b[0]-a[0])<=1.06) for a,b in zip(anchors,anchors[1:])):
-        return sections, changes, ['La référence dérive par rapport au morceau : recalage automatique suspendu.'], len(anchors)
+        return sections, changes, [ui_text('La référence dérive par rapport au morceau : recalage automatique suspendu.', 'The reference drifts against the song. Automatic alignment paused.')], len(anchors)
 
     def mapped(t):
         for a,b in zip(anchors, anchors[1:]):
@@ -311,7 +312,7 @@ def complete_sections(project, reference):
         ranked = sorted(bars, key=lambda b: abs(b-estimate))[:2]
         at = ranked[0]
         if abs(at-estimate) > 1.05 or (len(ranked)>1 and abs(ranked[1]-estimate)-abs(at-estimate) < .25):
-            warnings.append('Placement ambigu pour « '+label(entry['name'])+' » : conservé en l’état.'); continue
+            warnings.append(ui_text('Placement ambigu pour « ', 'Ambiguous position for “ ')+label(entry['name'])+ui_text(' » : conservé en l’état.', ' ”: kept as is.')); continue
         current = min(sections, key=lambda s: abs(s['start']-at))
         target_kind = kind(entry['name'])
         if abs(current['start']-at) <= .2:
@@ -321,32 +322,32 @@ def complete_sections(project, reference):
                 before = current['name']; current['name'] = label(entry['name'])
                 current.update(origin='reference', locked=True, reviewed=False)
                 changes.append(dict(id=str(uuid.uuid4()), kind='rename', time=current['start'],
-                                    before=before, after=current['name'], reason='Repère existant concordant avec la référence.'))
+                                    before=before, after=current['name'], reason=ui_text('Repère existant concordant avec la référence.', 'Existing marker matches the reference.')))
             elif kind(current['name']) != target_kind and protected(current):
-                warnings.append('Section protégée conservée : '+current['name']+'.')
+                warnings.append(ui_text('Section protégée conservée : ', 'Protected section kept: ')+current['name']+'.')
             continue
         covering = next((s for s in sections if s['start'] < at < s['end']), None)
         if not covering: continue
         if kind(covering['name']) == target_kind:
             if min(abs(s['start']-at) for s in sections) > .2:
-                warnings.append('Départ de « '+label(entry['name'])+' » différent de la référence : anticipation possible, conservée.')
+                warnings.append(ui_text('Départ de « ', 'Start of “ ')+label(entry['name'])+ui_text(' » différent de la référence : anticipation possible, conservée.', ' ” differs from the reference. A possible anticipation was kept.'))
             continue
         if covering['id'] in protected_ids:
-            warnings.append('Section protégée conservée : '+covering['name']+'.'); continue
+            warnings.append(ui_text('Section protégée conservée : ', 'Protected section kept: ')+covering['name']+'.'); continue
         if min(at-covering['start'], covering['end']-at) < .75:
-            warnings.append('Transition trop proche d’un repère existant : conservée.'); continue
+            warnings.append(ui_text('Transition trop proche d’un repère existant : conservée.', 'Transition too close to an existing marker. The marker was kept.')); continue
         # Do not split a different named passage merely because a website says so.
         if kind(covering['name']) not in ('instrumental','intro','preverse','presolo') and not trusted:
             from section_evidence import supports_change
             if not supports_change(project,at):
-                warnings.append('Structure différente pour « '+label(entry['name'])+' » : à vérifier.'); continue
+                warnings.append(ui_text('Structure différente pour « ', 'Different structure for “ ')+label(entry['name'])+ui_text(' » : à vérifier.', ' ”: needs review.')); continue
         end = covering['end']; covering['end'] = at
         covering.update(origin='reference', locked=True, reviewed=False)
         new = dict(id=str(uuid.uuid4()), start=at, end=end, name=label(entry['name']),
                    origin='reference', locked=True, reviewed=False)
         sections.append(new); sections.sort(key=lambda s:s['start'])
         changes.append(dict(id=str(uuid.uuid4()), kind='insert', time=at, before=covering['name'],
-                            after=new['name'], reason='Passage de la référence retrouvé sur une mesure locale.'))
+                            after=new['name'], reason=ui_text('Passage de la référence retrouvé sur une mesure locale.', 'Reference passage found on a local bar.')))
     # A final heading can clarify the existing ending without extrapolating a
     # new boundary beyond the anchors. Require a whole-song consensus and an
     # already nearby local transition; a live/extended ending therefore abstains.
@@ -358,7 +359,7 @@ def complete_sections(project, reference):
                 and abs(ending['start']-(entries[-1]['time']+offset))<=1.6):
             before=ending['name'];ending.update(name='Outro',origin='reference',locked=True,reviewed=False)
             changes.append(dict(id=str(uuid.uuid4()),kind='rename',time=ending['start'],before=before,after='Outro',
-                                reason='Fin publiée concordante avec le dernier départ local et les repères répartis dans le morceau.'))
+                                reason=ui_text('Fin publiée concordante avec le dernier départ local et les repères répartis dans le morceau.', 'Published end matches the last local start and markers across the song.')))
     # A local analysis can split a long solo into two stable passages. Preserve
     # that boundary and clarify its generic continuation instead of losing it.
     for entry,next_entry in zip(entries,entries[1:]):
@@ -370,7 +371,7 @@ def complete_sections(project, reference):
                     and min(abs(b-section['start']) for b in bars)<=.18):
                 before=section['name'];section.update(name=label(entry['name']),origin='reference',locked=True,reviewed=False)
                 changes.append(dict(id=str(uuid.uuid4()),kind='rename',time=section['start'],before=before,
-                                    after=section['name'],reason='Suite du même passage minuté ; limite locale conservée.'))
+                                    after=section['name'],reason=ui_text('Suite du même passage minuté ; limite locale conservée.', 'Continuation of the same timed passage. Local boundary kept.')))
     changes.sort(key=lambda c:c['time'])
     return sections, changes, list(dict.fromkeys(warnings)), len(anchors)
 
@@ -382,7 +383,7 @@ def ordered_completion(project,source):
     is renamed only when its match and the two surrounding confirmed anchors are
     unambiguous. Repeated or incomplete charts therefore abstain safely.
     """
-    local=[s for s in project.get('sections',[]) if kind(s['name']) not in ('silence','silence initial','avant depart')]
+    local=[s for s in project.get('sections',[]) if kind(s['name']) not in ('silence',ui_text('silence initial', 'opening silence'),'avant depart')]
     names=source.get('entries',[]);remote=[kind(s) for s in names]
     n,m=len(local),len(remote)
     if not n or not m or n>150 or m>128:return [],[],0
@@ -411,7 +412,7 @@ def ordered_completion(project,source):
         if len(choices)==1 and not skipped:matches[i]=choices[0]
     anchors={i:j for i,j in matches.items() if confirmed(local[i]) and kind(local[i]['name'])==remote[j]}
     if len(anchors)<2:
-        return [],['Ordre trouvé chez '+source['publisher']+' ; deux repères confirmés non ambigus sont nécessaires pour l’adapter.'],len(anchors)
+        return [],[ui_text('Ordre trouvé chez ', 'Section order found at ')+source['publisher']+ui_text(' ; deux repères confirmés non ambigus sont nécessaires pour l’adapter.', ' . Two unambiguous confirmed markers are needed for alignment.')],len(anchors)
     changes=[];warnings=[]
     for a,b in zip(sorted(anchors),sorted(anchors)[1:]):
         left,right=anchors[a],anchors[b]
@@ -420,10 +421,10 @@ def ordered_completion(project,source):
             if j is None or not left<j<right or protected(section) or kind(section['name']) not in generic:continue
             if kind(section['name'])==remote[j]:continue
             changes.append(dict(id=str(uuid.uuid4()),kind='rename',time=section['start'],before=section['name'],
-                                after=label(names[j]),reason='Ordre publié par '+source['publisher']+' entre deux repères confirmés ; limite locale conservée.'))
+                                after=label(names[j]),reason=ui_text('Ordre publié par ', 'Order published by ')+source['publisher']+ui_text(' entre deux repères confirmés ; limite locale conservée.', ' between two confirmed markers. Local boundary kept.')))
         matched={matches[i] for i in range(a,b+1) if i in matches}
         missing=[label(names[j]) for j in range(left+1,right) if j not in matched]
-        if missing:warnings.append('Passage signalé par '+source['publisher']+' entre tes repères : '+', '.join(missing)+'. Position non établie, aucun découpage inventé.')
+        if missing:warnings.append(ui_text('Passage signalé par ', 'Passage flagged by ')+source['publisher']+ui_text(' entre tes repères : ', ' between your markers: ')+', '.join(missing)+ui_text('. Position non établie, aucun découpage inventé.', '. Position unclear. No new division was added.'))
     return changes,warnings,len(anchors)
 
 
@@ -441,7 +442,7 @@ def combine_references(project,timed,sources):
     # one of its placements; protected source sections still remain untouched.
     if conflicts:
         sections=copy.deepcopy(project['sections']);changes=[]
-        warnings.append('Sources en désaccord sur un passage : changements de structure suspendus, repères actuels conservés.')
+        warnings.append(ui_text('Sources en désaccord sur un passage : changements de structure suspendus, repères actuels conservés.', 'Sources disagree on a passage. Current structure and markers were kept.'))
         return sections,changes,list(dict.fromkeys(warnings)),anchors
     changed={round(c['time'],6) for c in changes}
     for at,items in candidates.items():
@@ -471,7 +472,7 @@ def memory_proposal(project):
             musical(restored.get('chords',[]),'text')==musical(project.get('chords',[]),'text') and grid(restored)==grid(project)):
         return None
     return dict(schema=SCHEMA,id=str(uuid.uuid4()),fingerprint=fingerprint(project),createdAt=time.time(),status='proposed',
-                message='Préparation du même enregistrement retrouvée : '+found['name']+'.',sources=[],sourceChecks=[],
+                message=ui_text('Préparation du même enregistrement retrouvée : ', 'Saved preparation found for this recording: ')+found['name']+'.',sources=[],sourceChecks=[],
                 confirmedSections=sum(bool(confirmed(s)) for s in project['sections']),anchors=0,changes=[],warnings=[],
                 sections=restored['sections'],chords=restored.get('chords',[]),chordReference=restored.get('chordReference'),
                 chordUpdate=musical(restored.get('chords',[]),'text')!=musical(project.get('chords',[]),'text'),
@@ -508,7 +509,7 @@ def propose(project, reference=None):
     if functional['evidence']['timedAnchors']>=3:
         # The offset/interior fit resolves these initial whole-file failures.
         # Keep other source conflicts and protected-region notices visible.
-        obsolete=('Durées incompatibles :','Pas assez de repères concordants','La référence dérive par rapport au morceau :')
+        obsolete=(ui_text('Durées incompatibles :', 'Incompatible durations:'),ui_text('Pas assez de repères concordants', 'Too few matching markers'),ui_text('La référence dérive par rapport au morceau :', 'The reference drifts against the song:'))
         warnings=[w for w in warnings if not w.startswith(obsolete)]
     changes=sorted(adjustments+functional['changes']+changes,key=lambda c:c['time'])
     warnings=functional['warnings']+warnings
@@ -522,7 +523,7 @@ def propose(project, reference=None):
         sections=pattern['sections'];changes.extend(pattern['changes']);proposed['sections']=sections
     except (OSError,ValueError):
         pattern=dict(groups=[],pairs=[])
-        warnings.append('Comparaison audio des répétitions indisponible : aucune répétition supposée.')
+        warnings.append(ui_text('Comparaison audio des répétitions indisponible : aucune répétition supposée.', 'Audio comparison unavailable. No repeats were assumed.'))
     chord_update = False
     # Reuse a successful chart; retry old failures without doing the same failed
     # request twice immediately after the existing "prepare all" pipeline.
@@ -545,22 +546,22 @@ def propose(project, reference=None):
                     chord_update=musical(proposed['chords'])!=musical(project.get('chords',[]))
                     alignment = result['reference'].get('alignment', {})
                     if alignment.get('uncertainCells'):
-                        warnings.append('Certains accords restent incertains : leurs positions sont proposées, pas confirmées.')
+                        warnings.append(ui_text('Certains accords restent incertains : leurs positions sont proposées, pas confirmées.', 'Some chords remain uncertain. Check the suggested positions by ear.'))
                     if not (alignment.get('orderedSections') or alignment.get('orderedChart')):
-                        warnings.append('Ordre des accords par section non confirmé par la source et l’audio.')
-                else: warnings.append('Calage des accords non obtenu : accords actuels conservés.')
+                        warnings.append(ui_text('Ordre des accords par section non confirmé par la source et l’audio.', 'The source and audio did not confirm the chord order within each section.'))
+                else: warnings.append(ui_text('Calage des accords non obtenu : accords actuels conservés.', 'Could not align chords. Current chords kept.'))
             except (OSError, ValueError):
-                warnings.append('Calage des accords indisponible : accords actuels conservés.')
+                warnings.append(ui_text('Calage des accords indisponible : accords actuels conservés.', 'Chord alignment unavailable. Current chords kept.'))
     else:
-        warnings.append('Aucune grille d’accords Internet disponible : accords actuels conservés.')
+        warnings.append(ui_text('Aucune grille d’accords Internet disponible : accords actuels conservés.', 'No online chord chart available. Current chords were kept.'))
     proposed['chords'],transfers=transfer_chords(proposed,pattern,features)
     musical=lambda rows:[(round(c['start'],6),round(c['end'],6),c['text']) for c in rows]
     chord_update=musical(proposed.get('chords',[]))!=musical(project.get('chords',[]))
     passages=listening_plan(proposed,changes,pattern)
     if fingerprint(project) != signature:
-        raise ValueError('Un média a changé pendant la comparaison. Relance la vérification.')
+        raise ValueError(ui_text('Un média a changé pendant la comparaison. Relance la vérification.', 'Media changed during comparison. Run the check again.'))
     return dict(schema=SCHEMA, id=str(uuid.uuid4()), fingerprint=signature, createdAt=time.time(),
-                status='proposed', message='Proposition prête à valider.' if changes or chord_update else 'Préparation actuelle conservée.',
+                status='proposed', message=ui_text('Proposition prête à valider.', 'Suggestion ready for review.') if changes or chord_update else ui_text('Préparation actuelle conservée.', 'Current preparation kept.'),
                 sources=[dict(title=(s['title']+' — '+s['artist']) if s.get('artist') else s['title'],publisher=s['publisher'],
                               url=s['url'],format=s['format'],sectionNames=[e['name'] for e in s['entries']] if s['format']=='timed' else s['entries']) for s in sources],
                 sourceChecks=checks,confirmedSections=sum(confirmed(s) for s in project['sections']),
@@ -573,9 +574,9 @@ def propose(project, reference=None):
 def apply_proposal(project):
     proposal = project.get('structureProposal') or {}
     if proposal.get('status')=='prepared':
-        raise ValueError('Cette préparation a déjà été appliquée au morceau.')
+        raise ValueError(ui_text('Cette préparation a déjà été appliquée au morceau.', 'This preparation was already applied to the song.'))
     if proposal.get('schema') != SCHEMA or proposal.get('fingerprint') != fingerprint(project):
-        raise ValueError('Le morceau a changé depuis la proposition. Relance Vérifier et compléter.')
+        raise ValueError(ui_text('Le morceau a changé depuis la proposition. Relance Vérifier et compléter.', 'The song has changed since the suggestion. Run Check and complete again.'))
     uuid.UUID(proposal['id'])
     result = copy.deepcopy(project)
     result['sections'] = copy.deepcopy(proposal['sections'])
@@ -585,7 +586,7 @@ def apply_proposal(project):
     if restored:
         from song_memory import GRID_KEYS,grid
         if (project.get('gridLocked') or project['settings'].get('gridMode')=='fixed') and restored!=grid(project):
-            raise ValueError('La grille protégée ne peut pas être remplacée par une préparation mémorisée.')
+            raise ValueError(ui_text('La grille protégée ne peut pas être remplacée par une préparation mémorisée.', 'A saved preparation cannot replace the locked grid.'))
         for key in ('bpm','beats','downbeats','gridLocked'):result[key]=copy.deepcopy(restored[key])
         result['settings'].update({k:restored[k] for k in GRID_KEYS if restored.get(k) is not None})
     result.pop('structureProposal', None)
@@ -593,10 +594,10 @@ def apply_proposal(project):
     # Defence in depth: saved proposals cannot bypass protected musical edits.
     for section in project['sections']:
         if protected(section) and section not in result['sections']:
-            raise ValueError('Une section protégée a changé dans la proposition.')
+            raise ValueError(ui_text('Une section protégée a changé dans la proposition.', 'A protected section changed in the suggestion.'))
     for chord in project.get('chords', []):
         if chord.get('manual') and chord not in result['chords']:
-            raise ValueError('Un accord manuel a changé dans la proposition.')
+            raise ValueError(ui_text('Un accord manuel a changé dans la proposition.', 'A manually edited chord changed in the suggestion.'))
     return result
 
 
@@ -609,7 +610,7 @@ def save_proposal(snapshot,output):
         project['preparation'].pop('fingerprint',None)
         project['preparation'].pop('validatedAt',None)
     if fingerprint(original)!=original['structureProposal']['fingerprint']:
-        raise ValueError('Un média a changé pendant la validation. Relance la vérification.')
+        raise ValueError(ui_text('Un média a changé pendant la validation. Relance la vérification.', 'Media changed during review. Run the check again.'))
     atomic(output,dict(project=project))
     record_decision(project['_root'],original['structureProposal'],'accepted_in_project',fingerprint(project))
 
@@ -633,10 +634,10 @@ def finish_preparation(snapshot,output,engine):
         if section['id'] not in fixed and section.get('origin')=='reference':
             section.update(locked=False,reviewed=False,origin='automatic-review')
     proposal.update(status='prepared',sectionTimingVersion=1,beforeSections=copy.deepcopy(original['sections']),sections=copy.deepcopy(result['sections']),
-                    message='Préparation terminée. Les améliorations sont appliquées ; les passages signalés restent à écouter.')
+                    message=ui_text('Préparation terminée. Les améliorations sont appliquées ; les passages signalés restent à écouter.', 'Preparation complete. Improvements applied. Listen to the flagged passages.'))
     roles={t['role'] for t in result['tracks']}
-    for names,label in (({'drum_kick','drum_snare','drum_toms','drum_cymbals'},'Éléments de batterie'),({'vocal_lead','vocal_backing'},'Chant principal et chœurs')):
-        if not names<=roles:proposal['warnings'].append(label+' : séparation complète indisponible ; les pistes existantes sont conservées.')
+    for names,label in (({'drum_kick','drum_snare','drum_toms','drum_cymbals'},ui_text('Éléments de batterie', 'Drum kit pieces')),({'vocal_lead','vocal_backing'},ui_text('Chant principal et chœurs', 'Lead and backing vocals'))):
+        if not names<=roles:proposal['warnings'].append(label+ui_text(' : séparation complète indisponible ; les pistes existantes sont conservées.', ' : full separation unavailable. Existing tracks were kept.'))
     result['guideKey']=''
     if result.get('preparation'):
         result['preparation'].pop('fingerprint',None);result['preparation'].pop('validatedAt',None)
@@ -644,7 +645,7 @@ def finish_preparation(snapshot,output,engine):
     result['structureProposal']=proposal
     validate_document(result)
     if fingerprint(original)!=signature:
-        raise ValueError('Un média a changé pendant la préparation.')
+        raise ValueError(ui_text('Un média a changé pendant la préparation.', 'Media changed during preparation.'))
     atomic(output,dict(project=result))
     record_decision(result['_root'],{**proposal,'fingerprint':signature},'prepared_automatically',proposal['fingerprint'])
 
@@ -674,14 +675,14 @@ def export_proposal(snapshot, output, engine):
             for i,(key,value) in enumerate(result['files'].items()):
                 source = Path(value).resolve()
                 if not source.is_relative_to(work.resolve()) or not source.is_file():
-                    raise ValueError('Guide hors du dossier de préparation.')
+                    raise ValueError(ui_text('Guide hors du dossier de préparation.', 'Guide outside the preparation folder.'))
                 target = guide_folder / (str(i)+'.wav'); shutil.copy2(source, target)
                 mapping[key] = target.relative_to(root).as_posix()
             project['guideFiles'] = mapping
             previous_guides = project['tracks']
             project['tracks'] = [t for t in previous_guides if not t['role'].startswith('guide_')]
-            for key,name,role in [('click','Métronome','guide_click'),('calls','Appels de régions','guide_voice'),
-                                  ('cues','Cues','guide_cue'),('counts','Décomptes','guide_count')]:
+            for key,name,role in [('click',ui_text('Métronome', 'Metronome'),'guide_click'),('calls',ui_text('Appels de régions', 'Region announcements'),'guide_voice'),
+                                  ('cues','Cues','guide_cue'),('counts',ui_text('Décomptes', 'Count-ins'),'guide_count')]:
                 project['tracks'].append(guide_track(root/mapping[key], root, name, role, previous_guides))
             project['guideKey'] = guide_key(project)
         else:
@@ -692,7 +693,7 @@ def export_proposal(snapshot, output, engine):
         atomic(prepared, {**project, '_exportChordTrack': True})
         # Bind export to the media version that the user approved in the preview.
         if fingerprint(original) != original['structureProposal']['fingerprint']:
-            raise ValueError('Un média a changé pendant la préparation de l’export.')
+            raise ValueError(ui_text('Un média a changé pendant la préparation de l’export.', 'Media changed while preparing export.'))
         export_validated(prepared, work/'review-export.json', engine)
         exported = json.loads((work/'review-export.json').read_text())
         record_decision(root, original['structureProposal'], 'accepted_for_export', fingerprint(project))

@@ -21,7 +21,7 @@ final class StudioDiagnostics {
         lock.lock();defer{lock.unlock()}
         let file=folder.appendingPathComponent("application.log")
         guard (try? file.resourceValues(forKeys:[.isSymbolicLinkKey]).isSymbolicLink) != true,
-              let handle=try? FileHandle(forReadingFrom:file) else{return "Aucun événement récent."}
+              let handle=try? FileHandle(forReadingFrom:file) else{return uiText("Aucun événement récent.", "No recent events.")}
         defer{try? handle.close()}
         let size=(try? handle.seekToEnd()) ?? 0
         try? handle.seek(toOffset:size>32_000 ? size-32_000 : 0)
@@ -41,7 +41,7 @@ final class StudioDiagnostics {
             }
             result.append(parts.joined(separator:" "))
         }
-        return result.isEmpty ? "Aucun événement récent." : String(result.suffix(6).joined(separator:"\n").suffix(650))
+        return result.isEmpty ? uiText("Aucun événement récent.", "No recent events.") : String(result.suffix(6).joined(separator:"\n").suffix(650))
     }
     func event(_ name:String,_ fields:[String:Any]=[:]) {
         lock.lock();defer{lock.unlock()}
@@ -82,20 +82,20 @@ extension StudioApp {
         }
         if command=="openCommunity" {
             if let address=studioCommunity[args["destination"] as? String ?? "invite"],let url=URL(string:address) {
-                if !NSWorkspace.shared.open(url){notice="Impossible d’ouvrir Discord. Réessaie depuis le lien du site BandStudio.";sendState()}
+                if !NSWorkspace.shared.open(url){notice=uiText("Impossible d’ouvrir Discord. Réessaie depuis le lien du site BandStudio.", "Could not open Discord. Try the link on the BandStudio website.");sendState()}
             };return true
         }
         if command=="copyDiscordReport" {
             let request=args["request"] as? Int ?? 0
             guard let text=args["text"] as? String,!text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,text.utf16.count<=2000 else {
-                send(["type":"supportCopied","request":request,"ok":false,"message":"Le rapport doit contenir entre 1 et 2 000 caractères."]);return true
+                send(["type":"supportCopied","request":request,"ok":false,"message":uiText("Le rapport doit contenir entre 1 et 2 000 caractères.", "The report must be between 1 and 2,000 characters.")]);return true
             }
             NSPasteboard.general.clearContents()
             guard NSPasteboard.general.setString(text,forType:.string) else {
-                send(["type":"supportCopied","request":request,"ok":false,"message":"Copie indisponible. Copie le texte sélectionné, puis ouvre le salon des bugs."]);return true
+                send(["type":"supportCopied","request":request,"ok":false,"message":uiText("Copie indisponible. Copie le texte sélectionné, puis ouvre le salon des bugs.", "Clipboard unavailable. Copy the selected text and open the bug reports channel.")]);return true
             }
             let opened=studioCommunity["bugs"].flatMap{URL(string:$0)}.map{NSWorkspace.shared.open($0)} ?? false
-            send(["type":"supportCopied","request":request,"ok":true,"message":opened ? "Rapport copié. Colle-le dans #rapports-de-bugs et clique sur Envoyer dans Discord." : "Rapport copié. Ouvre le salon des bugs avec le bouton ci-dessous, puis colle-le."]);return true
+            send(["type":"supportCopied","request":request,"ok":true,"message":opened ? uiText("Rapport copié. Colle-le dans #rapports-de-bugs et clique sur Envoyer dans Discord.", "Report copied. Paste it into #rapports-de-bugs and send it in Discord.") : uiText("Rapport copié. Ouvre le salon des bugs avec le bouton ci-dessous, puis colle-le.", "Report copied. Open the bug reports channel below and paste it there.")]);return true
         }
         if command=="checkUpdates" {checkUpdates();return true}
         if command=="automaticUpdates" {UserDefaults.standard.set(args["enabled"] as? Bool ?? true,forKey:"automaticUpdates");sendUpdate();if automaticUpdates{checkUpdates()};return true}
@@ -105,15 +105,15 @@ extension StudioApp {
         if command=="showLogs" {NSWorkspace.shared.open(StudioDiagnostics.shared.folder);return true}
         if command=="reportBug" {
             var url=URLComponents(string:"https://github.com/herve8940/BandStudio/issues/new")!
-            url.queryItems=[URLQueryItem(name:"title",value:"[Bug] "),URLQueryItem(name:"labels",value:"bug"),URLQueryItem(name:"body",value:"## Problème\n\n## Pour reproduire\n1. \n\n## Résultat attendu\n\n## Environnement\nBandStudio 1.1.0 · macOS \(ProcessInfo.processInfo.operatingSystemVersionString)\n\nJoindre si utile le diagnostic exporté depuis Réglages après vérification.")]
+            url.queryItems=[URLQueryItem(name:"title",value:"[Bug] "),URLQueryItem(name:"labels",value:"bug"),URLQueryItem(name:"body",value:uiText("## Problème\n\n## Pour reproduire\n1. \n\n## Résultat attendu\n\n## Environnement\nBandStudio 1.1.0 · macOS \(ProcessInfo.processInfo.operatingSystemVersionString)\n\nJoindre si utile le diagnostic exporté depuis Réglages après vérification.", "## Issue\n\n## Steps to reproduce\n1. \n\n## Expected result\n\n## Environment\nBandStudio 1.1.0 · macOS \(ProcessInfo.processInfo.operatingSystemVersionString)\n\nIf helpful, review and attach the diagnostic file exported from Settings."))]
             NSWorkspace.shared.open(url.url!);return true
         }
         if command=="exportDiagnostics" {
             let panel=NSSavePanel();panel.nameFieldStringValue="BandStudio-diagnostic.txt";panel.allowedFileTypes=["txt"]
             if panel.runModal() == .OK,let target=panel.url {
-                var text="BandStudio 1.1.0\nmacOS \(ProcessInfo.processInfo.operatingSystemVersionString)\nVérifie ce fichier avant de le partager. Aucun audio ni projet inclus.\n\n"
+                var text=uiText("BandStudio 1.1.0\nmacOS \(ProcessInfo.processInfo.operatingSystemVersionString)\nVérifie ce fichier avant de le partager. Aucun audio ni projet inclus.\n\n", "BandStudio 1.1.0\nmacOS \(ProcessInfo.processInfo.operatingSystemVersionString)\nReview before sharing. No audio or projects included.\n\n")
                 for i in (0...3).reversed(){let file=StudioDiagnostics.shared.folder.appendingPathComponent(i==0 ? "application.log" : "application.log.\(i)");text += (try? String(contentsOf:file,encoding:.utf8)) ?? ""}
-                perform{try text.write(to:target,atomically:true,encoding:.utf8);notice="Diagnostic exporté. Vérifie-le avant de le joindre au signalement.";sendState()}
+                perform{try text.write(to:target,atomically:true,encoding:.utf8);notice=uiText("Diagnostic exporté. Vérifie-le avant de le joindre au signalement.", "Diagnostics exported. Review the file before attaching it to your report.");sendState()}
             };return true
         }
         return false

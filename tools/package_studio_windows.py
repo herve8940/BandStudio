@@ -34,7 +34,7 @@ def extract(zip_path,target):
 
 def source_files():
     files=[ROOT/'LICENSE',ROOT/'THIRD_PARTY_NOTICES.md']
-    for name in ['services.py','analysis_cache.py','rhythm_quality.py','rhythm_adapter.py','cue_corrector.py','cue_corrector_runtime.py','cue_corrector_bundle.py','chord_provider_defaults.py','cue_feedback.py','structure_review.py','structure_sources.py','song_memory.py','musical_patterns.py','chord_sources.py','lyrics_reference.py','lyrics_alignment.py','chord_alignment.py','chord_features.py','section_evidence.py','chart_sections.py','chord_choice.py','section_functions.py','musical_timing.py','section_grid_rollback.py','listening.py','diagnostics.py','compute.py','catalog.py','artwork.py','updater.py','preparation.py','batch_queue.py','batch_project.py','platform_tools.py','worker.py','analysis_progress.py','advanced.py','phone.py','creative.py']:files.append(ROOT/'desktop/studio'/name)
+    for name in ['ui_language.py','services.py','analysis_cache.py','rhythm_quality.py','rhythm_adapter.py','cue_corrector.py','cue_corrector_runtime.py','cue_corrector_bundle.py','chord_provider_defaults.py','cue_feedback.py','structure_review.py','structure_sources.py','song_memory.py','musical_patterns.py','chord_sources.py','lyrics_reference.py','lyrics_alignment.py','chord_alignment.py','chord_features.py','section_evidence.py','chart_sections.py','chord_choice.py','section_functions.py','musical_timing.py','section_grid_rollback.py','listening.py','diagnostics.py','compute.py','catalog.py','artwork.py','updater.py','preparation.py','batch_queue.py','batch_project.py','platform_tools.py','worker.py','analysis_progress.py','advanced.py','phone.py','creative.py']:files.append(ROOT/'desktop/studio'/name)
     for name in ('rhythm-quality.json','rhythm-adapter.json'):
         calibration=ROOT/'desktop/studio'/name
         if calibration.is_file():files.append(calibration)
@@ -63,10 +63,12 @@ def build(output):
         else:shutil.copy2(source,dest)
     write_catalog(engine)
     (engine/'build.json').write_text(json.dumps({'version':VERSION,'commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),'runtime':1}))
+    shutil.copy2(ROOT/'desktop/studio/README.en.txt',package/'README.en.txt')
     shutil.copy2(ROOT/'desktop/studio/windows/LIRE-MOI.txt',package/'LIRE-MOI.txt')
     shutil.copy2(ROOT/'desktop/studio/windows/THIRD_PARTY.txt',package/'WINDOWS_THIRD_PARTY.txt')
     shutil.copy2(ROOT/'LICENSE',package/'LICENSE');shutil.copy2(ROOT/'THIRD_PARTY_NOTICES.md',package/'THIRD_PARTY_NOTICES.md')
     html=engine/'web/index.html';text=html.read_text(encoding='utf-8');text=text.replace("script-src 'self'","script-src 'self' 'unsafe-eval'");text=text.replace('<script src="diagnostics.js" defer>', '<script src="adapter.js" defer></script><script src="diagnostics.js" defer>');html.write_text(text,encoding='utf-8');shutil.copy2(ROOT/'desktop/studio/windows/adapter.js',engine/'web/adapter.js')
+    (html.parent/'index.en.html').write_text(text.replace('<html lang="fr">', '<html lang="en">'), encoding='utf-8')
     uv=shutil.which('uv');assert uv,'uv must be installed on the build runner'
     managed=output/'python-build';env=os.environ.copy();env['UV_PYTHON_INSTALL_DIR']=str(managed)
     subprocess.run([uv,'python','install','3.12'],check=True,env=env)
@@ -93,6 +95,9 @@ def build(output):
     (package/'BUNDLED_PACKAGES.json').write_text(dependency_list,encoding='utf-8')
     demo=package/'examples/Decouverte.bandstudio'
     subprocess.run([str(python),str(engine/'windows/demo.py'),str(demo)],check=True,env={**os.environ,'PYTHONPATH':str(engine),'PYTHONUTF8':'1'})
+    english_demo=output/'english-demo.bandstudio'
+    subprocess.run([str(python),str(engine/'windows/demo.py'),str(english_demo)],check=True,env={**os.environ,'PYTHONPATH':str(engine),'PYTHONUTF8':'1','BANDSTUDIO_UI_LANGUAGE':'en'})
+    shutil.copy2(english_demo/'project.json',package/'examples/demo.en.json')
     compiler=Path(os.environ['WINDIR'])/'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
     subprocess.run([str(compiler),'/nologo','/target:winexe','/platform:x64','/reference:System.Windows.Forms.dll','/win32icon:'+str(ROOT/'desktop/studio/assets/BandStudio.ico'),'/out:'+str(package/'BandStudio.exe'),str(ROOT/'desktop/studio/windows/Bootstrap.cs')],check=True)
     (package/'Demarrer-avec-console.cmd').write_bytes(b'@echo off\r\nsetlocal\r\ncd /d "%~dp0"\r\nset PYTHONUTF8=1\r\n"%~dp0engine\\python\\python.exe" "%~dp0engine\\windows\\launcher.py"\r\nif errorlevel 1 pause\r\n')

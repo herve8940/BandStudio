@@ -8,6 +8,8 @@ Deux parcours illustrés suivent les commandes de l’application. [De l’impor
 
 ## 1. Importer et préparer
 
+Pour choisir la langue de l’application, ouvre **Réglages → Langue de l’interface**, choisis **Français** ou **English**, puis quitte et rouvre BandStudio.
+
 Dans **Mes morceaux**, importe un fichier audio de ton ordinateur. Laisse **Préparer automatiquement après l’import** coché pour lancer les analyses dès l’import. Pour plusieurs fichiers, ouvre **Préparer une série**, ajoute-les puis choisis **Démarrer la file**.
 
 Ouvre le morceau dans **Éditeur du morceau** puis choisis **1 · Préparer**. Les moteurs installés séparent les instruments et analysent le tempo, les sections, les paroles et les accords. Les guides sont générés à la fin. Pour ajouter un moteur sur Windows, ouvre **Réglages → Analyses locales**. Une analyse particulière peut être relancée dans **Préparation détaillée**.

@@ -1,4 +1,5 @@
 """CUDA selection for standalone audio workers, with bounded-memory CPU recovery."""
+from ui_language import ui_text
 import gc
 from importlib import metadata
 import os
@@ -35,7 +36,7 @@ def select_device(torch):
             info.update(device='cuda', gpu=props.name, vram_mb=props.total_memory // (1024 * 1024),
                         cuda=str(torch.version.cuda))
     except (RuntimeError, OSError) as error:
-        info['fallback'] = 'CUDA indisponible : ' + str(error)[:300]
+        info['fallback'] = ui_text('CUDA indisponible : ', 'CUDA unavailable: ') + str(error)[:300]
     return info
 
 
@@ -62,7 +63,7 @@ def run(torch, task, action, *, cleanup=lambda: None, notify=lambda info: None):
     except RuntimeError:pass
     info = {**info, 'device': 'cpu', 'fallback': reason}
     diagnostics.event('analysis.fallback', task=task, **info)
-    print('Mémoire GPU ou calcul CUDA indisponible : reprise sur le processeur.', flush=True)
+    print(ui_text('Mémoire GPU ou calcul CUDA indisponible : reprise sur le processeur.', 'GPU memory or CUDA unavailable. Retrying on CPU.'), flush=True)
     notify(info)
     return action(info), info
 

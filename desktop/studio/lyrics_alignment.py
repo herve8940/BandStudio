@@ -3,6 +3,7 @@
 Estimated positions select acoustic windows only. A failed acoustic alignment
 keeps the reference text with no word timings, explicitly requiring review.
 """
+from ui_language import ui_text, using_english
 from collections import Counter
 from difflib import SequenceMatcher
 import copy
@@ -61,7 +62,7 @@ def plan(segments, text):
     a, b = [key(w['text']) for w in observed], list(map(key, words))
     counts_a, counts_b = Counter(a), Counter(b)
     exact = {(i, j) for i, j in pairs if i is not None and j is not None and a[i] == b[j]}
-    stop = {'le','la','les','des','du','de','un','une','a','et','en','au','aux','que','qui','dans',
+    stop = {'le','la','les','des','du','de','un','une','a','et','en',ui_text('au', 'to'),'aux','que','qui','dans',
             'the','a','an','and','to','of','in','on','is','it','i','you','we','my','your','el','y','los'}
     anchors = []
     for i, j in sorted(exact):
@@ -181,7 +182,7 @@ def ctc_frames(audio,language,folder):
         total=math.ceil(len(wav)/chunk)
         with torch.inference_mode():
             for start in range(0,len(wav),chunk):
-                label=f'Analyse du chant ({language}) · extrait {start//chunk+1} sur {total}'
+                label=(f'Analyzing vocals ({language}) · excerpt {start // chunk + 1} of {total}' if using_english() else f'Analyse du chant ({language}) · extrait {start//chunk+1} sur {total}')
                 emit(progressLabel=label, indeterminate=True)
                 print(label,flush=True)
                 end=min(len(wav),start+chunk)
@@ -300,7 +301,7 @@ def reference_scores(audio, proposals, segments, language, folder):
             for i,word in enumerate(words):
                 if i and '|' in vocab:targets.append(vocab['|'])
                 targets.extend(word['ids'])
-            if not targets:raise ValueError('Référence vide.')
+            if not targets:raise ValueError(ui_text('Référence vide.', 'Empty reference.'))
             _,scores=AF.forced_align(window,torch.tensor([targets],dtype=torch.int32),blank=blank)
             score=float(scores.mean())
             result.append(score if math.isfinite(score) else None)
@@ -326,7 +327,7 @@ def whisper_align(audio,jobs,language):
     for job in jobs:
         try:
             a,b=round(job['t0']*16000),min(len(wav),round(job['t1']*16000))
-            if not 3200 <= b-a <= 30*16000:raise ValueError('Fenêtre vocale invalide.')
+            if not 3200 <= b-a <= 30*16000:raise ValueError(ui_text('Fenêtre vocale invalide.', 'Invalid vocal window.'))
             mel=whisper.log_mel_spectrogram(whisper.pad_or_trim(wav[a:b]),model.dims.n_mels).to(model.device)
             aligned=find_alignment(model,tokenizer,tokenizer.encode(' '+job['text']),mel,(b-a)//160)
             # Match by normalized character spans to rejoin apostrophes exactly
@@ -336,7 +337,7 @@ def whisper_align(audio,jobs,language):
             for w in aligned:
                 value=key(w.word);chars+=value;owners.extend([w]*len(value))
             target=tokens(job['text'])
-            if chars!=''.join(map(key,target)):raise ValueError('Mots du recalage incomplets.')
+            if chars!=''.join(map(key,target)):raise ValueError(ui_text('Mots du recalage incomplets.', 'Incomplete word timing data.'))
             out=[];cursor=0
             for word in target:
                 span=owners[cursor:cursor+len(key(word))];cursor+=len(key(word))

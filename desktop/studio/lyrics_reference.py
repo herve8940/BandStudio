@@ -4,6 +4,7 @@ Remote timestamps are never copied: different releases can have different edits.
 Only title/artist leave the machine. Confirmed reference text replaces ASR guesses;
 manual edits survive, while text confidence and timing confidence stay separate.
 """
+from ui_language import ui_text, using_english
 import copy
 from difflib import SequenceMatcher
 import hashlib
@@ -49,22 +50,22 @@ def safe_url(url):
 class Redirects(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         if not safe_url(newurl) or urlsplit(req.full_url).hostname != urlsplit(newurl).hostname:
-            raise ValueError('Redirection de paroles refusée.')
+            raise ValueError(ui_text('Redirection de paroles refusée.', 'Lyrics redirect refused.'))
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 def fetch(url):
     if not safe_url(url):
-        raise ValueError('Source de paroles invalide.')
+        raise ValueError(ui_text('Source de paroles invalide.', 'Invalid lyrics source.'))
     html = urlsplit(url).hostname not in {'lrclib.net','api.lyrics.ovh'}
     request = Request(url, headers={'User-Agent': 'BandStudio/1.1 (https://github.com/herve8940/BandStudio)',
                                    'Accept': 'text/html' if html else 'application/json'})
     with build_opener(Redirects()).open(request, timeout=6) as response:
         if response.status != 200 or not safe_url(response.url):
-            raise ValueError('Source de paroles indisponible.')
+            raise ValueError(ui_text('Source de paroles indisponible.', 'Lyrics source unavailable.'))
         data = response.read(MAX_BYTES + 1)
         if len(data) > MAX_BYTES:
-            raise ValueError('Réponse de paroles trop volumineuse.')
+            raise ValueError(ui_text('Réponse de paroles trop volumineuse.', 'Lyrics response too large.'))
         return data.decode('utf-8') if html else json.loads(data)
 
 
@@ -210,7 +211,7 @@ def catalog_urls(payload, base, titles):
 def lookup(project, duration, fetcher=fetch, now=None):
     title, artist = identity(project)
     if not title or not artist:
-        return [], 'Renseigne le titre et l’artiste pour chercher les paroles.'
+        return [], ui_text('Renseigne le titre et l’artiste pour chercher les paroles.', 'Enter the title and artist to search for lyrics.')
     # A reference explicitly chosen for this song is durable and works offline.
     # Bind it to the musical identity, never merely the renamed folder.
     if project.get('_root'):
@@ -218,7 +219,7 @@ def lookup(project, duration, fetcher=fetch, now=None):
             selected=json.loads((Path(project['_root'])/'References/lyrics-selected.json').read_text())
             if (selected.get('confirmed') is True and key(selected.get('title',''))==key(title)
                     and key(selected.get('artist',''))==key(artist) and clean_text(selected.get('text'))):
-                return [dict(publisher=selected.get('publisher','Référence choisie'),
+                return [dict(publisher=selected.get('publisher',ui_text('Référence choisie', 'Selected reference')),
                              url=selected.get('url',''),text=clean_text(selected['text']),confirmed=True)], ''
         except (OSError,ValueError,TypeError):pass
     now = time.time() if now is None else now
@@ -266,7 +267,7 @@ def lookup(project, duration, fetcher=fetch, now=None):
         try:
             if publisher == 'LRCLIB':
                 if not isinstance(payload, list):
-                    raise ValueError('Réponse LRCLIB invalide.')
+                    raise ValueError(ui_text('Réponse LRCLIB invalide.', 'Invalid LRCLIB response.'))
                 for row in payload[:20]:
                     if not isinstance(row, dict) or row.get('instrumental'):
                         continue
@@ -315,16 +316,16 @@ def lookup(project, duration, fetcher=fetch, now=None):
             for candidate in catalog_urls(request(publisher,url),url,titles):retrieve(publisher,candidate)
     if not sources and any(name not in errors for name in WEB_SOURCES) and time.monotonic()<deadline:
         query = artist+' '+titles[-1]+' paroles ('+' OR '.join('site:'+host for host in WEB_SOURCES.values())+')'
-        for publisher,url in discovery_urls(request('Recherche web',SEARCH_ENDPOINT+'?'+urlencode({'q':query}))):
+        for publisher,url in discovery_urls(request(ui_text('Recherche web', 'Web search'),SEARCH_ENDPOINT+'?'+urlencode({'q':query}))):
             retrieve(publisher,url)
-    message = '' if sources else ('Sources indisponibles, réessaie plus tard.' if errors else 'Aucune référence trouvée pour cette version.')
+    message = '' if sources else (ui_text('Sources indisponibles, réessaie plus tard.', 'Sources unavailable. Try again later.') if errors else ui_text('Aucune référence trouvée pour cette version.', 'No reference found for this version.'))
     if errors:
         # Keep locally identified editions when their publisher is temporarily offline.
         # A confirmed absence, a different recording or a different song starts fresh.
         sources.extend({**s,'cachedCopy':True} for s in previous if isinstance(s,dict)
                        and s.get('publisher') in errors and safe_url(s.get('url','')) and clean_text(s.get('text')))
         if any(s.get('cachedCopy') for s in sources):
-            message='Certaines références proviennent de la dernière recherche réussie.'
+            message=ui_text('Certaines références proviennent de la dernière recherche réussie.', 'Some references come from the last successful search.')
     ttl=retry_delay if errors or not sources else 86400.
     if cache:
         from services import atomic
@@ -512,7 +513,7 @@ def local_align(audio, jobs, language, folder):
             try:
                 window=(max(0,round(job['t0']*reacue_words.SR)),min(len(wav),round(job['t1']*reacue_words.SR)))
                 if not .2*reacue_words.SR<=window[1]-window[0]<=30*reacue_words.SR:
-                    raise ValueError('Fenêtre vocale invalide.')
+                    raise ValueError(ui_text('Fenêtre vocale invalide.', 'Invalid vocal window.'))
                 if window!=previous:
                     em,step=reacue_words.emissions(model,wav[window[0]:window[1]],normalize)
                     previous=window
@@ -553,7 +554,7 @@ def select_reference(ranked, audio, segments, language, folder, scorer=None):
     # can reward missing verses. Identical provider copies were deduplicated.
     candidates=sorted(candidates,key=lambda item:(item[2]['supported'],item[0]),reverse=True)[:6]
     if len(candidates)==1:return candidates[0],''
-    print(f'Comparaison de {len(candidates)} références avec la transcription et le chant…',flush=True)
+    print((f'Comparing {len(candidates)} references with the transcription and vocals…' if using_english() else f'Comparaison de {len(candidates)} références avec la transcription et le chant…'),flush=True)
     try:
         scores=(scorer or reference_scores)(audio,[item[2] for item in candidates],segments,language,folder)
     except (OSError,ValueError,RuntimeError,ImportError):scores=[]
@@ -562,11 +563,11 @@ def select_reference(ranked, audio, segments, language, folder, scorer=None):
     if len(measured)==len(candidates):
         measured.sort(key=lambda value:value[0],reverse=True)
         if measured[0][0]-measured[1][0]>=.015:
-            return measured[0][1],'Référence sélectionnée automatiquement avec la transcription et le chant. '
+            return measured[0][1],ui_text('Référence sélectionnée automatiquement avec la transcription et le chant. ', 'Reference selected automatically using the transcription and vocals. ')
     # Even without a decisive acoustic score, matching references do not need
     # to block text import. Prefer the one explaining the most recognised
     # content; timing uncertainty is assessed independently below.
-    return candidates[0],'Référence sélectionnée automatiquement d’après les mots reconnus. '
+    return candidates[0],ui_text('Référence sélectionnée automatiquement d’après les mots reconnus. ', 'Reference selected automatically from the recognized words. ')
 
 
 def correction_audio(project, audio, fallback_offset=0):
@@ -595,11 +596,11 @@ def correct(project, transcription, audio, folder, *, fetcher=fetch, aligner=Non
                      language=result.get('language', 'auto'))
     result['lyricsReference'] = reference
     if not segments:
-        reference['message'] = 'Transcris d’abord le chant pour retrouver la version et ses points d’ancrage.'
+        reference['message'] = ui_text('Transcris d’abord le chant pour retrouver la version et ses points d’ancrage.', 'Transcribe the vocals first to identify the version and its anchors.')
         return result
     duration = max((t.get('duration', 0) for t in project.get('tracks', []) if t.get('role') == 'source'), default=0)
     if duration <= 0:duration=max(s['end'] for s in segments)
-    emit(progress=100/3, progressBasis='steps', progressLabel='Recherche de paroles sur Internet', indeterminate=True)
+    emit(progress=100/3, progressBasis='steps', progressLabel=ui_text('Recherche de paroles sur Internet', 'Searching for lyrics online'), indeterminate=True)
     sources, message = lookup(project, duration, fetcher)
     ranked, seen = [], set()
     for source in sources:
@@ -613,12 +614,12 @@ def correct(project, transcription, audio, folder, *, fetcher=fetch, aligner=Non
     ranked.sort(key=lambda item:(bool(item[1].get('confirmed')),item[0]), reverse=True)
     reference['sources'] = list(dict.fromkeys(s['publisher'] for s in sources))
     if not ranked:
-        reference['message'] = (message or 'La référence ne peut pas être confirmée avec les mots reconnus.') + ' Transcription non vérifiée.'
+        reference['message'] = (message or ui_text('La référence ne peut pas être confirmée avec les mots reconnus.', 'The recognized words could not confirm the reference.')) + ui_text(' Transcription non vérifiée.', ' Transcription unverified.')
         return result
-    emit(progressLabel=f'Comparaison avec le chant · {len(ranked)} version(s)', indeterminate=True)
+    emit(progressLabel=(f'Comparing with vocals · {len(ranked)} version(s)' if using_english() else f'Comparaison avec le chant · {len(ranked)} version(s)'), indeterminate=True)
     (_,source,proposal),selection=select_reference(ranked,audio,segments,result.get('language','auto'),folder,reference_scorer)
     reference['sources']=[source['publisher']]
-    emit(progress=200/3, progressBasis='steps', progressLabel='Recalage des paroles sur le chant', indeterminate=True)
+    emit(progress=200/3, progressBasis='steps', progressLabel=ui_text('Recalage des paroles sur le chant', 'Aligning lyrics to vocals'), indeterminate=True)
     jobs,position=windows(segments,proposal,duration)
     try:
         if aligner is not None:aligned=aligner(audio,jobs,result.get('language','auto'),folder)
@@ -636,11 +637,11 @@ def correct(project, transcription, audio, folder, *, fetcher=fetch, aligner=Non
         review=sum(bool(s.get('timingReview')) for s in result['segments'] if not s.get('manual'))
     automatic=[s for s in result['segments'] if not s.get('manual')]
     reference.update(status='corrected',corrected=len(automatic),review=0,timingReview=review)
-    reference['message']=(selection+f"Texte de référence appliqué : {len(automatic)} ligne(s). "
-        + ('Copie locale utilisée pendant l’indisponibilité du site. ' if source.get('cachedCopy') else '')
-        + ('Répétitions adaptées à cette version audio. ' if proposal.get('repeatAdjustments') else '')
-        + (f"{review} calage(s) à vérifier ; aucun horaire de mot inventé." if review
-           else 'Mots recalés sur la piste chant.'))
+    reference['message']=(selection+(f'Reference lyrics applied: {len(automatic)} line(s). ' if using_english() else f"Texte de référence appliqué : {len(automatic)} ligne(s). ")
+        + (ui_text('Copie locale utilisée pendant l’indisponibilité du site. ', 'Using a local copy while the site is unavailable. ') if source.get('cachedCopy') else '')
+        + (ui_text('Répétitions adaptées à cette version audio. ', 'Repeats adapted to this recording. ') if proposal.get('repeatAdjustments') else '')
+        + ((f'{review} timing(s) to review. Missing word times have been left blank.' if using_english() else f"{review} calage(s) à vérifier ; aucun horaire de mot inventé.") if review
+           else ui_text('Mots recalés sur la piste chant.', 'Words aligned to the vocal track.')))
     if timing:
-        reference['message']+=f" Débuts de ligne concordants avec {timing['publisher']} · {timing['consistent']} sur {timing['compared']} comparés."
+        reference['message']+=(f" Line starts match {timing['publisher']} · {timing['consistent']} of {timing['compared']} compared." if using_english() else f" Débuts de ligne concordants avec {timing['publisher']} · {timing['consistent']} sur {timing['compared']} comparés.")
     return result

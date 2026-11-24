@@ -259,3 +259,35 @@ def test_review_navigation_uses_current_project_and_clears_corrected_warnings(ma
     page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:4})',p)
     assert page.locator('#songReview').is_hidden()
     assert not page.locator('#annotationEditor').is_visible()
+
+
+def test_english_editor_preserves_song_text_and_native_commands(manual_page):
+    page, song = manual_page
+    page.add_init_script("window.bandStudioLanguage = 'en'")
+    page.reload()
+    assert page.locator('html').get_attribute('lang') == 'en'
+    assert page.get_by_role('button', name='My songs', exact=True).is_visible()
+    page.get_by_role('button', name='Settings', exact=True).click()
+    assert page.locator('#interfaceLanguage').input_value() == 'en'
+    page.locator('#interfaceLanguage').select_option('fr')
+    assert page.evaluate('sent.at(-1).command') == 'uiLanguage'
+    assert page.evaluate('sent.at(-1).args') == {'language': 'fr'}
+    page.get_by_role('button', name='My songs', exact=True).click()
+    page.locator('header [data-action=import]').click()
+    assert page.evaluate('sent.at(-1).command') == 'import'
+
+    song.update(name='Réglages', notes='Mon refrain à vérifier')
+    song['sections'][1].update(name='Mes morceaux', origin='manual')
+    song['lyrics'] = [dict(id='line', text='Ouvrir', start=8.5, end=12, manual=True)]
+    page.evaluate('p=>studioReceive({type:"state",project:p,duration:32,loaded:true,library:[],revision:1})', song)
+    page.get_by_role('button', name='Song editor', exact=True).click()
+    assert page.locator('#title').text_content() == 'Réglages'
+    assert page.locator('#notes').input_value() == 'Mon refrain à vérifier'
+    page.locator('[data-workspace-mode=structure]').click()
+    page.locator('.structure-row[data-id=b] .structure-name').click()
+    assert page.locator('#selectionName').text_content() == 'Mes morceaux'
+    page.get_by_role('button', name='Loop Mes morceaux', exact=True).click()
+    assert page.evaluate('sent.at(-1).command') == 'loop'
+    page.get_by_role('button', name='Song sheet', exact=True).click()
+    assert page.get_by_role('button', name='Export PDF song sheet').is_visible()
+    assert page.locator('#view-sheet').get_by_text('Ouvrir', exact=True).first.is_visible()

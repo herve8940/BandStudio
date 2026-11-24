@@ -67,15 +67,15 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         do{try FileManager.default.createDirectory(at:library,withIntermediateDirectories:true)}catch{notice=error.localizedDescription}
         if let data=try? Data(contentsOf:library.appendingPathComponent("setlists.json")),let lists=try? JSONDecoder().decode([StudioSetlist].self,from:data){setlists=lists}
         let menu=NSMenu();let appItem=NSMenuItem();menu.addItem(appItem);appItem.submenu=NSMenu()
-        appItem.submenu!.addItem(withTitle:"À propos de BandStudio",action:#selector(about),keyEquivalent:"")
+        appItem.submenu!.addItem(withTitle:uiText("À propos de BandStudio", "About BandStudio"),action:#selector(about),keyEquivalent:"")
         appItem.submenu!.addItem(.separator())
-        appItem.submenu!.addItem(withTitle:"Quitter BandStudio",action:#selector(NSApplication.terminate(_:)),keyEquivalent:"q")
-        let file=NSMenuItem();menu.addItem(file);file.submenu=NSMenu(title:"Fichier")
-        for (title,selector,key) in [("Importer un morceau",#selector(importSong),"n"),("Ouvrir un projet",#selector(openProject),"o"),("Enregistrer",#selector(saveAction),"s")] {
+        appItem.submenu!.addItem(withTitle:uiText("Quitter BandStudio", "Quit BandStudio"),action:#selector(NSApplication.terminate(_:)),keyEquivalent:"q")
+        let file=NSMenuItem();menu.addItem(file);file.submenu=NSMenu(title:uiText("Fichier", "File"))
+        for (title,selector,key) in [(uiText("Importer un morceau", "Import a song"),#selector(importSong),"n"),(uiText("Ouvrir un projet", "Open a project"),#selector(openProject),"o"),(uiText("Enregistrer", "Save"),#selector(saveAction),"s")] {
             let i=file.submenu!.addItem(withTitle:title,action:selector,keyEquivalent:key);i.target=self
         }
-        let edit=NSMenuItem();menu.addItem(edit);edit.submenu=NSMenu(title:"Édition")
-        for (title,action,key) in [("Couper","cut:","x"),("Copier","copy:","c"),("Coller","paste:","v"),("Tout sélectionner","selectAll:","a")] {
+        let edit=NSMenuItem();menu.addItem(edit);edit.submenu=NSMenu(title:uiText("Édition", "Edit"))
+        for (title,action,key) in [(uiText("Couper", "Cut"),"cut:","x"),(uiText("Copier", "Copy"),"copy:","c"),(uiText("Coller", "Paste"),"paste:","v"),(uiText("Tout sélectionner", "Select all"),"selectAll:","a")] {
             edit.submenu!.addItem(withTitle:title,action:Selector(action),keyEquivalent:key)
         }
         NSApp.mainMenu=menu
@@ -83,6 +83,8 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         window.title="BandStudio";window.minSize=NSSize(width:960,height:660)
         window.appearance=NSAppearance(named:.darkAqua);window.setFrameAutosaveName("BandStudio")
         let cfg=WKWebViewConfiguration();cfg.websiteDataStore = .nonPersistent()
+        let localeScript = "window.bandStudioLanguage = '" + StudioLanguage.current + "'"
+        cfg.userContentController.addUserScript(WKUserScript(source:localeScript, injectionTime:.atDocumentStart, forMainFrameOnly:true))
         cfg.userContentController.add(self,name:"studio")
         web=WKWebView(frame:.zero,configuration:cfg);web.navigationDelegate=self;web.uiDelegate=self
         window.contentView=web;window.center();window.makeKeyAndOrderFront(nil)
@@ -101,7 +103,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             do{try load(URL(fileURLWithPath:path))}catch{notice=error.localizedDescription}
         }
     }
-    @objc func about() {NSApp.orderFrontStandardAboutPanel(options:[.applicationName:"BandStudio",.applicationVersion:"1.1.0 · préparation pour REAPER",.credits:NSAttributedString(string:"Stems, appels, décompte, paroles, accords et projets REAPER\nTraitement local sur ce Mac")])}
+    @objc func about() {NSApp.orderFrontStandardAboutPanel(options:[.applicationName:"BandStudio",.applicationVersion:uiText("1.1.0 · préparation pour REAPER", "1.1.0 · song preparation for REAPER"),.credits:NSAttributedString(string:uiText("Stems, appels, décompte, paroles, accords et projets REAPER\nTraitement local sur ce Mac", "Stems, announcements, count-ins, lyrics, chords and REAPER projects\nProcessed locally on this Mac"))])}
     func projectList()->[[String:String]] {
         guard let library=library else{return []}
         let hidden=pendingTrashedProjects()
@@ -135,11 +137,11 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         }
     }
     func jobDetail()->String {
-        guard let url=jobLog,let f=try? FileHandle(forReadingFrom:url) else{return "Traitement local en cours…"}
+        guard let url=jobLog,let f=try? FileHandle(forReadingFrom:url) else{return uiText("Traitement local en cours…", "Processing locally…")}
         defer{try? f.close()}
         let end=(try? f.seekToEnd()) ?? 0;try? f.seek(toOffset:end > 2048 ? end-2048 : 0)
         let str=String(data:(try? f.readToEnd()) ?? Data(),encoding:.utf8) ?? ""
-        return str.components(separatedBy:CharacterSet.newlines.union(CharacterSet(charactersIn:"\r"))).filter{!$0.isEmpty}.last ?? "Chargement du modèle…"
+        return str.components(separatedBy:CharacterSet.newlines.union(CharacterSet(charactersIn:"\r"))).filter{!$0.isEmpty}.last ?? uiText("Chargement du modèle…", "Loading model…")
     }
     // Older projects can have usable audio guides without a saved display clock.
     // Ask the same lightweight clock used by the PDF; generating audio is unnecessary.
@@ -196,7 +198,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     }
     func remember() {history.append(project);if history.count > 80{history.removeFirst()};future=[]}
     func save() throws {if let root=root {try project.save(root)}}
-    @objc func saveAction(){perform{try self.save();self.notice="Projet enregistré sur ce Mac.";self.sendState()}}
+    @objc func saveAction(){perform{try self.save();self.notice=uiText("Projet enregistré sur ce Mac.", "Project saved on this Mac.");self.sendState()}}
     func perform(_ work:() throws -> Void) {
         let before=project,oldRoot=root,oldHistory=history,oldFuture=future,oldRevision=revision
         do{try work()}catch{
@@ -210,10 +212,10 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         }
     }
     func requireIdle() throws {
-        if busy || recorder.running || recordPending {throw StudioError("Termine le traitement ou la prise avant de changer de projet.")}
+        if busy || recorder.running || recordPending {throw StudioError(uiText("Termine le traitement ou la prise avant de changer de projet.", "Finish processing or recording before changing projects."))}
     }
     func load(_ url:URL,prepareGuides:Bool=true) throws {
-        guard !pendingTrashedProjects().contains(url.standardizedFileURL) else{throw StudioError("Ce morceau est dans la corbeille BandStudio. Restaure-le depuis Mes morceaux pour l’ouvrir.")}
+        guard !pendingTrashedProjects().contains(url.standardizedFileURL) else{throw StudioError(uiText("Ce morceau est dans la corbeille BandStudio. Restaure-le depuis Mes morceaux pour l’ouvrir.", "This song is in the BandStudio trash. Restore it from My songs to open it."))}
         try requireIdle()
         var p=try StudioProject.load(url)
         if p.sectionGridVersion==1 {
@@ -221,7 +223,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             migration.arguments=[runtime.appendingPathComponent("section_grid_rollback.py").path,"--rollback",url.path]
             migration.standardOutput=FileHandle.nullDevice;let errors=Pipe();migration.standardError=errors
             try migration.run();let detail=errors.fileHandleForReading.readDataToEndOfFile();migration.waitUntilExit()
-            guard migration.terminationStatus==0 else {throw StudioError("La restauration des sections n’a pas abouti. "+(String(data:detail,encoding:.utf8) ?? ""))}
+            guard migration.terminationStatus==0 else {throw StudioError(uiText("La restauration des sections n’a pas abouti. ", "Could not restore the sections. ")+(String(data:detail,encoding:.utf8) ?? ""))}
             p=try StudioProject.load(url)
         }
         try audio.load(p,root:url);audio.loop=false
@@ -243,7 +245,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     }
     func safeName(_ raw:String)->String {
         let clean=raw.components(separatedBy:CharacterSet(charactersIn:"/:\0")).joined(separator:"-")
-        return String(clean.prefix(120)).isEmpty ? "Morceau" : String(clean.prefix(120))
+        return String(clean.prefix(120)).isEmpty ? uiText("Morceau", "Song") : String(clean.prefix(120))
     }
     @objc func importSong() {chooseAudio(new:true,prepare:true)}
     func chooseAudio(new:Bool,prepare:Bool=false) {
@@ -252,7 +254,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             let panel=NSOpenPanel();panel.canChooseDirectories=false;panel.allowsMultipleSelection = !new
             // FFmpeg probes the file itself; do not hide uncommon supported formats by extension.
             panel.allowsOtherFileTypes=true
-            panel.message=new ? "Choisis le morceau à travailler." : "Choisis les pistes à ajouter, alignées au début du morceau."
+            panel.message=new ? uiText("Choisis le morceau à travailler.", "Choose a song to work on.") : uiText("Choisis les pistes à ajouter, alignées au début du morceau.", "Choose tracks to add at the start of the song.")
             panel.beginSheetModal(for:window){[weak self] answer in
                 guard let self=self,answer == .OK else{return}
                 self.importFiles(panel.urls,new:new,prepare:prepare)
@@ -261,7 +263,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     }
     func importFiles(_ urls:[URL],new:Bool,prepare:Bool=false) {
         guard !urls.isEmpty else{return}
-        busy=true;audio.pause();notice="Import des fichiers audio…";sendState()
+        busy=true;audio.pause();notice=uiText("Import des fichiers audio…", "Importing audio files…");sendState()
         let current=project,currentRoot=root
         let importedTitle=pendingImportTitle,importedURL=pendingSourceURL,artwork=pendingArtwork,metadata=pendingMusicMetadata
         pendingImportTitle=nil;pendingSourceURL="";pendingArtwork=nil;pendingMusicMetadata="{}"
@@ -270,6 +272,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 var p=new ? StudioProject() : current
                 let dest:URL
                 if new {
+                    if StudioLanguage.current == "en" { p.settings.language="en";p.settings.voice="Samantha" }
                     if let data=try? Data(contentsOf:self.library.appendingPathComponent("defaults.json")),let settings=try? JSONDecoder().decode(GuideSettings.self,from:data){try settings.validate();p.settings=settings}
                     p.settings=p.settings.forNewSong()
                     p.name=self.safeName(importedTitle ?? urls[0].deletingPathExtension().lastPathComponent)
@@ -277,7 +280,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                     var candidate=self.library.appendingPathComponent(p.name+".bandstudio")
                     if FileManager.default.fileExists(atPath:candidate.path){candidate=self.library.appendingPathComponent(p.name+" "+String(p.id.prefix(6))+".bandstudio")}
                     dest=candidate
-                } else {guard let existing=currentRoot else{throw StudioError("Importe d’abord un morceau.")};dest=existing}
+                } else {guard let existing=currentRoot else{throw StudioError(uiText("Importe d’abord un morceau.", "Import a song first."))};dest=existing}
                 try FileManager.default.createDirectory(at:dest.appendingPathComponent("Audio"),withIntermediateDirectories:true)
                 for u in urls {
                     // Decode to native PCM once: inference and playback use the same exact timeline.
@@ -298,7 +301,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                         try self.load(dest,prepareGuides:!new)
                         if new && prepare {try self.prepareAll([:])}
                         else if new {try self.calibrateImportedSong()}
-                        else {self.notice="Pistes importées.";self.sendState()}
+                        else {self.notice=uiText("Pistes importées.", "Tracks imported.");self.sendState()}
                     }
                 }
             } catch {DispatchQueue.main.async{self.busy=false;self.notice=error.localizedDescription;self.sendState()}}
@@ -313,7 +316,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     @objc func openProject() {
         perform {
             try requireIdle();let panel=NSOpenPanel();panel.canChooseDirectories=true;panel.canChooseFiles=true
-            panel.allowedFileTypes=["bandstudio","rpp"];panel.directoryURL=library;panel.message="Ouvre un projet BandStudio ou importe les pistes audio, régions et repères d’un projet REAPER."
+            panel.allowedFileTypes=["bandstudio","rpp"];panel.directoryURL=library;panel.message=uiText("Ouvre un projet BandStudio ou importe les pistes audio, régions et repères d’un projet REAPER.", "Open a BandStudio project or import the tracks, regions and markers from a REAPER project.")
             panel.beginSheetModal(for:window){[weak self] answer in
                 guard let self=self,answer == .OK,let url=panel.url else{return}
                 self.perform{if url.pathExtension.lowercased()=="rpp"{try self.importRPP(url)}else{try self.load(url)}}
@@ -321,15 +324,15 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         }
     }
     func runAnalysis(_ kind:String,model:String,language:String="auto",quality:String="standard",reanalyze:Bool=false,chordSource:String="",completion:(() throws -> Void)?=nil) throws {
-        guard ["grid","structure","separate","drumsep","lyrics","lyricscorrect","chords","drums"].contains(kind),["htdemucs","htdemucs_6s","htdemucs_ft"].contains(model) else {throw StudioError("Traitement inconnu.")}
-        if !reanalyze && project.analysisDone(kind) {notice="Analyse déjà disponible et résultat protégé. Les corrections et validations sont conservées.";sendState();try completion?();return}
-        if kind == "grid" && project.gridLocked {throw StudioError("Le calage est protégé. Décoche « Protéger le calage » dans Click & cues avant de relancer.")}
+        guard ["grid","structure","separate","drumsep","lyrics","lyricscorrect","chords","drums"].contains(kind),["htdemucs","htdemucs_6s","htdemucs_ft"].contains(model) else {throw StudioError(uiText("Traitement inconnu.", "Unknown task."))}
+        if !reanalyze && project.analysisDone(kind) {notice=uiText("Analyse déjà disponible et résultat protégé. Les corrections et validations sont conservées.", "Analysis already exists and is protected. Your corrections and approvals have been kept.");sendState();try completion?();return}
+        if kind == "grid" && project.gridLocked {throw StudioError(uiText("Le calage est protégé. Décoche « Protéger le calage » dans Click & cues avant de relancer.", "Timing is locked. Clear Protect timing in the metronome settings before running detection again."))}
         let desired=["lyrics","lyricscorrect"].contains(kind) ? (project.tracks.contains{$0.role=="vocal_lead"} ? "vocal_lead" : "vocals") : (["drums","drumsep"].contains(kind) ? "drums" : "source")
-        guard let root=root,let source=project.tracks.first(where:{$0.role==desired}) ?? (["drums","drumsep"].contains(kind) ? nil : project.tracks.first(where:{$0.role == "source"})) else {throw StudioError(["drums","drumsep"].contains(kind) ? "Sépare d’abord une piste batterie." : "Importe d’abord un morceau.")}
-        if !chordSource.isEmpty && (kind != "chords" || project.chordReference?.sources.contains(where:{$0.url==chordSource}) != true) {throw StudioError("Choisis une grille trouvée pour ce morceau.")}
+        guard let root=root,let source=project.tracks.first(where:{$0.role==desired}) ?? (["drums","drumsep"].contains(kind) ? nil : project.tracks.first(where:{$0.role == "source"})) else {throw StudioError(["drums","drumsep"].contains(kind) ? uiText("Sépare d’abord une piste batterie.", "Separate a drum track first.") : uiText("Importe d’abord un morceau.", "Import a song first."))}
+        if !chordSource.isEmpty && (kind != "chords" || project.chordReference?.sources.contains(where:{$0.url==chordSource}) != true) {throw StudioError(uiText("Choisis une grille trouvée pour ce morceau.", "Choose a chart found for this song."))}
         try startJob(kind,input:project.audioURL(source,root:root),arguments:["--model",model,"--language",language,"--quality",quality]+(reanalyze ? ["--reanalyze"] : [])+(chordSource.isEmpty ? [] : ["--chord-source",chordSource])) {result in
             if ["lyrics","lyricscorrect","chords","drums"].contains(kind) {try self.applyTextAnalysis(kind == "lyricscorrect" ? "lyrics" : kind,result:result)}
-            else{try self.applyAnalysis(kind,result:result,reanalyze:reanalyze);self.notice="Analyse terminée. Vérifie les nouvelles propositions à l’écoute."}
+            else{try self.applyAnalysis(kind,result:result,reanalyze:reanalyze);self.notice=uiText("Analyse terminée. Vérifie les nouvelles propositions à l’écoute.", "Analysis complete. Listen to check the new suggestions.")}
             try completion?()
         }
     }
@@ -346,11 +349,11 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             project.applySections(try JSONDecoder().decode([Section].self,from:raw))
         } else {
             var newTracks:[Track]=[]
-            let names=["vocals":"Chant","drums":"Batterie","bass":"Basse","guitar":"Guitare","piano":"Piano","other":"Autres instruments","drum_kick":"Grosse caisse","drum_snare":"Caisse claire","drum_toms":"Toms","drum_cymbals":"Cymbales et charleston"]
+            let names:[String:String]=["vocals":uiText("Chant", "Vocals"),"drums":uiText("Batterie", "Drums"),"bass":uiText("Basse", "Bass"),"guitar":uiText("Guitare", "Guitar"),"piano":"Piano","other":uiText("Autres instruments", "Other instruments"),"drum_kick":uiText("Grosse caisse", "Kick"),"drum_snare":uiText("Caisse claire", "Snare"),"drum_toms":"Toms","drum_cymbals":uiText("Cymbales et charleston", "Cymbals and hi-hat")]
             for item in object["tracks"] as? [[String:String]] ?? [] {
                 guard let path=item["path"],let role=item["role"] else{continue}
                 let source=URL(fileURLWithPath:path).resolvingSymlinksInPath()
-                guard source.path.hasPrefix(result.deletingLastPathComponent().resolvingSymlinksInPath().path+"/") else {throw StudioError("Résultat audio invalide.")}
+                guard source.path.hasPrefix(result.deletingLastPathComponent().resolvingSymlinksInPath().path+"/") else {throw StudioError(uiText("Résultat audio invalide.", "Invalid audio result."))}
                 let relative="Audio/"+UUID().uuidString+"-"+role+".wav"
                 try FileManager.default.copyItem(at:source,to:root.appendingPathComponent(relative))
                 let (duration,peaks)=try inspectAudio(root.appendingPathComponent(relative))
@@ -359,8 +362,8 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 if kind=="drumsep",let old=project.tracks.first(where:{$0.role==role}){track.id=old.id;track.gain=old.gain;track.pan=old.pan;track.muted=old.muted;track.solo=old.solo}
                 newTracks.append(track)
             }
-            guard !newTracks.isEmpty else{throw StudioError("Aucune piste produite.")}
-            if kind=="drumsep",Set(newTracks.map(\.role)) != Set(["drum_kick","drum_snare","drum_toms","drum_cymbals"]) {throw StudioError("Séparation de batterie incomplète.")}
+            guard !newTracks.isEmpty else{throw StudioError(uiText("Aucune piste produite.", "No tracks produced."))}
+            if kind=="drumsep",Set(newTracks.map(\.role)) != Set(["drum_kick","drum_snare","drum_toms","drum_cymbals"]) {throw StudioError(uiText("Séparation de batterie incomplète.", "Drum separation incomplete."))}
             if kind == "drumsep" {project.tracks=project.tracks.filter{!$0.role.hasPrefix("drum_")}+newTracks}
             else {project.tracks=project.tracks.filter{$0.role == "source" || $0.role == "take" || $0.role.hasPrefix("guide_")}+newTracks}
             try audio.load(project,root:root);audio.mode="mix";audio.applyMix()
@@ -373,7 +376,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         let panel=NSSavePanel();panel.allowedFileTypes=["wav"];panel.nameFieldStringValue=project.name+" - mix.wav"
         panel.beginSheetModal(for:window){[weak self] answer in
             guard let self=self,answer == .OK,let url=panel.url else{return}
-            self.busy=true;self.notice="Export du mix…";self.sendState()
+            self.busy=true;self.notice=uiText("Export du mix…", "Exporting mix…");self.sendState()
             let start=self.audio.loop ? self.audio.loopStart : 0,end=self.audio.loop ? self.audio.loopEnd : self.project.duration
             DispatchQueue.global(qos:.userInitiated).async {
                 let temporary=url.deletingLastPathComponent().appendingPathComponent(".bandstudio-export-"+UUID().uuidString+".wav")
@@ -382,14 +385,14 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                     if FileManager.default.fileExists(atPath:url.path) {
                         _ = try FileManager.default.replaceItemAt(url,withItemAt:temporary)
                     } else {try FileManager.default.moveItem(at:temporary,to:url)}
-                    DispatchQueue.main.async{self.busy=false;self.notice="Export audio terminé.";self.sendState()}
+                    DispatchQueue.main.async{self.busy=false;self.notice=uiText("Export audio terminé.", "Audio export complete.");self.sendState()}
                 }catch{DispatchQueue.main.async{self.busy=false;self.notice=error.localizedDescription;self.sendState()}}
             }
         }
     }
     func exportCues() throws {
         guard root != nil else{return}
-        let panel=NSSavePanel();panel.allowedFileTypes=["csv"];panel.nameFieldStringValue=project.name+" - repères.csv"
+        let panel=NSSavePanel();panel.allowedFileTypes=["csv"];panel.nameFieldStringValue=project.name+uiText(" - repères.csv", " - markers.csv")
         panel.beginSheetModal(for:window){[weak self] result in
             guard let self=self,result == .OK,let url=panel.url else{return}
             self.perform {
@@ -398,7 +401,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 rows += self.project.sections.map{"section,\($0.start),\($0.end),"+q($0.name)}
                 rows += self.project.cues.map{"cue,\($0.time),\($0.time),"+q($0.name)}
                 try rows.joined(separator:"\n").write(to:url,atomically:true,encoding:.utf8)
-                self.notice="Repères exportés.";self.sendState()
+                self.notice=uiText("Repères exportés.", "Markers exported.");self.sendState()
             }
         }
     }
@@ -410,12 +413,17 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         if supportCommand(command,args){return}
         if command != "ready" {StudioDiagnostics.shared.event("command",["command":command,"playing":audio.running,"position":audio.current(),"busy":busy])}
         perform {
+            if command == "uiLanguage", let language=args["language"] as? String, ["fr","en"].contains(language) {
+                UserDefaults.standard.set(language, forKey:"BandStudioUILanguage")
+                notice = language == "en" ? "Restart BandStudio to use English." : "Redémarre BandStudio pour utiliser le français."
+                return
+            }
             if command == "artwork" {try artworkCommand(args);return}
             if command == "ready" {sendState();sendUpdate();try startQueue();send(queueState);if automaticUpdates{checkUpdates()};return}
             if command == "import" {chooseAudio(new:true,prepare:args["prepare"] as? Bool ?? true);return}
             if command == "open" {openProject();return}
             if ["bandpilot","bridge","studioControl","record","newSession","captureSettings"].contains(command) {
-                throw StudioError("BandStudio prépare les morceaux. L’enregistrement se poursuit dans REAPER.")
+                throw StudioError(uiText("BandStudio prépare les morceaux. L’enregistrement se poursuit dans REAPER.", "Prepare the song in BandStudio and continue recording in REAPER."))
             }
             if command == "audioSettings" {NSWorkspace.shared.open(URL(string:"x-apple.systempreferences:com.apple.Sound-Settings.extension")!);return}
             if ["renameProject","deleteProject","restoreProject","projectArtwork"].contains(command) {try catalogCommand(command,args);return}
@@ -423,31 +431,31 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 guard let path=args["path"] as? String,projectList().contains(where:{$0["path"] == path}) else{return}
                 try load(URL(fileURLWithPath:path));return
             }
-            guard m["projectID"] as? String == project.id else {throw StudioError("Le projet a changé. Recommence ton action.")}
+            guard m["projectID"] as? String == project.id else {throw StudioError(uiText("Le projet a changé. Recommence ton action.", "The project has changed. Try again."))}
             if command == "chordSourceOpen" {
                 guard let link=args["url"] as? String,project.chordReference?.sources.contains(where:{$0.url==link}) == true,
-                      let url=URL(string:link),url.scheme=="https",url.host != nil,url.user==nil,url.password==nil else{throw StudioError("Source d’accords invalide.")}
-                guard NSWorkspace.shared.open(url) else{throw StudioError("Impossible d’ouvrir la grille.")};return
+                      let url=URL(string:link),url.scheme=="https",url.host != nil,url.user==nil,url.password==nil else{throw StudioError(uiText("Source d’accords invalide.", "Invalid chord source."))}
+                guard NSWorkspace.shared.open(url) else{throw StudioError(uiText("Impossible d’ouvrir la grille.", "Could not open the chart."))};return
             }
             if command == "referenceSearch" {
                 guard root != nil,let kind=args["kind"] as? String,["chords","lyrics"].contains(kind),
-                      let query=args["query"] as? String,!query.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else{throw StudioError("Précise le titre du morceau.")}
+                      let query=args["query"] as? String,!query.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else{throw StudioError(uiText("Précise le titre du morceau.", "Enter the song title."))}
                 let target=try ChordProvider.searchURL(query:query,kind:kind,provider:args["provider"] as? String ?? "")
-                guard NSWorkspace.shared.open(target) else{throw StudioError("Impossible d’ouvrir le navigateur.")}
+                guard NSWorkspace.shared.open(target) else{throw StudioError(uiText("Impossible d’ouvrir le navigateur.", "Could not open the browser."))}
                 return
             }
             if command == "cancel" {transportGeneration += 1;job?.terminate();job=nil;return}
             if command == "reveal" {if let root=root{NSWorkspace.shared.activateFileViewerSelecting([root])};return}
-            if busy && job == nil {throw StudioError("Patiente pendant l’import ou l’export audio.")}
+            if busy && job == nil {throw StudioError(uiText("Patiente pendant l’import ou l’export audio.", "Wait for audio import or export to finish."))}
             if busy && !["stop","seek","play","loop","showExport","save"].contains(command) {
-                throw StudioError("Termine ou annule le traitement avant de modifier la préparation.")
+                throw StudioError(uiText("Termine ou annule le traitement avant de modifier la préparation.", "Finish or cancel the task before editing the preparation."))
             }
-            if recordPending && !["stop","studioControl"].contains(command) {throw StudioError("Termine l’autorisation du microphone avant de continuer.")}
-            if recorder.running && !["stop","record","studioControl"].contains(command) {throw StudioError("Arrête la prise avant cette modification.")}
+            if recordPending && !["stop","studioControl"].contains(command) {throw StudioError(uiText("Termine l’autorisation du microphone avant de continuer.", "Finish granting microphone access first."))}
+            if recorder.running && !["stop","record","studioControl"].contains(command) {throw StudioError(uiText("Arrête la prise avant cette modification.", "Stop recording before making this change."))}
             switch command {
             case "creative":try creativeTask(args)
             case "captureSettings":try setCapture(args)
-            case "newSession":try newSession(args["name"] as? String ?? "Répétition")
+            case "newSession":try newSession(args["name"] as? String ?? uiText("Répétition", "Rehearsal"))
 
             case "play":if audio.running{audio.pause()}else{transportOrigin=audio.position;try withGuides(afterPreparation{try self.audio.play()})}
             case "stop":transportGeneration += 1;recordPending=false;recordRequest="";if recorder.running{try stopRecord()}else{audio.pause();audio.position=audio.loop ? audio.loopStart : 0}
@@ -460,9 +468,9 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 let value=try number(args,"value",range:-12...12);audio.pitch=Float(value);audio.configureTimeEffects();try savePlayback()
             case "mode":
                 guard let mode=args["value"] as? String,Listening.valid(mode) else{return}
-                if mode == "original" && !project.tracks.contains(where:{$0.role == "source"}){throw StudioError("Ce projet ne contient pas de piste originale.")}
-                if mode != "original" && !project.tracks.contains(where:{$0.role != "source"}){throw StudioError("Sépare les instruments ou ajoute des pistes pour utiliser le mix.")}
-                if let instrument=Listening.target(mode),!project.tracks.contains(where:{Listening.matches($0.role,instrument)}){throw StudioError("Sépare cet instrument ou ajoute sa piste avant d’utiliser ce mode.")}
+                if mode == "original" && !project.tracks.contains(where:{$0.role == "source"}){throw StudioError(uiText("Ce projet ne contient pas de piste originale.", "This project has no original track."))}
+                if mode != "original" && !project.tracks.contains(where:{$0.role != "source"}){throw StudioError(uiText("Sépare les instruments ou ajoute des pistes pour utiliser le mix.", "Separate the instruments or add tracks to use the mix."))}
+                if let instrument=Listening.target(mode),!project.tracks.contains(where:{Listening.matches($0.role,instrument)}){throw StudioError(uiText("Sépare cet instrument ou ajoute sa piste avant d’utiliser ce mode.", "Separate this instrument or add its track before using this mode."))}
                 audio.mode=mode;audio.applyMix();try savePlayback()
             case "loop":try audio.configureLoop(on:args["on"] as? Bool ?? false,start:number(args,"start",range:0...project.duration),end:number(args,"end",range:0...project.duration))
             case "track":
@@ -481,9 +489,9 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 audio.project=project;audio.applyMix();try changed()
             case "section":
                 let start=try number(args,"start",range:0...project.duration),end=try number(args,"end",range:0...project.duration)
-                guard end > start,let name=args["name"] as? String,!name.trimmingCharacters(in:.whitespaces).isEmpty else {throw StudioError("Donne un nom et une plage valide à la section.")}
+                guard end > start,let name=args["name"] as? String,!name.trimmingCharacters(in:.whitespaces).isEmpty else {throw StudioError(uiText("Donne un nom et une plage valide à la section.", "Enter a section name and a valid range."))}
                 let id=args["id"] as? String ?? UUID().uuidString
-                guard !project.sections.contains(where:{$0.id != id && $0.start < end && $0.end > start}) else{throw StudioError("Cette section chevauche une autre section. Ajuste ses limites.")}
+                guard !project.sections.contains(where:{$0.id != id && $0.start < end && $0.end > start}) else{throw StudioError(uiText("Cette section chevauche une autre section. Ajuste ses limites.", "This section overlaps another one. Adjust its boundaries."))}
                 remember();project.sections.removeAll{$0.id == id}
                 project.sections.append(Section(id:id,start:start,end:end,name:String(name.prefix(120)),locked:args["locked"] as? Bool ?? true,origin:"manual",callText:args["callText"] as? String,announce:args["announce"] as? Bool))
                 project.sections.sort{$0.start < $1.start};try changed()
@@ -496,7 +504,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 project.cues.append(Cue(id:id,time:time,name:String(name.prefix(160)),callText:args["callText"] as? String,announce:args["announce"] as? Bool));project.cues.sort{$0.time < $1.time};try changed()
             case "deleteCue":remember();project.cues.removeAll{$0.id == args["id"] as? String};try changed()
             case "notes":remember();project.notes=String((args["value"] as? String ?? "").prefix(20000));try changed()
-            case "save":try save();notice="Projet enregistré.";sendState()
+            case "save":try save();notice=uiText("Projet enregistré.", "Project saved.");sendState()
             case "undo","redo":
                 try requireIdle()
                 if command == "undo",let previous=history.popLast(){future.append(project);project=previous}
@@ -511,33 +519,33 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             case "moveMarker","reviewMarker":try editMarker(args,review:command=="reviewMarker")
             case "audition":
                 let start=try number(args,"start",range:0...project.duration),end=try number(args,"end",range:0...project.duration)
-                guard end>start+0.05 else{throw StudioError("Choisis un passage à écouter.")}
+                guard end>start+0.05 else{throw StudioError(uiText("Choisis un passage à écouter.", "Choose a passage to play."))}
                 audio.pause();audio.loop=true;audio.loopStart=start;audio.loopEnd=end;audio.position=start
                 try withGuides(afterPreparation{try self.audio.play(withCount:false)})
             case "settings":try settingsCommand(args)
             case "saveDefaults":
                 try JSONEncoder().encode(project.settings).write(to:library.appendingPathComponent("defaults.json"),options:.atomic)
-                notice="Les futurs imports utiliseront les réglages actuels de ce morceau.";sendState()
+                notice=uiText("Les futurs imports utiliseront les réglages actuels de ce morceau.", "Future imports will use this song’s current settings.");sendState()
             case "setlist":try updateSetlist(args)
             case "drumHit":try editDrum(args)
             case "deleteTrack":
                 guard let id=args["id"] as? String,let t=project.tracks.first(where:{$0.id==id}),!t.role.hasPrefix("guide_") else{return}
-                guard project.tracks.filter({!$0.role.hasPrefix("guide_")}).count>1 else{throw StudioError("Conserve au moins une piste audio dans le morceau.")}
+                guard project.tracks.filter({!$0.role.hasPrefix("guide_")}).count>1 else{throw StudioError(uiText("Conserve au moins une piste audio dans le morceau.", "Keep at least one audio track in the song."))}
                 remember();project.tracks.removeAll{$0.id==id}
                 project.sections=project.sections.compactMap{s in var x=s;x.end=min(x.end,self.project.duration);return x.start<x.end ? x:nil}
                 project.cues.removeAll{$0.time>self.project.duration};project.beats.removeAll{$0>self.project.duration}
                 project.lyrics.removeAll{$0.end>self.project.duration};project.chords.removeAll{$0.end>self.project.duration};project.drumHits.removeAll{$0.time>self.project.duration}
                 try reloadAudio();try changed()
-            case "guides":try requireIdle();audio.pause();try withGuides(force:true){self.notice="Les guides ont été recalculés.";self.sendState()}
+            case "guides":try requireIdle();audio.pause();try withGuides(force:true){self.notice=uiText("Les guides ont été recalculés.", "Guides recalculated.");self.sendState()}
             case "validateProject":
-                guard args["reviewed"] as? Bool == true else {throw StudioError("Confirme l’écoute et les repères dans Valider & envoyer.")}
+                guard args["reviewed"] as? Bool == true else {throw StudioError(uiText("Confirme l’écoute et les repères dans Valider & envoyer.", "Confirm your listening review and markers in Review & send."))}
                 try validatePreparation()
             case "reviewStructure":try reviewStructure(args)
             case "dismissStructure":
                 try requireIdle()
-                guard let proposal=project.structureProposal,args["proposalID"] as? String == proposal.id else {throw StudioError("Cette proposition n’est plus disponible.")}
+                guard let proposal=project.structureProposal,args["proposalID"] as? String == proposal.id else {throw StudioError(uiText("Cette proposition n’est plus disponible.", "This suggestion is no longer available."))}
                 if let root=root {try StudioLearning.keepStructure(root,proposal)}
-                project.structureProposal=nil;try changed(invalidate:false);notice="Parcours actuel conservé."
+                project.structureProposal=nil;try changed(invalidate:false);notice=uiText("Parcours actuel conservé.", "Current arrangement kept.")
             case "exportStructure":try exportStructure(args)
             case "applyStructure":try applyStructure(args)
             case "reaper":try exportRPP(open:args["open"] as? Bool ?? false,preflight:args["preflight"] as? Bool == true)
@@ -548,7 +556,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             case "phone":try phoneCommand(args)
             case "midi":try startJob("midi"){result in
                 let obj=try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any] ?? [:]
-                self.lastExport=obj["path"] as? String ?? "";self.notice="Fichier MIDI de batterie créé. Afficher l’export permet de le retrouver."
+                self.lastExport=obj["path"] as? String ?? "";self.notice=uiText("Fichier MIDI de batterie créé. Afficher l’export permet de le retrouver.", "Drum MIDI file created. Choose Show export to find it.")
             }
             default:break
             }
@@ -556,7 +564,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         }
     }
     func number(_ args:[String:Any],_ key:String,range:ClosedRange<Double>) throws -> Double {
-        guard let value=args[key] as? Double,value.isFinite,range.contains(value) else{throw StudioError("Valeur invalide : "+key)};return value
+        guard let value=args[key] as? Double,value.isFinite,range.contains(value) else{throw StudioError(uiText("Valeur invalide : ", "Invalid value: ")+key)};return value
     }
     func webView(_ webView:WKWebView,didFinish navigation:WKNavigation!){sendState()}
     func webView(_ webView:WKWebView,decidePolicyFor action:WKNavigationAction,decisionHandler:@escaping(WKNavigationActionPolicy)->Void) {
@@ -576,8 +584,8 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     func applicationShouldTerminate(_ sender:NSApplication)->NSApplication.TerminateReply {
         if recorder.running {do{try stopRecord()}catch{notice=error.localizedDescription;sendState();return .terminateCancel}}
         if busy {
-            let alert=NSAlert();alert.messageText="Un traitement est en cours";alert.informativeText="Arrêter le traitement et quitter ? Le projet enregistré sera conservé."
-            alert.addButton(withTitle:"Continuer à travailler");alert.addButton(withTitle:"Arrêter et quitter")
+            let alert=NSAlert();alert.messageText=uiText("Un traitement est en cours", "A task is running");alert.informativeText=uiText("Arrêter le traitement et quitter ? Le projet enregistré sera conservé.", "Stop the task and quit? Your saved project will be kept.")
+            alert.addButton(withTitle:uiText("Continuer à travailler", "Keep working"));alert.addButton(withTitle:uiText("Arrêter et quitter", "Stop and quit"))
             if alert.runModal() != .alertSecondButtonReturn{return .terminateCancel}
         }
         do{try save()}catch{notice=error.localizedDescription;sendState();return .terminateCancel}

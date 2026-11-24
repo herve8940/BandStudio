@@ -14,19 +14,19 @@
 
 | Your computer | Getting started |
 | --- | --- |
-| **Windows 11 x64** | Extract the entire ZIP to a writable folder, then open **BandStudio.exe**. Python and FFmpeg are included. WebView2 and .NET Framework 4.8 are required. Install optional engines in **Réglages → Analyses locales**. |
-| **An existing Intel or Apple Silicon Mac installation** | Open **Réglages** and check for updates. Quit BandStudio after the download finishes, then reopen it. |
+| **Windows 11 x64** | Extract the entire ZIP to a writable folder, then open **BandStudio.exe**. Python and FFmpeg are included. WebView2 and .NET Framework 4.8 are required. Install optional engines in **Settings → Local analysis**. |
+| **An existing Intel or Apple Silicon Mac installation** | Open **Settings** and check for updates. Quit BandStudio after the download finishes, then reopen it. |
 | **First-time Mac setup** | Building from source requires an existing ReaCue engine and prepared Python environments. A standalone installer for a new Mac is not currently available. [Requirements and commands](docs/BANDSTUDIO.md#macos) |
 
 **Version 1.1.0, 24 November 2026**, opens directly in the editor and optimizes track waveform calculation. Update packages preserve your projects and settings. [Release notes in English](docs/RELEASE_2026-11-24.md#english) · [Changelog](CHANGELOG.md)
 
 ### Prepare your first song
 
-The control names below match the labels in the app.
+Choose **English** in **Settings → Interface language**, then quit and reopen BandStudio.
 
-1. Import your audio file in **Mes morceaux**. Leave **Préparer automatiquement après l’import** selected to use the installed engines. For several files, open **Préparer une série** and start the queue.
-2. In **Éditeur du morceau**, solo a track, loop a section or slow down playback. Listen to flagged passages before adjusting a marker, a lyric or a chord.
-3. Open **Fiche morceau** to export a PDF with chords and lyrics by bar. In **Projet REAPER**, export the tracks and media to continue working in REAPER.
+1. Import your audio file in **My songs**. Leave **Prepare automatically after import** selected to use the installed engines. For several files, open **Prepare a batch** and start the queue.
+2. In **Song editor**, solo a track, loop a section or slow down playback. Listen to flagged passages before adjusting a marker, a lyric or a chord.
+3. Open **Song sheet** to export a PDF with chords and lyrics by bar. In **REAPER project**, export the tracks and media to continue working in REAPER.
 
 [Visual guide from import to REAPER](https://herve8940.github.io/BandStudio/tutorial.html) · [Song sheet and PDF guide](https://herve8940.github.io/BandStudio/song-sheet.html) · [Full walkthrough](docs/BANDSTUDIO_TUTORIAL_en.md)
 
@@ -40,7 +40,7 @@ Audio processing runs on your computer. Lyrics, chord and artwork lookups use on
 
 ### Help and contributions
 
-Ask rehearsal questions in the [BandStudio Discord](https://discord.gg/5UnQPdMUpR). To report a reproducible issue, include your operating system and the steps you followed. **Aide & Discord** lets you review diagnostic information before you share it. [Support](SUPPORT.md) · [Report an issue](https://github.com/herve8940/BandStudio/issues/new/choose)
+Ask rehearsal questions in the [BandStudio Discord](https://discord.gg/5UnQPdMUpR). To report a reproducible issue, include your operating system and the steps you followed. **Help & Discord** lets you review diagnostic information before you share it. [Support](SUPPORT.md) · [Report an issue](https://github.com/herve8940/BandStudio/issues/new/choose)
 
 The source code uses the [MIT license](LICENSE). Dependencies and models have their own licenses, some with non-commercial terms. [Third-party notices](THIRD_PARTY_NOTICES.md) · [Contributing and running tests](CONTRIBUTING.md) · [Security](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md)
 
@@ -67,6 +67,8 @@ For soundchecks and stage monitoring, see [BandPilot](https://herve8940.github.i
 La version **1.1.0 du 24 novembre 2026** ouvre directement l’éditeur et optimise le calcul des formes d’onde. Les archives de mise à jour préservent les projets et les réglages. [Notes de version](docs/RELEASE_2026-11-24.md) · [Historique](CHANGELOG.md)
 
 ### Préparer ton premier morceau
+
+Pour choisir la langue de l’application, ouvre **Réglages → Langue de l’interface**, choisis **Français** ou **English**, puis quitte et rouvre BandStudio.
 
 1. Dans **Mes morceaux**, importe ton fichier audio. Laisse **Préparer automatiquement après l’import** activé pour utiliser les moteurs installés. Pour plusieurs fichiers, ouvre **Préparer une série** et démarre la file.
 2. Dans **Éditeur du morceau**, isole une piste, boucle une section ou ralentis la lecture. Réécoute les passages signalés avant de corriger un repère, une parole ou un accord.

@@ -10,12 +10,15 @@ import time
 
 ENGINE=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ENGINE))
+from ui_language import ui_text
 os.environ['PYTHONUTF8']='1';os.environ['PYTHONIOENCODING']='utf-8'
 os.environ['PATH']=str(ENGINE/'import-tools')+os.pathsep+os.environ.get('PATH','')
 
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--smoke',type=Path);parser.add_argument('--gui-smoke',type=Path);args=parser.parse_args()
+    from ui_language import startup_language, ENVIRONMENT_KEY
+    os.environ[ENVIRONMENT_KEY] = startup_language()
     if args.smoke:
         from windows.smoke import smoke
         smoke(ENGINE,args.smoke);return
@@ -25,7 +28,7 @@ def main():
     if os.name == 'nt':
         preparation = unblock_bundled_libraries(ENGINE)
         diagnostics.event('startup.libraries', **preparation)
-        print('Préparation des bibliothèques Windows : '+json.dumps(preparation), flush=True)
+        print(ui_text('Préparation des bibliothèques Windows : ', 'Preparing Windows libraries: ')+json.dumps(preparation), flush=True)
         load_clr()
         from importlib.metadata import version
         diagnostics.event('startup.clr', pythonnet=version('pythonnet'), clr_loader=version('clr-loader'))
@@ -35,7 +38,7 @@ def main():
     from logging.handlers import RotatingFileHandler
     logging.basicConfig(handlers=[RotatingFileHandler(logroot/'webview.log',maxBytes=1_000_000,backupCount=2,encoding='utf-8')],level=logging.INFO)
     api=Api(ENGINE,logroot/'UITestProjects' if args.gui_smoke else None)
-    window=webview.create_window('BandStudio · Préparation pour REAPER',str(ENGINE/'web/index.html'),js_api=api,width=1100,height=720,min_size=(720,440),maximized=True,background_color='#0b1121')
+    window=webview.create_window(ui_text('BandStudio · Préparation pour REAPER', 'BandStudio · Song preparation for REAPER'),str(ENGINE/'web'/ui_text('index.html', 'index.en.html')),js_api=api,width=1100,height=720,min_size=(720,440),maximized=True,background_color='#0b1121')
     api._window=window
     if not args.gui_smoke:window.events.loaded+=api._loaded
     window.events.closing+=api._closing
@@ -50,6 +53,9 @@ def main():
                     if result and result.get('bridge')=='function':break
                     time.sleep(.1)
                 if result['title']!='BandStudio' or result['bridge']!='function' or result['sections']<5:raise RuntimeError(str(result))
+                language = os.environ[ENVIRONMENT_KEY]
+                assert window.evaluate_js("document.documentElement.lang") == language
+                assert window.evaluate_js("document.querySelector('.rail [data-view=library]').textContent") == ui_text('Mes morceaux', 'My songs')
                 api._notice="Interface Windows connectée"
                 window.evaluate_js("send('ready')")
                 for _ in range(100):

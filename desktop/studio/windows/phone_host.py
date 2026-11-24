@@ -1,3 +1,4 @@
+from ui_language import ui_text
 import copy
 import json
 from pathlib import Path
@@ -16,7 +17,7 @@ class PhoneSession:
         if self.process.poll() is None:self.process.terminate()
     def update(self,host):
         if self.process.poll() is not None:
-            host._phone=None;host._send(dict(type='phone',active=False,error='Le prompteur réseau s’est arrêté.'));return
+            host._phone=None;host._send(dict(type='phone',active=False,error=ui_text('Le prompteur réseau s’est arrêté.', 'The network teleprompter stopped.')));return
         if time.monotonic()-self.pulse<.25:return
         self.pulse=time.monotonic()
         if self.revision!=host._revision:

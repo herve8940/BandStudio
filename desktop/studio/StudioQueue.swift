@@ -30,7 +30,7 @@ extension StudioApp {
             DispatchQueue.main.async { [weak self] in
                 guard let self=self,!self.quitting,self.queueProcess === process else{return}
                 self.queueProcess=nil;self.queueInput=nil
-                self.queueState=["type":"batchQueue","enabled":false,"running":false,"items":self.queueState["items"] ?? [],"status":"File arrêtée","message":"Les étapes terminées sont conservées. Clique sur Actualiser la file pour la reconnecter."]
+                self.queueState=["type":"batchQueue","enabled":false,"running":false,"items":self.queueState["items"] ?? [],"status":uiText("File arrêtée", "Queue stopped"),"message":uiText("Les étapes terminées sont conservées. Clique sur Actualiser la file pour la reconnecter.", "Completed steps have been kept. Click Refresh queue to reconnect.")]
                 self.send(self.queueState)
             }
         }
@@ -49,7 +49,7 @@ extension StudioApp {
     func queueCommand(_ args:[String:Any]) throws {
         if args["action"] as? String == "files" {
             let panel=NSOpenPanel();panel.canChooseDirectories=false;panel.allowsMultipleSelection=true
-            panel.allowsOtherFileTypes=true;panel.message="Choisis les morceaux à ajouter à la file. Un projet sera créé par fichier."
+            panel.allowsOtherFileTypes=true;panel.message=uiText("Choisis les morceaux à ajouter à la file. Un projet sera créé par fichier.", "Choose songs for the queue. Each file gets its own project.")
             panel.beginSheetModal(for:window) { [weak self] answer in
                 guard let self=self,answer == .OK,!panel.urls.isEmpty else{return}
                 self.perform {try self.queueSend(["action":"add","kind":"file","sources":panel.urls.map(\.path),"options":args["options"] ?? [:]])}

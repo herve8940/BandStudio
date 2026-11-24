@@ -3,7 +3,7 @@ import Foundation
 // Keep this schema aligned with cue_feedback.py. Files stay inside the project.
 enum StudioLearning {
     static func keepStructure(_ root:URL,_ proposal:StructureProposal) throws {
-        guard UUID(uuidString:proposal.id) != nil else {throw StudioError("Identifiant de proposition invalide.")}
+        guard UUID(uuidString:proposal.id) != nil else {throw StudioError(uiText("Identifiant de proposition invalide.", "Invalid suggestion ID."))}
         let data=try JSONEncoder().encode(proposal)
         let value=try JSONSerialization.jsonObject(with:data) as! [String:Any]
         let id=UUID().uuidString

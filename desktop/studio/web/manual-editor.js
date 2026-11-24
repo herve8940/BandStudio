@@ -29,33 +29,33 @@ function musicalGrid(project) {
   const i=Math.max(0,Math.min(beats.length-2,lo-1));
   return i-anchor+(t-beats[i])/(beats[i+1]-beats[i]);
  }
- const label=t=>{const c=coordinate(t),b=Math.floor((c+1e-7)/meter);return c<-.0001?'Levée':'Mesure '+(b+1)+' · temps '+(c-b*meter+1).toFixed(2).replace(/\.00$/,'');};
+ const label=t=>{const c=coordinate(t),b=Math.floor((c+1e-7)/meter);return c<-.0001?uiText('Levée'):uiText('Mesure ')+(b+1)+uiText(' · temps ')+(c-b*meter+1).toFixed(2).replace(/\.00$/,'');};
  return {meter,detected,at,coordinate,label,snap:(t,unit)=>at(Math.round(coordinate(t)/unit)*unit)};
 }
 
 let editorSong='',editorFocus=null,editorPending=null,zoomStart=0,zoomSpan=0;
 const zoomBar=node('div','editor-zoom');
-zoomBar.title='Ctrl + molette (ou Cmd + molette) sur une piste : zoom autour du pointeur';
-zoomBar.innerHTML='<strong>ÉCOUTER & AJUSTER</strong><button id="zoomAll">Tout</button><button id="zoomOut" aria-label="Dézoomer">−</button><button id="zoomIn" aria-label="Zoomer">＋</button><span id="zoomLabel"></span><label class="editor-follow"><input id="zoomFollow" type="checkbox" checked>Suivre la lecture</label><label>Calage <select id="markerSnap"><option value="bar">Mesure</option><option value="beat">Temps</option></select></label><input id="zoomPosition" type="range" min="0" max="1000" value="0" aria-label="Parcourir le morceau">';
+zoomBar.title=uiText('Ctrl + molette (ou Cmd + molette) sur une piste : zoom autour du pointeur');
+zoomBar.innerHTML=uiMarkup('<strong>ÉCOUTER & AJUSTER</strong><button id="zoomAll">Tout</button><button id="zoomOut" aria-label="Dézoomer">−</button><button id="zoomIn" aria-label="Zoomer">＋</button><span id="zoomLabel"></span><label class="editor-follow"><input id="zoomFollow" type="checkbox" checked>Suivre la lecture</label><label>Calage <select id="markerSnap"><option value="bar">Mesure</option><option value="beat">Temps</option></select></label><input id="zoomPosition" type="range" min="0" max="1000" value="0" aria-label="Parcourir le morceau">');
 document.querySelector('.workspace-grid').before(zoomBar);
-zoomBar.append(node('small','','Ctrl / Cmd + molette sur les pistes pour zoomer'));
+zoomBar.append(node('small','',uiText('Ctrl / Cmd + molette sur les pistes pour zoomer')));
 const gridSummary=node('p','grid-calibration');
 gridSummary.id='gridCalibration';zoomBar.after(gridSummary);
 const mixer=node('div','editor-mixer');
-const mixerDefs=[['clickGain','Métronome','clickEnabled'],['callsGain','Appels','callsEnabled'],['cuesGain','Cues','speakCues'],['countGain','Décompte','regionCountEnabled']];
+const mixerDefs=[['clickGain',uiText('Métronome'),'clickEnabled'],['callsGain',uiText('Appels'),'callsEnabled'],['cuesGain','Cues','speakCues'],['countGain',uiText('Décompte'),'regionCountEnabled']];
 const previousGains={};
 for(const [key,title] of mixerDefs){
  const group=node('div','editor-mix-channel'),label=node('label','',title),input=node('input'),output=node('output');
  input.type='range';input.min=0;input.max=1.5;input.step=.01;input.id='mix-'+key;input.setAttribute('aria-label','Volume '+title);output.id='mix-value-'+key;
  input.oninput=()=>{output.textContent=Math.round(input.value*100)+' %';};
  input.onchange=()=>send('guideMix',{key,value:Number(input.value)});
- const mute=button('Muet',()=>{const gain=Number(input.value);if(gain>0)previousGains[key]=gain;send('guideMix',{key,value:gain>0?0:previousGains[key]||.8});});
- mute.id='mute-'+key;mute.setAttribute('aria-label','Couper ou rétablir '+title);
+ const mute=button(uiText('Muet'),()=>{const gain=Number(input.value);if(gain>0)previousGains[key]=gain;send('guideMix',{key,value:gain>0?0:previousGains[key]||.8});});
+ mute.id='mute-'+key;mute.setAttribute('aria-label',uiText('Couper ou rétablir ')+title);
  label.append(input);group.append(label,output,mute);mixer.append(group);
 }
 zoomBar.before(mixer);
 const review=node('div','marker-review');
-review.innerHTML='<div class="eyebrow">UN REPÈRE À LA FOIS</div><div class="marker-navigation"><button id="markerPrevious" aria-label="Repère précédent">←</button><select id="markerChoice" aria-label="Repère à vérifier"></select><button id="markerNext" aria-label="Repère suivant">→</button></div><button id="markerName" class="marker-name">Choisir un repère</button><p id="markerPosition"></p><span id="markerStatus" class="marker-status"></span><div class="marker-nudges"><button data-marker-step="-1" data-unit="bar">−1 mesure</button><button data-marker-step="1" data-unit="bar">+1 mesure</button><button data-marker-step="-1" data-unit="beat">−1 temps</button><button data-marker-step="1" data-unit="beat">+1 temps</button></div><button id="markerListen" class="wide">▶ Écouter autour</button><button id="markerValidate" class="primary wide">✓ Valider et suivant</button><p id="markerFeedback" role="status"></p><small id="markerProgress"></small><div class="divider"></div>';
+review.innerHTML=uiMarkup('<div class="eyebrow">UN REPÈRE À LA FOIS</div><div class="marker-navigation"><button id="markerPrevious" aria-label="Repère précédent">←</button><select id="markerChoice" aria-label="Repère à vérifier"></select><button id="markerNext" aria-label="Repère suivant">→</button></div><button id="markerName" class="marker-name">Choisir un repère</button><p id="markerPosition"></p><span id="markerStatus" class="marker-status"></span><div class="marker-nudges"><button data-marker-step="-1" data-unit="bar">−1 mesure</button><button data-marker-step="1" data-unit="bar">+1 mesure</button><button data-marker-step="-1" data-unit="beat">−1 temps</button><button data-marker-step="1" data-unit="beat">+1 temps</button></div><button id="markerListen" class="wide">▶ Écouter autour</button><button id="markerValidate" class="primary wide">✓ Valider et suivant</button><p id="markerFeedback" role="status"></p><small id="markerProgress"></small><div class="divider"></div>');
 document.querySelector('.inspector').prepend(review);
 
 function reviewMarkers(){return [...state.project.sections.map(item=>({kind:'section',item,time:item.start})),...state.project.cues.map(item=>({kind:'cue',item,time:item.time}))].sort((a,b)=>a.time-b.time||a.kind.localeCompare(b.kind));}
@@ -71,7 +71,7 @@ function moveMarker(marker,t){
  if(!marker||state.busy||editorPending)return;
  const previous=marker.kind==='section'?state.project.sections.filter(s=>s.start<marker.item.start).at(-1):null;
  if(!Number.isFinite(t)||t<0||t>state.duration||(marker.kind==='section'&&(t>=marker.item.end-.01||(previous&&t<=previous.start+.01)))){
-  $('markerFeedback').textContent='Cette position dépasse les limites du passage.';return;
+  $('markerFeedback').textContent=uiText('Cette position dépasse les limites du passage.');return;
  }
  editorPending={kind:marker.kind,id:marker.item.id,time:t};
  send('moveMarker',{kind:marker.kind,id:marker.item.id,time:t});renderManualEditor();
@@ -113,20 +113,20 @@ $('zoomPosition').oninput=()=>{zoomStart=Number($('zoomPosition').value)/1000*Ma
 function redrawTimeline(){viewport();renderSections();drawWaves();renderTransport();renderManualEditor();}
 
 function renderManualEditor(){
- gridSummary.textContent=state.project.gridLocked?'Calage manuel protégé':state.project.analysisNote||'';
- gridSummary.classList.toggle('needs-review',!state.project.gridLocked&&/à vérifier|incertain|non confirmées/i.test(gridSummary.textContent));
+ gridSummary.textContent=state.project.gridLocked?uiText('Calage manuel protégé'):uiText(state.project.analysisNote)||'';
+ gridSummary.classList.toggle('needs-review',!state.project.gridLocked&&/à vérifier|incertain|non confirmées|check by ear|unconfirmed|uncertain/i.test(gridSummary.textContent));
  gridSummary.hidden=!state.loaded||!gridSummary.textContent;
  if(editorSong!==state.project.id){editorSong=state.project.id;editorFocus=null;editorPending=null;zoomStart=0;zoomSpan=state.duration;}
  const markers=reviewMarkers();if(!focusMarker()&&markers.length)editorFocus={kind:markers[0].kind,id:markers[0].item.id};
  const current=focusMarker(),index=markers.findIndex(m=>m===undefined?false:m.kind===editorFocus?.kind&&m.item.id===editorFocus?.id),g=musicalGrid(state.project);
  const choices=markers.map((m,i)=>{const o=node('option','',(i+1)+'. '+m.item.name);o.value=i;return o;});$('markerChoice').replaceChildren(...choices);$('markerChoice').value=index;
- $('markerName').textContent=current?.item.name||'Ajoute une section ou un cue';
+ $('markerName').textContent=current?.item.name||uiText('Ajoute une section ou un cue');
  $('markerPosition').textContent=current?g.label(current.time)+' · '+time(current.time,true):'';
- $('markerStatus').textContent=current?.item.reviewed?'✓ Validé':'À vérifier';$('markerStatus').classList.toggle('validated',!!current?.item.reviewed);
- $('markerProgress').textContent=markers.filter(m=>m.item.reviewed).length+' / '+markers.length+' repères validés';
+ $('markerStatus').textContent=current?.item.reviewed?uiText('✓ Validé'):uiText('À vérifier');$('markerStatus').classList.toggle('validated',!!current?.item.reviewed);
+ $('markerProgress').textContent=markers.filter(m=>m.item.reviewed).length+' / '+markers.length+uiText(' repères validés');
  review.querySelectorAll('button,select').forEach(b=>b.disabled=!current||state.busy||!!editorPending);
  const s={...guideDefaults,...state.project.settings};
- for(const [key,,enabled] of mixerDefs){const input=$('mix-'+key),gain=s[key]??s.callsGain;if(document.activeElement!==input)input.value=gain;$('mix-value-'+key).textContent=s[enabled]===false?'Désactivé':Math.round(gain*100)+' %';input.disabled=!state.loaded||state.busy;$('mute-'+key).disabled=input.disabled;$('mute-'+key).setAttribute('aria-pressed',String(gain===0));}
+ for(const [key,,enabled] of mixerDefs){const input=$('mix-'+key),gain=s[key]??s.callsGain;if(document.activeElement!==input)input.value=gain;$('mix-value-'+key).textContent=s[enabled]===false?uiText('Désactivé'):Math.round(gain*100)+' %';input.disabled=!state.loaded||state.busy;$('mute-'+key).disabled=input.disabled;$('mute-'+key).setAttribute('aria-pressed',String(gain===0));}
  const v=viewport();$('zoomLabel').textContent=time(v.start)+' – '+time(v.end);$('zoomPosition').value=state.duration>v.span?1000*v.start/(state.duration-v.span):0;
  zoomBar.querySelectorAll('button,input,select').forEach(b=>b.disabled=!state.loaded||state.busy);
  $('zoomPosition').disabled=!state.loaded||v.span>=state.duration||state.busy;
@@ -148,15 +148,15 @@ renderSections=function(){
  for(const m of reviewMarkers()){
   const item=m.item;if(m.kind==='section'&&item.end>v.start&&item.start<v.end){
    const b=button((item.reviewed?'✓ ':'')+item.name,()=>{selectSection(item);chooseMarker('section',item.id,false);},'section'+(editorFocus?.id===item.id?' selected':''));b.dataset.id=item.id;
-   b.style.left=((Math.max(v.start,item.start)-v.start)/v.span*100)+'%';b.style.width=((Math.min(v.end,item.end)-Math.max(v.start,item.start))/v.span*100)+'%';b.title=item.name+' · '+g.label(item.start)+' · glisser pour déplacer le début';b.ondblclick=()=>openEditor('section',item);attachMarkerDrag(b,m);$('sections').append(b);
+   b.style.left=((Math.max(v.start,item.start)-v.start)/v.span*100)+'%';b.style.width=((Math.min(v.end,item.end)-Math.max(v.start,item.start))/v.span*100)+'%';b.title=item.name+' · '+g.label(item.start)+uiText(' · glisser pour déplacer le début');b.ondblclick=()=>openEditor('section',item);attachMarkerDrag(b,m);$('sections').append(b);
   }else if(m.kind==='cue'){
    if(item.time>=v.start&&item.time<=v.end){const pin=button((item.reviewed?'✓ ':'')+item.name,()=>chooseMarker('cue',item.id),'cue-pin');pin.dataset.id=item.id;pin.style.left=((item.time-v.start)/v.span*100)+'%';pin.title=g.label(item.time);pin.ondblclick=()=>openEditor('cue',item);attachMarkerDrag(pin,m);$('cues').append(pin);}
    const row=node('div','cue-row');row.append(button((item.reviewed?'✓ ':'')+item.name,()=>chooseMarker('cue',item.id)),button('✎',()=>openEditor('cue',item)));$('cueList').append(row);
   }
  }
- if(!state.project.cues.length)$('cueList').append(node('small','','Ajoute un fill, un arrêt ou une reprise.'));
+ if(!state.project.cues.length)$('cueList').append(node('small','',uiText('Ajoute un fill, un arrêt ou une reprise.')));
  const startBar=Math.ceil(g.coordinate(v.start)/g.meter),endBar=Math.floor(g.coordinate(v.end)/g.meter),step=Math.max(1,Math.ceil((endBar-startBar)/10));
- for(let b=startBar;b<=endBar;b+=step){const mark=node('span','ruler-mark',b<0?'Levée':'M'+(b+1));mark.style.left=((g.at(b*g.meter)-v.start)/v.span*100)+'%';$('ruler').append(mark);}
+ for(let b=startBar;b<=endBar;b+=step){const mark=node('span','ruler-mark',b<0?uiText('Levée'):'M'+(b+1));mark.style.left=((g.at(b*g.meter)-v.start)/v.span*100)+'%';$('ruler').append(mark);}
 };
 drawWaves=function(){
  const v=viewport(),g=musicalGrid(state.project);
@@ -186,7 +186,7 @@ window.studioReceive=function(data){
  editorReceive(data);
  if(data.type==='state'){
   const pending=editorPending;editorPending=null;renderManualEditor();
-  if(pending?.review&&data.project.id===editorSong){const markers=reviewMarkers(),done=markers.find(m=>m.kind===pending.kind&&m.item.id===pending.id);if(done?.item.reviewed){const index=markers.indexOf(done),next=[...markers.slice(index+1),...markers.slice(0,index)].find(m=>!m.item.reviewed);if(next)chooseMarker(next.kind,next.item.id);else $('markerFeedback').textContent='Tous les repères sont validés.';}}
+  if(pending?.review&&data.project.id===editorSong){const markers=reviewMarkers(),done=markers.find(m=>m.kind===pending.kind&&m.item.id===pending.id);if(done?.item.reviewed){const index=markers.indexOf(done),next=[...markers.slice(index+1),...markers.slice(0,index)].find(m=>!m.item.reviewed);if(next)chooseMarker(next.kind,next.item.id);else $('markerFeedback').textContent=uiText('Tous les repères sont validés.');}}
  }
 };
 renderManualEditor();

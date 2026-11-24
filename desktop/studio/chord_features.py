@@ -1,4 +1,5 @@
 """Beat-synchronous spectral evidence, independent of chord names and song identity."""
+from ui_language import ui_text, using_english
 import math
 import numpy as np
 
@@ -55,7 +56,7 @@ def peaks(audio,edges,offset=0):
             for pc in range(12):
                 cell[:,pc]+=np.bincount(bins,weights=chroma[pc,keep]*weight,minlength=count)
                 low[:,pc]+=np.bincount(bins,weights=bass[pc,keep]*weight,minlength=count)
-            emit(completed=part+1,total=total,progressLabel=f'Calage de la grille Internet · extrait {part+1} sur {total}')
+            emit(completed=part+1,total=total,progressLabel=(f'Aligning online chart · excerpt {part + 1} of {total}' if using_english() else f'Calage de la grille Internet · extrait {part+1} sur {total}'))
     if not counts.any():return None
     strength/=np.maximum(counts,1)
     cell/=np.maximum(np.linalg.norm(cell,axis=1,keepdims=True),1e-10)

@@ -74,7 +74,7 @@ def build(source, prepare=False):
             calibration=ROOT/'desktop/studio'/name
             if calibration.is_file():shutil.copy2(calibration,engine/calibration.name)
         (engine/'BandStudio_Remote.lua').unlink(missing_ok=True)
-        for name in ('worker.py','analysis_progress.py','services.py','analysis_cache.py','rhythm_quality.py','rhythm_adapter.py','cue_corrector.py','cue_corrector_runtime.py','cue_corrector_bundle.py','chord_provider_defaults.py','cue_feedback.py','structure_review.py','structure_sources.py','song_memory.py','musical_patterns.py','chord_sources.py','lyrics_reference.py','lyrics_alignment.py','chord_alignment.py','chord_features.py','section_evidence.py','chart_sections.py','chord_choice.py','section_functions.py','musical_timing.py','section_grid_rollback.py','listening.py','diagnostics.py','compute.py','catalog.py','artwork.py','updater.py','preparation.py','batch_queue.py','batch_project.py','platform_tools.py','advanced.py','phone.py','creative.py'):
+        for name in ('ui_language.py','worker.py','analysis_progress.py','services.py','analysis_cache.py','rhythm_quality.py','rhythm_adapter.py','cue_corrector.py','cue_corrector_runtime.py','cue_corrector_bundle.py','chord_provider_defaults.py','cue_feedback.py','structure_review.py','structure_sources.py','song_memory.py','musical_patterns.py','chord_sources.py','lyrics_reference.py','lyrics_alignment.py','chord_alignment.py','chord_features.py','section_evidence.py','chart_sections.py','chord_choice.py','section_functions.py','musical_timing.py','section_grid_rollback.py','listening.py','diagnostics.py','compute.py','catalog.py','artwork.py','updater.py','preparation.py','batch_queue.py','batch_project.py','platform_tools.py','advanced.py','phone.py','creative.py'):
             shutil.copy2(ROOT/'desktop/studio'/name,engine/name)
         for name in ('reacue_structure.py','reacue_transcribe.py','reacue_chords.py','reacue_drums.py'):
             shutil.copy2(ROOT/name,engine/name)
@@ -91,7 +91,7 @@ def build(source, prepare=False):
     if (resources / 'web').exists():shutil.rmtree(resources / 'web')
     shutil.copytree(ROOT / 'desktop/studio/web', resources / 'web')
     shutil.copy2(ROOT/'desktop/studio/assets/BandStudio.icns',resources/'BandStudio.icns')
-    for name in ['README.txt','capabilities.json']:
+    for name in ['README.txt','README.en.txt','capabilities.json']:
         shutil.copy2(ROOT/'desktop/studio'/name,resources/name)
     shutil.copy2(ROOT/'THIRD_PARTY_NOTICES.md',resources/'THIRD_PARTY_NOTICES.md')
     (resources / 'studio.json').write_text(json.dumps({'runtime':str(engine),'library':str(BUILD / 'Projects')}))
@@ -103,7 +103,7 @@ def build(source, prepare=False):
     (contents / 'Info.plist').write_bytes(plistlib.dumps(info))
     cache=BUILD / 'swift-module-cache';cache.mkdir(exist_ok=True)
     subprocess.run(['xcrun','swiftc','-O','-whole-module-optimization','-num-threads','4','-target',platform.machine()+'-apple-macosx12.0','-module-cache-path',str(cache),
-                    *[str(ROOT / 'desktop/studio' / f) for f in ['StudioDiagnostics.swift','StudioUpdates.swift','StudioSettings.swift','StudioCore.swift','StudioLearning.swift','StudioApp.swift','StudioWorkflows.swift','StudioQueue.swift','StudioAdvanced.swift','StudioPhone.swift','StudioRecording.swift','main.swift']],
+                    *[str(ROOT / 'desktop/studio' / f) for f in ['StudioLanguage.swift','StudioDiagnostics.swift','StudioUpdates.swift','StudioSettings.swift','StudioCore.swift','StudioLearning.swift','StudioApp.swift','StudioWorkflows.swift','StudioQueue.swift','StudioAdvanced.swift','StudioPhone.swift','StudioRecording.swift','main.swift']],
                     '-o',str(mac / 'BandStudio'),'-framework','AppKit','-framework','WebKit','-framework','AVFoundation','-framework','Accelerate'],check=True)
     subprocess.run(['codesign','--force','--sign','-',str(app)],check=True)
     subprocess.run(['codesign','--verify','--deep','--strict',str(app)],check=True)

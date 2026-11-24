@@ -82,3 +82,23 @@ def test_old_runtime_without_inventory_is_left_untouched(tmp_path):
     manifest.unlink()
     assert unblock_bundled_libraries(engine)=={'manifest':'absent','checked':0,'unblocked':0}
     assert stream.read_bytes()==ZONE
+
+
+def test_interface_preference_and_worker_language_are_independent_of_song(tmp_path, monkeypatch):
+    import ui_language
+    from windows import project
+    monkeypatch.setenv('LOCALAPPDATA', str(tmp_path))
+    ui_language.save_language('en')
+    assert ui_language.startup_language() == 'en'
+    monkeypatch.setenv(ui_language.ENVIRONMENT_KEY, 'en')
+    song = project.fresh('Mes morceaux')
+    assert song['name'] == 'Mes morceaux'
+    song['settings']['language'] = 'fr'
+    with pytest.raises(ValueError, match='Whole number|capo position'):
+        project.validate({**song, 'capo': 1.5})
+    ui_language.save_language('fr')
+    assert ui_language.startup_language() == 'fr'
+    assert song['settings']['language'] == 'fr'
+    with pytest.raises(ValueError):
+        ui_language.save_language('invalid')
+    assert ui_language.startup_language() == 'fr'

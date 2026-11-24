@@ -1,5 +1,6 @@
 """Offline analysis workers for the standalone studio. No DAW or bridge required."""
 from __future__ import annotations
+from ui_language import ui_text
 import argparse
 import json
 import os
@@ -32,8 +33,8 @@ def sections(raw, duration):
     change of function (including very short breaks), gap and exact outer edge.
     This only processes raw proposals; hosts preserve manual sections separately.
     """
-    labels = {'intro': 'Intro', 'verse': 'Couplet', 'chorus': 'Refrain',
-              'pre-chorus': 'Pré-refrain', 'bridge': 'Pont', 'inst': 'Instrumental',
+    labels = {'intro': 'Intro', 'verse': ui_text('Couplet', 'Verse'), 'chorus': ui_text('Refrain', 'Chorus'),
+              'pre-chorus': ui_text('Pré-refrain', 'Pre-chorus'), 'bridge': ui_text('Pont', 'Bridge'), 'inst': 'Instrumental',
               'outro': 'Outro', 'silence': 'Silence', 'solo': 'Solo'}
     result = []
     for item in sorted(raw, key=lambda s: float(s['start'])):
@@ -57,7 +58,7 @@ def sections(raw, duration):
 
 def grid(audio):
     from analysis_progress import emit
-    emit(progress=0,progressLabel='Lecture audio · étape 1 sur 3',progressBasis='steps',indeterminate=True)
+    emit(progress=0,progressLabel=ui_text('Lecture audio · étape 1 sur 3', 'Reading audio · step 1 of 3'),progressBasis='steps',indeterminate=True)
     import numpy as np
     import librosa
     y, sr = librosa.load(audio, sr=22050, mono=True)
@@ -65,9 +66,9 @@ def grid(audio):
     if duration < 1 or np.max(np.abs(y), initial=0) < 1e-7:
         return dict(duration=duration, bpm=0, beats=[], downbeats=[], cues=[])
     # Beat positions are estimates, not a fabricated fixed tempo map.
-    emit(progress=100/3,progressLabel='Recherche des attaques · étape 2 sur 3',indeterminate=True)
+    emit(progress=100/3,progressLabel=ui_text('Recherche des attaques · étape 2 sur 3', 'Finding onsets · step 2 of 3'),indeterminate=True)
     onset = librosa.onset.onset_strength(y=y, sr=sr, hop_length=256)
-    emit(progress=200/3,progressLabel='Calage des temps · étape 3 sur 3',indeterminate=True)
+    emit(progress=200/3,progressLabel=ui_text('Calage des temps · étape 3 sur 3', 'Aligning beats · step 3 of 3'),indeterminate=True)
     tempo, frames = librosa.beat.beat_track(onset_envelope=onset, sr=sr, hop_length=256)
     beats = librosa.frames_to_time(frames, sr=sr, hop_length=256).tolist()
     return dict(duration=duration, bpm=float(np.asarray(tempo).reshape(-1)[0]),
@@ -77,7 +78,7 @@ def grid(audio):
 def separate(audio, output, model, engine, quality='standard'):
     from analysis_progress import emit, PassProgress
     import demucs.apply as demucs_apply
-    emit(progressLabel='Chargement des modèles…', indeterminate=True)
+    emit(progressLabel=ui_text('Chargement des modèles…', 'Loading models…'), indeterminate=True)
     import soundfile as sf
     import torch
     from demucs.apply import apply_model
@@ -89,7 +90,7 @@ def separate(audio, output, model, engine, quality='standard'):
         import hashlib
         from demucs.states import load_model
         checkpoint=Path(engine)/'drumsep/49469ca8.th'
-        if hashlib.sha256(checkpoint.read_bytes()).hexdigest()!='aefaa8543c9b9c75e22f5f32b53ab86dfe416457849af1383ff1aef83401423f':raise ValueError('Modèle DrumSep modifié ou incomplet.')
+        if hashlib.sha256(checkpoint.read_bytes()).hexdigest()!='aefaa8543c9b9c75e22f5f32b53ab86dfe416457849af1383ff1aef83401423f':raise ValueError(ui_text('Modèle DrumSep modifié ou incomplet.', 'DrumSep model modified or incomplete.'))
         # Only this exact, verified upstream checkpoint may deserialize its model class.
         net=load_model(torch.load(checkpoint,map_location='cpu',weights_only=False))
     else:
@@ -115,7 +116,7 @@ def separate(audio, output, model, engine, quality='standard'):
         sources,compute=run(torch,'drumsep' if model=='49469ca8' else 'separate',inference,
             cleanup=lambda:net.to('cpu'),notify=lambda info:progress(output,'separation',**info))
         sources = sources * std + mean
-    emit(progress=99,progressLabel='Enregistrement des pistes…',indeterminate=True)
+    emit(progress=99,progressLabel=ui_text('Enregistrement des pistes…', 'Saving tracks…'),indeterminate=True)
     # Preserve relative stem levels; never normalize each stem independently.
     folder = Path(output).parent / 'stems'
     folder.mkdir(parents=True, exist_ok=True)
@@ -146,7 +147,7 @@ def analyze(audio, output, mode, engine, project_file=None, *, reanalyze=False):
     os.environ['REAPER_RESOURCE_PATH'] = str(Path(output).parent / 'worker-state')
     os.environ['HF_HUB_OFFLINE'] = '1'
     os.environ['REACUE_CPU_THREADS'] = '4'
-    progress(output, 'structure-loading',progressLabel='Chargement des modèles…',indeterminate=True)
+    progress(output, 'structure-loading',progressLabel=ui_text('Chargement des modèles…', 'Loading models…'),indeterminate=True)
     import reacue_structure as structure
     window=structure.choose_window()
     cache=AnalysisCache.create(project,'structure',audio,engine,dict(window=window))
@@ -163,7 +164,7 @@ def analyze(audio, output, mode, engine, project_file=None, *, reanalyze=False):
         with track_structure(app,audio,window):
             raw=structure.segments_from_app(app,audio,window,notify=notify)
         if cache:cache.store(dict(segments=raw))
-    progress(output, 'structure-saving',progress=99,progressLabel='Enregistrement des sections…',indeterminate=True)
+    progress(output, 'structure-saving',progress=99,progressLabel=ui_text('Enregistrement des sections…', 'Saving sections…'),indeterminate=True)
     import soundfile as sf
     info = sf.info(audio)
     proposed=sections(raw, info.duration)
@@ -220,7 +221,7 @@ def execute(a):
         from creative import run
         run(a.command,a.input,a.output,engine,json.loads(Path(a.options_file).read_text() if a.options_file else a.options));return
     if a.command=='drumsep':
-        if not (engine/'drumsep/49469ca8.th').is_file():raise ValueError('Le modèle DrumSep n’est pas installé.')
+        if not (engine/'drumsep/49469ca8.th').is_file():raise ValueError(ui_text('Le modèle DrumSep n’est pas installé.', 'The DrumSep model is not installed.'))
         separate(a.input,a.output,'49469ca8',engine,a.quality)
         return
     if a.command in ('smartgrid','key','lyricsimport','lyricsexport','stemsexport','master','report','portable','sheet'):
@@ -265,10 +266,10 @@ def execute(a):
         track=next((t for role in ('vocal_lead','vocals','source') for t in project['tracks'] if t['role']==role),{})
         offset=track.get('offset',0)
         if a.command=='lyrics' or not project.get('lyrics'):
-            print('Transcription locale du chant et alignement des mots…',flush=True)
+            print(ui_text('Transcription locale du chant et alignement des mots…', 'Transcribing vocals and aligning words locally…'),flush=True)
             import reacue_transcribe
             with legacy_status(reacue_transcribe, phases=3):
-                if reacue_transcribe.transcribe(a.input,a.output,lang=a.language,model_name=reacue_transcribe.selected_model())!=0:raise RuntimeError('La transcription des paroles a échoué.')
+                if reacue_transcribe.transcribe(a.input,a.output,lang=a.language,model_name=reacue_transcribe.selected_model())!=0:raise RuntimeError(ui_text('La transcription des paroles a échoué.', 'Lyric transcription failed.'))
             transcription=json.loads(Path(a.output).read_text())
             for row in transcription.get('segments',[]):
                 row['manual']=any(x.get('manual') and x['start']<row['end']+offset and x['end']>row['t']+offset for x in project.get('lyrics',[]))
@@ -281,7 +282,7 @@ def execute(a):
             row['t']=row.get('t',row.get('start',0))+shift;row['end']+=shift
             for word in row.get('words',[]):word['t']+=shift;word['end']+=shift
         offset=reference_offset
-        print('Comparaison des références Internet et recalage sur le chant…',flush=True)
+        print(ui_text('Comparaison des références Internet et recalage sur le chant…', 'Comparing online references and aligning them to the vocals…'),flush=True)
         result=correct(project,transcription,reference_audio,Path(a.output).parent)
         for row in result.get('segments',[]):
             row['t']=row.get('t',row.get('start',0))+offset;row['end']+=offset
@@ -289,16 +290,16 @@ def execute(a):
         write(a.output,result)
         return
     if a.command=='chords':
-        print('Recherche d’une grille Internet à partir du titre et de l’artiste…',flush=True)
+        print(ui_text('Recherche d’une grille Internet à partir du titre et de l’artiste…', 'Finding an online chart from the song title and artist…'),flush=True)
         from chord_sources import analyze as analyze_chord_reference
         project=json.loads(Path(a.project).read_text())
         write(a.output,analyze_chord_reference(project,a.input,reanalyze=a.reanalyze,source_url=getattr(a,'chord_source','')))
         return
     if a.command=='drums':
-        print('Détection des frappes sur la piste batterie…',flush=True)
+        print(ui_text('Détection des frappes sur la piste batterie…', 'Detecting hits on the drum track…'),flush=True)
         import reacue_drums
         with legacy_status(reacue_drums):
-            if reacue_drums.analyze(a.input,a.output)!=0:raise RuntimeError('La transcription batterie a échoué.')
+            if reacue_drums.analyze(a.input,a.output)!=0:raise RuntimeError(ui_text('La transcription batterie a échoué.', 'Drum transcription failed.'))
         return
     if a.command=='midi':
         target=Path(a.output).parent/'batterie.mid';export_midi(json.loads(Path(a.project).read_text()),target)

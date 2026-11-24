@@ -1,5 +1,6 @@
 """Local practice, delivery and analysis tools. Never uploads the user's audio."""
 from __future__ import annotations
+from ui_language import ui_text, using_english
 import html
 import json
 import math
@@ -17,17 +18,17 @@ from services import atomic, safe_name
 def finite(value, low, high):
     value = float(value)
     if not math.isfinite(value) or not low <= value <= high:
-        raise ValueError('Valeur hors limites.')
+        raise ValueError(ui_text('Valeur hors limites.', 'Value out of range.'))
     return value
 
 
 def media_path(root, relative):
     root = Path(root).resolve()
     if Path(relative).is_absolute() or '..' in Path(relative).parts:
-        raise ValueError('Chemin de média invalide.')
+        raise ValueError(ui_text('Chemin de média invalide.', 'Invalid media path.'))
     path = (root / relative).resolve()
     if not path.is_relative_to(root) or not path.is_file():
-        raise ValueError('Média manquant ou hors du projet.')
+        raise ValueError(ui_text('Média manquant ou hors du projet.', 'Media missing or outside the project.'))
     return path
 
 
@@ -115,13 +116,13 @@ def musical_grid(beats, downbeats, duration):
                 first = float(beats[phase])
     delta = np.diff(beats)
     delta = delta[(delta > .15) & (delta < 3)]
-    status='Mesures repérées · à vérifier à l’écoute' if first is not None else 'Pulsations repérées · premier temps ou signature à régler manuellement'
-    if len(beats) and beats[0]>2:status+=f' · détection à partir de {beats[0]:.2f} s'
+    status=ui_text('Mesures repérées · à vérifier à l’écoute', 'Bars detected · check by ear') if first is not None else ui_text('Pulsations repérées · premier temps ou signature à régler manuellement', 'Beats detected · set the downbeat or time signature manually')
+    if len(beats) and beats[0]>2:status+=(f' · detection from {beats[0]:.2f} s' if using_english() else f' · détection à partir de {beats[0]:.2f} s')
     return dict(beats=beats.tolist(), downbeats=beats[indices].tolist(),
                 bpm=float(60 / np.median(delta)) if len(delta) else 0,
                 beatsPerBar=meter, firstBeat=first, agreement=agreement,
                 gridStatus=status,
-                tempoNote='Subdivisions regroupées pour garder une pulsation cohérente · à vérifier à l’écoute' if corrected else '')
+                tempoNote=ui_text('Subdivisions regroupées pour garder une pulsation cohérente · à vérifier à l’écoute', 'Subdivisions grouped into a consistent pulse · check by ear') if corrected else '')
 
 
 def repair_opening_pulses(beats, beat_logits, fps):
@@ -207,7 +208,7 @@ def grid_from_frames(beat_logits, downbeat_logits, duration, fps=50, *, quality=
     downbeat_logits = np.asarray(downbeat_logits, dtype=float).reshape(-1)
     if (beat_logits.shape != downbeat_logits.shape or not np.isfinite(beat_logits).all()
             or not np.isfinite(downbeat_logits).all()):
-        raise ValueError('Prédictions rythmiques incomplètes ou invalides.')
+        raise ValueError(ui_text('Prédictions rythmiques incomplètes ou invalides.', 'Incomplete or invalid rhythm predictions.'))
     def peaks(values, threshold=0):
         # Only NumPy is required by the packaged rhythm environment. Include
         # boundary attacks and suppress nearby weaker peaks, including plateaus.
@@ -315,11 +316,11 @@ def grid_from_frames(beat_logits, downbeat_logits, duration, fps=50, *, quality=
                   continuityCorrected=continuity_changed,introCorrected=intro_corrected,
                   timingReviewRequired=intro_corrected)
     if continuity_changed and not result['tempoNote']:
-        result['tempoNote']=('Pulsations irrégulières de l’introduction régularisées · à vérifier à l’écoute' if intro_corrected
-                             else 'Continuité des pulsations corrigée dans les passages syncopés')
+        result['tempoNote']=(ui_text('Pulsations irrégulières de l’introduction régularisées · à vérifier à l’écoute', 'Irregular beats in the intro were smoothed · check by ear') if intro_corrected
+                             else ui_text('Continuité des pulsations corrigée dans les passages syncopés', 'Beat continuity corrected in syncopated passages'))
         result=calibrate_grid(result)
     if compound:
-        result['tempoNote']='Pulsations ternaires proposées (noires pointées) · tempo affiché à la noire · à vérifier à l’écoute'
+        result['tempoNote']=ui_text('Pulsations ternaires proposées (noires pointées) · tempo affiché à la noire · à vérifier à l’écoute', 'Compound meter suggested (dotted quarter notes) · tempo shown in quarter notes · check by ear')
         result=calibrate_grid(result)
     if not quality:return result
     from rhythm_adapter import adapt
@@ -339,13 +340,13 @@ def smart_grid(audio, engine, notify=lambda info: None, project=None, *, reanaly
     from beat_this.inference import Audio2Frames
     checkpoint = Path(engine) / 'rhythm/final0.ckpt'
     if not checkpoint.is_file():
-        raise ValueError('Le modèle Beat This n’est pas installé. Installe le composant Rythme avancé.')
+        raise ValueError(ui_text('Le modèle Beat This n’est pas installé. Installe le composant Rythme avancé.', 'Beat This is not installed. Install Advanced rhythm.'))
     import hashlib
     if hashlib.sha256(checkpoint.read_bytes()).hexdigest()!='8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331':
-        raise ValueError('Modèle Beat This modifié ou incomplet.')
+        raise ValueError(ui_text('Modèle Beat This modifié ou incomplet.', 'Beat This model modified or incomplete.'))
     torch.set_num_threads(4)
     if sf.info(audio).duration > 1800:
-        raise ValueError('L’analyse rythmique avancée accepte un morceau de 30 minutes maximum.')
+        raise ValueError(ui_text('L’analyse rythmique avancée accepte un morceau de 30 minutes maximum.', 'Advanced rhythm analysis supports songs up to 30 minutes.'))
     signal, sr = sf.read(audio, dtype='float32', always_2d=True)
     from compute import run
     def inference(info):
@@ -378,7 +379,7 @@ def detect_key(audio):
     moments = np.linspace(0, max(0, info.duration - 20), min(12, max(1, math.ceil(info.duration / 20))))
     chroma = np.zeros(12)
     for index,start in enumerate(moments):
-        emit(completed=index,total=len(moments),progressLabel=f'Extrait {index+1} sur {len(moments)}')
+        emit(completed=index,total=len(moments),progressLabel=(f'Excerpt {index + 1} of {len(moments)}' if using_english() else f'Extrait {index+1} sur {len(moments)}'))
         y, sr = librosa.load(audio, sr=22050, mono=True, offset=float(start), duration=20)
         if not len(y) or np.max(abs(y)) < 1e-7:
             continue
@@ -386,7 +387,7 @@ def detect_key(audio):
         c = librosa.feature.chroma_stft(y=harmonic, sr=sr, n_fft=4096, hop_length=1024, tuning=None)
         chroma += c.sum(axis=1)
     if chroma.max() < 1e-7:
-        raise ValueError('Pas assez de contenu harmonique pour proposer une tonalité.')
+        raise ValueError(ui_text('Pas assez de contenu harmonique pour proposer une tonalité.', 'Not enough harmonic content to suggest a key.'))
     profiles = [('major', [6.35,2.23,3.48,2.33,4.38,4.09,2.52,5.19,2.39,3.66,2.29,2.88]),
                 ('minor', [6.33,2.68,3.52,5.38,2.60,3.53,2.54,4.75,3.98,2.69,3.34,3.17])]
     names = ['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B']
@@ -397,12 +398,12 @@ def detect_key(audio):
             scores.append(dict(key=names[tonic] + ('m' if mode == 'minor' else ''), score=score))
     scores.sort(key=lambda x: x['score'], reverse=True)
     return dict(key=scores[0]['key'], alternatives=scores[:3],
-                note='Estimation harmonique globale ; vérifier les modulations et la tonalité relative.')
+                note=ui_text('Estimation harmonique globale ; vérifier les modulations et la tonalité relative.', 'Overall key estimate. Check for modulations and the relative key.'))
 
 
 def parse_lyrics(text, duration):
     if len(text) > 2_000_000:
-        raise ValueError('Le fichier de paroles est trop volumineux.')
+        raise ValueError(ui_text('Le fichier de paroles est trop volumineux.', 'Lyrics file too large.'))
     text = text.lstrip('\ufeff').replace('\r\n', '\n').replace('\r', '\n')
     def stamp(s):
         parts = s.replace(',', '.').split(':')
@@ -434,14 +435,14 @@ def parse_lyrics(text, duration):
         if content and math.isfinite(a) and math.isfinite(b) and 0 <= a < b <= duration:
             result.append(dict(id=str(uuid.uuid4()), start=a, end=b, text=content[:1000], manual=True))
     if not result:
-        raise ValueError('Aucune ligne synchronisée valide. Utilise un fichier LRC ou SRT avec ses horaires.')
+        raise ValueError(ui_text('Aucune ligne synchronisée valide. Utilise un fichier LRC ou SRT avec ses horaires.', 'No valid synced lines. Use a timed LRC or SRT file.'))
     return sorted(result, key=lambda x: x['start'])
 
 
 def lyric_file(project, target, fmt):
     entries = sorted(project.get('lyrics', []), key=lambda x: x['start'])
     if not entries:
-        raise ValueError('Le projet ne contient pas encore de paroles.')
+        raise ValueError(ui_text('Le projet ne contient pas encore de paroles.', 'This project has no lyrics yet.'))
     def srt_stamp(t):
         ms = round(t * 1000)
         return f'{ms//3600000:02}:{ms//60000%60:02}:{ms//1000%60:02},{ms%1000:03}'
@@ -450,7 +451,7 @@ def lyric_file(project, target, fmt):
     elif fmt == 'lrc':
         text = '\n'.join(f'[{int(round(x["start"]*100))//6000:02}:{int(round(x["start"]*100))//100%60:02}.{int(round(x["start"]*100))%100:02}]'+x['text'].replace('\n', ' ') for x in entries) + '\n'
     else:
-        raise ValueError('Format de paroles inconnu.')
+        raise ValueError(ui_text('Format de paroles inconnu.', 'Unknown lyrics format.'))
     target.write_text(text, encoding='utf-8')
 
 
@@ -458,14 +459,14 @@ def ffmpeg(engine, arguments):
     result = subprocess.run([str(executable(engine, 'ffmpeg')), '-nostdin', '-hide_banner', '-y', *map(str, arguments)],
                             capture_output=True, creationflags=creation_flags(), timeout=3600)
     if result.returncode:
-        raise ValueError('Traitement audio impossible : ' + result.stderr.decode(errors='replace')[-1200:])
+        raise ValueError(ui_text('Traitement audio impossible : ', 'Could not process audio: ') + result.stderr.decode(errors='replace')[-1200:])
     return result.stderr.decode(errors='replace')
 
 
 def encode_audio(source, target, engine, fmt):
     codecs = {'wav':['-c:a','pcm_s24le'], 'flac':['-c:a','flac'], 'mp3':['-c:a','libmp3lame','-b:a','320k'], 'm4a':['-c:a','aac','-b:a','256k']}
     if fmt not in codecs:
-        raise ValueError('Format audio inconnu.')
+        raise ValueError(ui_text('Format audio inconnu.', 'Unknown audio format.'))
     ffmpeg(engine, ['-v','error','-i',source,*codecs[fmt],target])
 
 
@@ -473,10 +474,10 @@ def loudness(audio, engine, level=-16, peak=-1, spread=11):
     log = ffmpeg(engine, ['-i',audio,'-af',f'loudnorm=I={level}:TP={peak}:LRA={spread}:print_format=json','-f','null','-'])
     match = re.search(r'\{\s*"input_i".*?\}', log, re.S)
     if not match:
-        raise ValueError('Impossible de mesurer le niveau sonore.')
+        raise ValueError(ui_text('Impossible de mesurer le niveau sonore.', 'Could not measure loudness.'))
     result = json.loads(match[0])
     if not all(math.isfinite(float(result[k])) for k in ('input_i','input_tp','input_lra','input_thresh')):
-        raise ValueError('Audio silencieux ou trop court pour mesurer son niveau sonore.')
+        raise ValueError(ui_text('Audio silencieux ou trop court pour mesurer son niveau sonore.', 'Audio is silent or too short to measure loudness.'))
     return result
 
 
@@ -533,7 +534,7 @@ def practice_grid(p, options=None):
     if duration <= 0:
         duration = max((x.get('end', 0) for kind in ('sections', 'lyrics', 'chords') for x in p.get(kind, [])), default=0)
     if not 1 <= meter <= 12 or not 20 <= bpm <= 400 or duration <= 0:
-        raise ValueError('Le morceau doit avoir une durée, un tempo et une mesure valides.')
+        raise ValueError(ui_text('Le morceau doit avoir une durée, un tempo et une mesure valides.', 'The song must have a valid duration, tempo and time signature.'))
     from musical_timing import BeatClock
     clock = BeatClock(p, duration)
     origin = clock.at(0)
@@ -563,18 +564,18 @@ def practice_grid(p, options=None):
             bars.append(dict(number=n+1, start=start, end=end))
         n += 1
         if len(bars) > 30000:
-            raise ValueError('La grille contient trop de mesures.')
+            raise ValueError(ui_text('La grille contient trop de mesures.', 'The grid contains too many bars.'))
 
     groups, end = [], 0
     for s in sorted(p.get('sections', []), key=lambda x: x['start']):
         a, b = max(end, s['start'], 0), min(duration, s['end'])
         if a > end+1e-7:
-            groups.append(dict(name='Sans section', start=end, end=a))
+            groups.append(dict(name=ui_text('Sans section', 'No section'), start=end, end=a))
         if b > a+1e-7:
             groups.append(dict(name=s['name'], start=a, end=b))
             end = b
     if end < duration-1e-7:
-        groups.append(dict(name='Sans section' if groups else 'Le morceau', start=end, end=duration))
+        groups.append(dict(name=ui_text('Sans section', 'No section') if groups else ui_text('Le morceau', 'The song'), start=end, end=duration))
 
     chords = sorted(p.get('chords', []), key=lambda x: x['start'])
     lyrics = []
@@ -634,7 +635,7 @@ def practice_sheet(p, target, options):
     muted = colors.HexColor('#E6E9E1')
     # Album metadata stays with the song. No network access is needed to export.
     from artwork import guesses, read as read_artwork
-    title, artist = guesses(p.get('name', 'Morceau'))[0]
+    title, artist = guesses(p.get('name', ui_text('Morceau', 'Song')))[0]
     album, cover_image = '', None
     root = Path(p['_root']) if p.get('_root') else None
     if root:
@@ -671,7 +672,7 @@ def practice_sheet(p, target, options):
             self.title = para(title, 'title')
             self.artist = Paragraph(escaped(artist), ParagraphStyle('GridArtist', fontName='Studio', fontSize=11,
                                                                                 leading=15, textColor=quiet))
-            self.album = Paragraph(escaped(album or 'Fiche de répétition'), ParagraphStyle('GridAlbum', fontName='Studio',
+            self.album = Paragraph(escaped(album or ui_text('Fiche de répétition', 'Rehearsal sheet')), ParagraphStyle('GridAlbum', fontName='Studio',
                                                          fontSize=8, leading=11, textColor=quiet))
             self.text_width = width-148
             self.title_height = self.title.wrap(self.text_width, 10000)[1]
@@ -686,7 +687,7 @@ def practice_sheet(p, target, options):
         def draw(self):
             c = self.canv
             c.setFillColor(quiet);c.setFont('StudioBold', 6.5)
-            c.drawString(0, self.height-8, 'B A N D S T U D I O   /   F I C H E   M O R C E A U')
+            c.drawString(0, self.height-8, ui_text('B A N D S T U D I O   /   F I C H E   M O R C E A U', 'B A N D S T U D I O   /   S O N G   S H E E T'))
             y = self.height-28
             self.artist.drawOn(c, 0, y-self.artist_height);y -= self.artist_height+6
             self.title.drawOn(c, 0, y-self.title_height);y -= self.title_height+11
@@ -703,12 +704,12 @@ def practice_sheet(p, target, options):
             c.setStrokeColor(line);c.setLineWidth(.5);c.line(0,53,width,53)
             duration = f'{int(data["duration"])//60}:{int(data["duration"])%60:02}'
             key = data['key']+(f' / capo {data["capo"]}' if data['capo'] else '')
-            for i,(label,value) in enumerate([('TEMPO',f'{data["bpm"]:g} BPM'),('TONALITÉ',key),('MESURE',data['timeSignature']),('DURÉE',duration)]):
+            for i,(label,value) in enumerate([('TEMPO',f'{data["bpm"]:g} BPM'),(ui_text('TONALITÉ', 'KEY'),key),(ui_text('MESURE', 'TIME SIGNATURE'),data['timeSignature']),(ui_text('DURÉE', 'DURATION'),duration)]):
                 x=i*width/4
                 c.setFillColor(quiet);c.setFont('Studio',6);c.drawString(x,40,label)
                 c.setFillColor(ink);c.setFont('StudioBold',12);c.drawString(x,23,value)
             if data['shift']:
-                c.setFont('Studio',6);c.setFillColor(quiet);c.drawRightString(width,8,f'Transposition : {data["shift"]:+d} demi-tons')
+                c.setFont('Studio',6);c.setFillColor(quiet);c.drawRightString(width,8,(f"Transpose: {data['shift']:+d} semitones" if using_english() else f'Transposition : {data["shift"]:+d} demi-tons'))
             c.setStrokeColor(line);c.line(0,11,width,11)
 
     class BarRow(Flowable):
@@ -768,9 +769,9 @@ def practice_sheet(p, target, options):
                 fill = peach if cell['lyrics'] else muted if any('mute' in c.lower() for c in cell['chords']) else colors.white
                 canvas.setFillColor(fill);canvas.setStrokeColor(line);canvas.setLineWidth(.55)
                 canvas.rect(x, 0, self.cell_width, self.height, stroke=1, fill=1)
-                number = 'LEVÉE' if not cell['number'] else f'M. {cell["number"]}'
+                number = ui_text('LEVÉE', 'PICKUP') if not cell['number'] else (f"Bar {cell['number']}" if using_english() else f'M. {cell["number"]}')
                 if cell['partial']:
-                    number += ' - suite' if cell['continuation'] else ' - début'
+                    number += ui_text(' - suite', ' - continued') if cell['continuation'] else ui_text(' - début', ' - start')
                 canvas.setFont('Studio',5.8);canvas.setFillColor(quiet)
                 canvas.drawString(x+5,self.height-8,number)
                 chords = self.chords[i];part = self.cell_width/len(chords)
@@ -794,7 +795,7 @@ def practice_sheet(p, target, options):
             Flowable.__init__(self)
             self.name, self.position, self.rows, self.continued = name, position, rows, continued
             self.number = number
-            label = escaped(name)+(' (suite)' if continued else '')
+            label = escaped(name)+(ui_text(' (suite)', ' (continued)') if continued else '')
             self.heading = Paragraph(label+' <font name="Studio" size="7" color="#7B8676">'+escaped(position)+'</font>', styles['section'])
             self.heading_height = self.heading.wrap(width-29, 10000)[1]
             self.width = width
@@ -841,9 +842,9 @@ def practice_sheet(p, target, options):
         if cells[0]['continuation']:
             # An entrance before the next downbeat is a lead-in, not another whole numbered bar.
             entry, cells = cells[0], cells[1:]
-            measure = f'M. {entry["number"]}' if entry['number'] else 'levée initiale'
+            measure = (f"Bar {entry['number']}" if using_english() else f'M. {entry["number"]}') if entry['number'] else ui_text('levée initiale', 'opening pickup')
             beat = f'{entry["startBeat"]:.2f}'.rstrip('0').rstrip('.').replace('.', ',')
-            parts = [f'Entrée · {measure} · temps {beat}']
+            parts = [(f'Entry · {measure} · beat {beat}' if using_english() else f'Entrée · {measure} · temps {beat}')]
             if entry['chords']:
                 parts.append('<b>'+escaped(' / '.join(entry['chords']))+'</b>')
             if entry['lyrics']:
@@ -857,17 +858,17 @@ def practice_sheet(p, target, options):
         if cells:
             first, last = cells[0]['number'], cells[-1]['number']
             if first == last:
-                position = f'mes. {first}' if first else 'levée'
+                position = (f'bar {first}' if using_english() else f'mes. {first}') if first else ui_text('levée', 'pickup')
             else:
-                position = ('levée puis ' if first == 0 else '')+f'mes. {max(1, first)}-{last}'
+                position = (ui_text('levée puis ', 'pickup then ') if first == 0 else '')+(f'bar {max(1, first)}-{last}' if using_english() else f'mes. {max(1, first)}-{last}')
             rows.extend(BarRow(cells[i:i+4]) for i in range(0, len(cells), 4))
         body.append(SectionBlock(group['name'], position, rows, number=group_number))
     if p.get('notes'):
-        body.extend([para('Notes de jeu', 'section'), para(p['notes'], 'notes')])
+        body.extend([para(ui_text('Notes de jeu', 'Performance notes'), 'section'), para(p['notes'], 'notes')])
     def footer(canvas, doc):
         canvas.saveState();canvas.setFont('Studio',6);canvas.setFillColor(quiet)
         canvas.setStrokeColor(line);canvas.setLineWidth(.4);canvas.line(44,34,A4[0]-44,34)
-        canvas.drawString(44,22,'BANDSTUDIO / GRILLE DE RÉPÉTITION')
+        canvas.drawString(44,22,ui_text('BANDSTUDIO / GRILLE DE RÉPÉTITION', 'BANDSTUDIO / REHEARSAL CHART'))
         canvas.drawRightString(A4[0]-44,22,str(doc.page).zfill(2))
         if doc.page>1:
             canvas.setFont('StudioBold',7);canvas.setFillColor(ink)
@@ -886,7 +887,7 @@ def audio_report(audio):
     peak, square, clipped, count, total = 0., 0., 0, 0, 0.
     for block in sf.blocks(audio, blocksize=65536, dtype='float32', always_2d=True):
         if not np.isfinite(block).all():
-            raise ValueError('Le fichier contient des échantillons audio non valides.')
+            raise ValueError(ui_text('Le fichier contient des échantillons audio non valides.', 'The file contains invalid audio samples.'))
         peak = max(peak, float(np.max(abs(block), initial=0)))
         square += float(np.square(block.astype('float64')).sum())
         total += float(block.sum(dtype='float64'))
@@ -907,7 +908,7 @@ def portable_project(p, root, target):
         archive.writestr(prefix+'project.json', json.dumps(data, ensure_ascii=False, indent=2))
         for relative in sorted(files):
             archive.write(media_path(root, relative), prefix+Path(relative).as_posix())
-        archive.writestr('LIRE-MOI.txt', 'Décompresse le dossier .bandstudio, puis ouvre-le dans BandStudio.\nLes médias et les réglages sont inclus.\n')
+        archive.writestr('LIRE-MOI.txt', ui_text('Décompresse le dossier .bandstudio, puis ouvre-le dans BandStudio.\nLes médias et les réglages sont inclus.\n', 'Unzip the .bandstudio folder and open it in BandStudio.\nMedia and settings are included.\n'))
 
 
 def run(kind, project_file, output, engine, options, audio=''):
@@ -932,20 +933,20 @@ def run(kind, project_file, output, engine, options, audio=''):
         elif kind == 'stemsexport':
             fmt = options.get('format','wav')
             if fmt not in ('wav','flac','mp3','m4a'):
-                raise ValueError('Format inconnu.')
+                raise ValueError(ui_text('Format inconnu.', 'Unknown format.'))
             tracks = [t for t in p['tracks'] if not t['role'].startswith('guide_') and t['role'] != 'source']
             if not tracks:
-                raise ValueError('Sépare les instruments avant d’exporter les stems.')
+                raise ValueError(ui_text('Sépare les instruments avant d’exporter les stems.', 'Separate the instruments before exporting stems.'))
             manifest = []
-            for i, t in enumerate(phase_items(tracks,0,1,"Export des pistes")):
+            for i, t in enumerate(phase_items(tracks,0,1,ui_text("Export des pistes", 'Track export'))):
                 dest = folder / (f'{i+1:02}-'+safe_name(t['name'])+'.'+fmt)
                 encode_audio(media_path(root,t['file']), dest, engine, fmt)
                 manifest.append(dict(file=dest.name, name=t['name'], role=t['role'], offset=t['offset'], gain=t['gain'], pan=t['pan']))
-            atomic(folder/'pistes.json', dict(tracks=manifest, bpm=p['bpm'], note='Audio brut, tempo et hauteur d’origine. Les départs sont indiqués dans offset.'))
+            atomic(folder/'pistes.json', dict(tracks=manifest, bpm=p['bpm'], note=ui_text('Audio brut, tempo et hauteur d’origine. Les départs sont indiqués dans offset.', 'Raw audio at the original tempo and pitch. Start times are listed in offset.')))
             target = folder
         elif kind == 'master':
             # The host supplies an offline render of the music mix, without spoken guides.
-            target = folder/(name+' - niveau final.wav')
+            target = folder/(name+ui_text(' - niveau final.wav', ' - final level.wav'))
             report = master(audio, target, engine, options)
             atomic(folder/'mesures.json', report)
         elif kind == 'report':
@@ -955,18 +956,18 @@ def run(kind, project_file, output, engine, options, audio=''):
                     continue
                 rows.append(dict(id=t['id'], name=t['name'], role=t['role'], **audio_report(media_path(root,t['file']))))
             if not rows:
-                raise ValueError('Aucune piste à analyser.')
+                raise ValueError(ui_text('Aucune piste à analyser.', 'No track to analyze.'))
             atomic(folder/'analyse.json', dict(schema='bandstudio.audio-analysis.v1', project=p['name'], tracks=rows))
-            target = folder/(name+' - analyse.html')
+            target = folder/(name+ui_text(' - analyse.html', ' - analysis.html'))
             body = ''.join('<tr><td>'+html.escape(r['name'])+'</td>'+''.join('<td>'+str(r[k])+'</td>' for k in ('peakDBFS','rmsDBFS','crestDB','nearFullScalePercent'))+'</tr>' for r in rows)
-            target.write_text('<!doctype html><html lang="fr"><meta charset="utf-8"><title>Analyse audio</title><style>body{font:16px system-ui;max-width:1000px;margin:50px auto;padding:20px}table{border-collapse:collapse;width:100%}td,th{padding:12px;border-bottom:1px solid #ccc;text-align:left}</style><h1>'+html.escape(p['name'])+'</h1><h2>Analyse des niveaux</h2><table><tr><th>Piste</th><th>Crête dBFS</th><th>RMS dBFS</th><th>Dynamique crête/RMS</th><th>Échantillons proches de 0 dBFS (%)</th></tr>'+body+'</table><p>Une crête proche de 0 dBFS invite à vérifier le gain d’entrée. Elle ne prouve pas à elle seule une saturation. Le RMS dépend du contenu et ne remplace pas les LUFS.</p><p>Ce rapport ne règle pas la console XR. Écoute les prises avant toute correction de gain, d’égalisation ou de compression.</p></html>', encoding='utf-8')
+            target.write_text(ui_text('<!doctype html><html lang="fr"><meta charset="utf-8"><title>Analyse audio</title>', '<!doctype html><html lang="en"><meta charset="utf-8"><title>Audio analysis</title>')+'<style>body{font:16px system-ui;max-width:1000px;margin:50px auto;padding:20px}table{border-collapse:collapse;width:100%}td,th{padding:12px;border-bottom:1px solid #ccc;text-align:left}</style><h1>'+html.escape(p['name'])+ui_text('</h1><h2>Analyse des niveaux</h2><table><tr><th>Piste</th><th>Crête dBFS</th><th>RMS dBFS</th><th>Dynamique crête/RMS</th><th>Échantillons proches de 0 dBFS (%)</th></tr>', '</h1><h2>Track levels</h2><table><tr><th>Track</th><th>Peak dBFS</th><th>RMS dBFS</th><th>Peak/RMS dynamics</th><th>Samples near 0 dBFS (%)</th></tr>')+body+ui_text('</table><p>Une crête proche de 0 dBFS invite à vérifier le gain d’entrée. Elle ne prouve pas à elle seule une saturation. Le RMS dépend du contenu et ne remplace pas les LUFS.</p><p>Ce rapport ne règle pas la console XR. Écoute les prises avant toute correction de gain, d’égalisation ou de compression.</p></html>', '</table><p>A peak near 0 dBFS is a reason to check the input gain. The recording may still be free from clipping. RMS varies with the material. Use LUFS when measuring perceived loudness.</p><p>This report does not change your XR mixer settings. Listen to the takes before adjusting gain, EQ or compression.</p></html>'), encoding='utf-8')
         elif kind == 'portable':
             target = folder/(name+'.zip')
             portable_project(p, root, target)
         elif kind == 'sheet':
-            target = folder/(name+' - fiche.pdf')
+            target = folder/(name+ui_text(' - fiche.pdf', ' - song sheet.pdf'))
             practice_sheet(p,target,options)
         else:
-            raise ValueError('Outil inconnu.')
+            raise ValueError(ui_text('Outil inconnu.', 'Unknown tool.'))
         result = dict(path=str(target))
     atomic(output, result)

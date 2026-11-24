@@ -68,7 +68,7 @@ struct StudioProject: Codable {
     var capture=CaptureSettings()
     var version = 1
     var id = UUID().uuidString
-    var name = "Nouveau morceau"
+    var name = uiText("Nouveau morceau", "New song")
     var tracks: [Track] = []
     var sections: [Section] = []
     var cues: [Cue] = []
@@ -118,39 +118,39 @@ struct StudioProject: Codable {
     func validate() throws {
         try settings.validate();try capture.validate()
         if let prep=preparation {
-            guard prep.rate.isFinite,(0.5...1.5).contains(prep.rate),prep.pitch.isFinite,(-12...12).contains(prep.pitch),Listening.valid(prep.mode) else {throw StudioError("Réglages de préparation invalides.")}
+            guard prep.rate.isFinite,(0.5...1.5).contains(prep.rate),prep.pitch.isFinite,(-12...12).contains(prep.pitch),Listening.valid(prep.mode) else {throw StudioError(uiText("Réglages de préparation invalides.", "Invalid preparation settings."))}
         }
-        guard sessionDuration.isFinite,(0...43200).contains(sessionDuration) else{throw StudioError("Durée de session invalide.")}
-        guard (0...12).contains(capo),downbeats.allSatisfy({$0.isFinite && $0>=0 && $0<=duration+0.1}) else {throw StudioError("Repères de mesure ou capo invalides.")}
+        guard sessionDuration.isFinite,(0...43200).contains(sessionDuration) else{throw StudioError(uiText("Durée de session invalide.", "Invalid recording duration."))}
+        guard (0...12).contains(capo),downbeats.allSatisfy({$0.isFinite && $0>=0 && $0<=duration+0.1}) else {throw StudioError(uiText("Repères de mesure ou capo invalides.", "Invalid bar markers or capo."))}
         guard version == 1, tracks.count <= 128, sections.count <= 10000,
-              Set(tracks.map(\.id)).count == tracks.count else { throw StudioError("Format de projet non pris en charge.") }
+              Set(tracks.map(\.id)).count == tracks.count else { throw StudioError(uiText("Format de projet non pris en charge.", "Unsupported project format.")) }
         for t in tracks {
             guard t.duration.isFinite, t.duration > 0, t.duration <= 43200,
                   t.offset.isFinite, t.offset >= -120, t.gain.isFinite, (0...2).contains(t.gain),
                   t.pan.isFinite, (-1...1).contains(t.pan), t.peaks.allSatisfy({ $0.isFinite }),
                   !t.file.hasPrefix("/"), !t.file.split(separator:"/").contains("..") else {
-                throw StudioError("Une piste contient des données invalides.")
+                throw StudioError(uiText("Une piste contient des données invalides.", "A track contains invalid data."))
             }
         }
         for s in sections {
             guard s.start.isFinite, s.end.isFinite, s.start >= 0, s.end > s.start,
-                  s.end <= duration + 0.1 else { throw StudioError("Les limites d’une section sont invalides.") }
+                  s.end <= duration + 0.1 else { throw StudioError(uiText("Les limites d’une section sont invalides.", "Invalid section boundaries.")) }
         }
         guard bpm.isFinite, bpm >= 0, bpm <= 1000,
               beats.allSatisfy({$0.isFinite && $0 >= 0 && $0 <= duration + 0.1}),
               cues.allSatisfy({$0.time.isFinite && $0.time >= 0 && $0.time <= duration}) else {
-            throw StudioError("Repères musicaux invalides.")
+            throw StudioError(uiText("Repères musicaux invalides.", "Invalid musical markers."))
         }
         guard guideFiles.values.allSatisfy({!$0.hasPrefix("/") && !$0.split(separator:"/").contains("..")}),
               (lyrics+chords).allSatisfy({$0.start.isFinite && $0.end.isFinite && $0.start>=0 && $0.end>$0.start && $0.end<=duration+0.1}),
               drumHits.allSatisfy({$0.time.isFinite && $0.time>=0 && $0.time<=duration && (0...127).contains($0.pitch) && (1...127).contains($0.velocity)}) else {
-            throw StudioError("Guides ou annotations invalides.")
+            throw StudioError(uiText("Guides ou annotations invalides.", "Invalid guides or annotations."))
         }
     }
     func audioURL(_ track: Track, root: URL) throws -> URL {
         let url = root.appendingPathComponent(track.file).resolvingSymlinksInPath().standardizedFileURL
         let base = root.resolvingSymlinksInPath().standardizedFileURL.path + "/"
-        guard url.path.hasPrefix(base) else { throw StudioError("Le fichier audio sort du projet.") }
+        guard url.path.hasPrefix(base) else { throw StudioError(uiText("Le fichier audio sort du projet.", "The audio file is outside the project.")) }
         return url
     }
     static func load(_ root: URL) throws -> StudioProject {
@@ -159,7 +159,7 @@ struct StudioProject: Codable {
         for t in p.tracks {
             let f = try AVAudioFile(forReading:p.audioURL(t,root:root))
             guard abs(Double(f.length)/f.processingFormat.sampleRate-t.duration) < 0.1 else {
-                throw StudioError("Le fichier de la piste « \(t.name) » a changé.")
+                throw StudioError(uiText("Le fichier de la piste « \(t.name) » a changé.", "The audio file for track “\(t.name)” has changed."))
             }
         }
         return p
@@ -196,11 +196,11 @@ func inspectAudio(_ url: URL) throws -> (Double,[Float]) {
     let f=try AVAudioFile(forReading:url)
     let duration=Double(f.length)/f.processingFormat.sampleRate
     guard duration > 0, duration <= 43200, f.processingFormat.channelCount <= 32 else {
-        throw StudioError("Audio vide, trop long ou format non pris en charge.")
+        throw StudioError(uiText("Audio vide, trop long ou format non pris en charge.", "Audio is empty, too long or in an unsupported format."))
     }
     let count=720
     var peaks=[Float](repeating:0,count:count)
-    guard let buffer=AVAudioPCMBuffer(pcmFormat:f.processingFormat,frameCapacity:16384) else {throw StudioError("Mémoire audio insuffisante.")}
+    guard let buffer=AVAudioPCMBuffer(pcmFormat:f.processingFormat,frameCapacity:16384) else {throw StudioError(uiText("Mémoire audio insuffisante.", "Insufficient audio memory."))}
     var position:Int64=0
     while position < f.length {
         try f.read(into:buffer)
@@ -423,7 +423,7 @@ final class StudioAudio {
         let was=running;pause();position=min(project.duration,max(0,value));if was{try play(withCount:project.settings.countOnSeek)}
     }
     func configureLoop(on:Bool,start:Double,end:Double) throws {
-        guard !on || (start >= 0 && end <= project.duration+0.001 && end-start >= 0.05) else {throw StudioError("Choisis une boucle d’au moins 50 ms dans le morceau.")}
+        guard !on || (start >= 0 && end <= project.duration+0.001 && end-start >= 0.05) else {throw StudioError(uiText("Choisis une boucle d’au moins 50 ms dans le morceau.", "Choose a loop of at least 50 ms within the song."))}
         let was=running;pause();loop=on;loopStart=start;loopEnd=end
         if was{try play()}
     }
@@ -443,7 +443,7 @@ final class StudioAudio {
     }
     func render(to url:URL,start:Double,end:Double,includeCount:Bool=false) throws {
         pause();engine.stop()
-        guard end > start else {throw StudioError("Plage d’export vide.")}
+        guard end > start else {throw StudioError(uiText("Plage d’export vide.", "The export range is empty."))}
         let format=clockFormat
         try engine.enableManualRenderingMode(.offline,format:format,maximumFrameCount:4096)
         defer {engine.stop();for n in players+[countClick,countVoice,startCall]{n.stop()};engine.disableManualRenderingMode();applyMix()}
@@ -464,9 +464,9 @@ final class StudioAudio {
                 if buffer.frameLength > 0 {try output.write(from:buffer);written += Int64(buffer.frameLength);stalls=0}
                 else {stalls += 1}
             case .cannotDoInCurrentContext:stalls += 1
-            default:throw StudioError("Le moteur audio a interrompu l’export.")
+            default:throw StudioError(uiText("Le moteur audio a interrompu l’export.", "The audio engine stopped the export."))
             }
-            if stalls > 100 {throw StudioError("L’export audio ne progresse plus.")}
+            if stalls > 100 {throw StudioError(uiText("L’export audio ne progresse plus.", "The audio export has stalled."))}
         }
     }
 }

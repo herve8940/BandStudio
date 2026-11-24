@@ -2,38 +2,38 @@
 // This view is read-only. Audition always plays the existing audio, and applying
 // a proposal remains an explicit project command in structure-review.js.
 function createStructureComparison(onListen){
- const root=node('section','structure-comparison');root.id='structureComparison';root.setAttribute('aria-label','Comparer la structure actuelle et proposée');
+ const root=node('section','structure-comparison');root.id='structureComparison';root.setAttribute('aria-label',uiText('Comparer la structure actuelle et proposée'));
  const top=node('div','comparison-top'),caption=node('div');
- caption.append(node('span','comparison-kicker','LA CARTE DES CHANGEMENTS'),node('p','','Même morceau. Deux découpages.'));
+ caption.append(node('span','comparison-kicker',uiText('LA CARTE DES CHANGEMENTS')),node('p','',uiText('Même morceau. Deux découpages.')));
  const controls=node('div','comparison-controls');
- const whole=button('Tout le morceau',()=>setRange(0,duration),'comparison-fit');whole.id='comparisonFit';
- const zoom=button('Cadrer le changement',()=>focusRange());zoom.id='comparisonZoom';
+ const whole=button(uiText('Tout le morceau'),()=>setRange(0,duration),'comparison-fit');whole.id='comparisonFit';
+ const zoom=button(uiText('Cadrer le changement'),()=>focusRange());zoom.id='comparisonZoom';
  controls.append(whole,zoom);top.append(caption,controls);
  const frame=node('div','comparison-frame');
  const lanes={};
- for(const [key,label] of [['current','ACTUELLE'],['audio','AUDIO'],['proposed','PROPOSÉE']]){
+ for(const [key,label] of [['current',uiText('ACTUELLE')],['audio','AUDIO'],['proposed',uiText('PROPOSÉE')]]){
   const row=node('div','comparison-row comparison-'+key),identity=node('div','comparison-label');identity.append(node('strong','',label));
   const lane=node('div','comparison-lane');lane.dataset.comparisonLane=key;
   if(key!=='audio')identity.append(node('small'));
-  else{const canvas=node('canvas');canvas.setAttribute('aria-label','Forme d’onde du morceau');lane.append(canvas);}
+  else{const canvas=node('canvas');canvas.setAttribute('aria-label',uiText('Forme d’onde du morceau'));lane.append(canvas);}
   row.append(identity,lane);frame.append(row);lanes[key]={row,identity,lane};
  }
  const ruler=node('div','comparison-row comparison-ruler'),ticks=node('div','comparison-ticks');ruler.append(node('span'),ticks);frame.append(ruler);
  const legend=node('div','comparison-legend');
- for(const [type,text] of [['insert','＋ Section ajoutée'],['rename','↔ Nom précisé'],['adjust','↦ Limite recalée'],['protected','◇ Section protégée']])legend.append(node('span','legend-'+type,text));
- const changes=node('div','comparison-chips');changes.id='comparisonChanges';changes.setAttribute('role','group');changes.setAttribute('aria-label','Parcourir les changements proposés');
+ for(const [type,text] of [['insert',uiText('＋ Section ajoutée')],['rename',uiText('↔ Nom précisé')],['adjust',uiText('↦ Limite recalée')],['protected',uiText('◇ Section protégée')]])legend.append(node('span','legend-'+type,text));
+ const changes=node('div','comparison-chips');changes.id='comparisonChanges';changes.setAttribute('role','group');changes.setAttribute('aria-label',uiText('Parcourir les changements proposés'));
  const detail=node('article','comparison-detail');detail.id='comparisonDetail';
  const info=node('div','comparison-detail-info'),kind=node('span','comparison-kicker'),name=node('h3'),at=node('span','comparison-time');
  const nameLine=node('div','comparison-detail-heading');nameLine.append(name,at);
  const transition=node('div','comparison-transition');
- const reasonDetails=node('details','comparison-reason'),reason=node('p');reasonDetails.append(node('summary','','Pourquoi cette proposition ?'),reason);
+ const reasonDetails=node('details','comparison-reason'),reason=node('p');reasonDetails.append(node('summary','',uiText('Pourquoi cette proposition ?')),reason);
  info.append(kind,nameLine,transition,reasonDetails);
  const actions=node('div','comparison-detail-actions');
  const navigation=node('div','comparison-stepper'),previous=button('←',()=>choose(index-1)),next=button('→',()=>choose(index+1)),position=node('span');
- previous.setAttribute('aria-label','Changement précédent');next.setAttribute('aria-label','Changement suivant');
+ previous.setAttribute('aria-label',uiText('Changement précédent'));next.setAttribute('aria-label',uiText('Changement suivant'));
  previous.id='comparisonPrevious';next.id='comparisonNext';navigation.append(previous,position,next);
- const listen=button('▶ Écouter ce passage',()=>{if(!blocked&&clip)onListen(clip);},'comparison-listen');listen.id='comparisonListen';
- actions.append(navigation,listen,node('small','','L’audio reste le même. Écoute où la section commence.'));
+ const listen=button(uiText('▶ Écouter ce passage'),()=>{if(!blocked&&clip)onListen(clip);},'comparison-listen');listen.id='comparisonListen';
+ actions.append(navigation,listen,node('small','',uiText('L’audio reste le même. Écoute où la section commence.')));
  detail.append(info,actions);
  const unavailable=node('p','comparison-unavailable');unavailable.hidden=true;
  root.append(top,frame,legend,changes,detail,unavailable);
@@ -74,8 +74,8 @@ function createStructureComparison(onListen){
     const locked=key==='current'&&(s.locked||s.reviewed||s.origin==='manual');
     const label=node('span','comparison-section-name',s.name);b.append(label);
     if(locked)b.append(node('span','comparison-lock','◇'));
-    b.title=s.name+' · '+stamp(s.start)+' → '+stamp(s.end)+(change&&key==='proposed'?' · '+(change.kind==='insert'?'Section ajoutée':change.kind==='adjust'?'Limite recalée':'Nom précisé'):'')+(locked?' · Protégée':'');
-    b.setAttribute('aria-label',(key==='current'?'Actuelle : ':'Proposée : ')+b.title);
+    b.title=s.name+' · '+stamp(s.start)+' → '+stamp(s.end)+(change&&key==='proposed'?' · '+(change.kind==='insert'?uiText('Section ajoutée'):change.kind==='adjust'?uiText('Limite recalée'):uiText('Nom précisé')):'')+(locked?uiText(' · Protégée'):'');
+    b.setAttribute('aria-label',(key==='current'?uiText('Actuelle : '):uiText('Proposée : '))+b.title);
     const at=modifications()[index]?.time??selectedSection?.start;
     b.classList.toggle('is-selected',at!==undefined&&s.start<=at+.01&&s.end>at+.01);
     b.disabled=blocked;lane.append(b);
@@ -88,7 +88,7 @@ function createStructureComparison(onListen){
    if(c.time<range.start||c.time>range.end)return;
    const pos=x(c.time);if(pos-last<2&&i!==index)return;last=pos;
    const pin=button(String(i+1).padStart(2,'0'),()=>choose(i),'comparison-pin');pin.classList.toggle('selected',i===index);pin.style.left=pos+'%';
-   pin.title=stamp(c.time)+' · '+c.after;pin.setAttribute('aria-label','Changement '+(i+1)+' : '+c.after+' à '+stamp(c.time));pin.disabled=blocked;audio.append(pin);
+   pin.title=stamp(c.time)+' · '+c.after;pin.setAttribute('aria-label',uiText('Changement ')+(i+1)+' : '+c.after+uiText(' à ')+stamp(c.time));pin.disabled=blocked;audio.append(pin);
   });
   audio.append(node('div','comparison-playhead'));
   ticks.replaceChildren();
@@ -117,17 +117,17 @@ function createStructureComparison(onListen){
   const change=modifications()[index],atTime=change?.time??selectedSection?.start??0;
   const before=valid(project.sections).find(s=>s.start<=atTime+.01&&s.end>atTime+.01);
   const after=valid(proposal.sections).find(s=>s.start<=atTime+.01&&s.end>atTime+.01);
-  kind.textContent=change?({insert:'UNE SECTION RETROUVÉE',rename:'UN NOM PLUS PRÉCIS',adjust:'UN DÉPART RECALÉ'}[change.kind]||'CHANGEMENT PROPOSÉ'):'PASSAGE DU MORCEAU';
-  name.textContent=change?.after||selectedSection?.name||'Structure conservée';at.textContent=stamp(atTime);
+  kind.textContent=change?({insert:uiText('UNE SECTION RETROUVÉE'),rename:uiText('UN NOM PLUS PRÉCIS'),adjust:uiText('UN DÉPART RECALÉ')}[change.kind]||uiText('CHANGEMENT PROPOSÉ')):uiText('PASSAGE DU MORCEAU');
+  name.textContent=change?.after||selectedSection?.name||uiText('Structure conservée');at.textContent=stamp(atTime);
   detail.style.setProperty('--section-color',sectionStyle(name.textContent).color);
-  const old=node('div','comparison-before'),fresh=node('div','comparison-after');old.append(node('small','',proposal.status==='prepared'?'AVANT':'ACTUELLEMENT'),node('strong','',before?.name||change?.before||'Aucune section'));
+  const old=node('div','comparison-before'),fresh=node('div','comparison-after');old.append(node('small','',proposal.status==='prepared'?uiText('AVANT'):uiText('ACTUELLEMENT')),node('strong','',before?.name||change?.before||uiText('Aucune section')));
   const context=change?.kind==='insert'&&before?valid(proposal.sections).filter(s=>s.start<before.end&&s.end>before.start):after?[after]:[];
-  fresh.append(node('small','',proposal.status==='prepared'?'APRÈS PRÉPARATION':'AVEC LA PROPOSITION'));
+  fresh.append(node('small','',proposal.status==='prepared'?uiText('APRÈS PRÉPARATION'):uiText('AVEC LA PROPOSITION')));
   const names=node('div','comparison-function-list');
   for(const s of context){const pill=node('span','',s.name);pill.style.setProperty('--section-color',sectionStyle(s.name).color);names.append(pill);}
-  if(!context.length)names.append(node('span','',change?.after||'Aucun changement'));
+  if(!context.length)names.append(node('span','',change?.after||uiText('Aucun changement')));
   fresh.append(names);transition.replaceChildren(old,node('span','comparison-arrow','→'),fresh);
-  reason.textContent=change?.reason||'Ce passage peut être écouté sans modifier le projet.';reasonDetails.hidden=!change;
+  reason.textContent=change?.reason||uiText('Ce passage peut être écouté sans modifier le projet.');reasonDetails.hidden=!change;
   clip={start:Math.max(0,atTime-3),end:Math.min(duration,atTime+6)};
   if(clip.end<=clip.start)clip=null;
   position.textContent=change?`${index+1} / ${modifications().length}`:'Passage';navigation.hidden=!modifications().length;
@@ -145,11 +145,11 @@ function createStructureComparison(onListen){
   if(!draft)return;
   const available=valid(draft.sections).length>0&&duration>0;
   [top,frame,legend,changes,detail].forEach(e=>e.hidden=!available);unavailable.hidden=available;
-  if(!available){unavailable.textContent='Cette ancienne proposition ne contient pas de frise. Relance « Vérifier et compléter » pour la comparer visuellement.';clip=null;return;}
+  if(!available){unavailable.textContent=uiText('Cette ancienne proposition ne contient pas de frise. Relance « Vérifier et compléter » pour la comparer visuellement.');clip=null;return;}
   if(changed){range={start:0,end:duration};index=modifications().findIndex(c=>c.kind==='insert');if(index<0&&modifications().length)index=0;selectedSection=null;reasonDetails.open=false;selectionActive=false;}
   detail.hidden=!selectionActive;
-  lanes.current.identity.querySelector('strong').textContent=draft.status==='prepared'?'AVANT':'ACTUELLE';
-  lanes.proposed.identity.querySelector('strong').textContent=draft.status==='prepared'?'PRÉPARÉE':'PROPOSÉE';
+  lanes.current.identity.querySelector('strong').textContent=draft.status==='prepared'?uiText('AVANT'):uiText('ACTUELLE');
+  lanes.proposed.identity.querySelector('strong').textContent=draft.status==='prepared'?uiText('PRÉPARÉE'):uiText('PROPOSÉE');
   changes.replaceChildren(...modifications().map((c,i)=>{
    const b=button('',()=>choose(i),'comparison-chip');b.append(node('span','comparison-chip-number',String(i+1).padStart(2,'0')),node('span','',c.after),node('small','',stamp(c.time)));b.dataset.changeId=c.id;return b;
   }));
@@ -162,7 +162,7 @@ function createStructureComparison(onListen){
  }
  function setAudition(value){
   auditionClip=value;const same=clip&&value&&Math.abs(value.start-clip.start)<.01&&Math.abs(value.end-clip.end)<.01;
-  listen.textContent=same?'■ Arrêter ce passage':'▶ Écouter ce passage';listen.setAttribute('aria-pressed',String(!!same));
+  listen.textContent=same?uiText('■ Arrêter ce passage'):uiText('▶ Écouter ce passage');listen.setAttribute('aria-pressed',String(!!same));
  }
  const observer=new ResizeObserver(()=>{if(project&&!root.hidden)drawAudio();});observer.observe(lanes.audio.lane);
  return {root,update,setBlocked,updateTransport,setAudition};

@@ -2,19 +2,19 @@
 // The queue is independent of the song open in the workshop.
 let batchState={items:[],enabled:false},batchSignature='';
 const queueView=node('section','view');queueView.id='view-queue';queueView.hidden=true;
-queueView.innerHTML=`<div class="page-heading"><div class="eyebrow">AJOUTER · LANCER · RETROUVER</div><h2>File de préparation</h2><p>Ajoute tous tes morceaux, puis lance leur préparation. Rien ne démarre avant ton clic.</p></div>
+queueView.innerHTML=uiMarkup(`<div class="page-heading"><div class="eyebrow">AJOUTER · LANCER · RETROUVER</div><h2>File de préparation</h2><p>Ajoute tous tes morceaux, puis lance leur préparation. Rien ne démarre avant ton clic.</p></div>
 <div class="cards preparation queue-inputs">
 <article><h3>1. Choisir la préparation</h3><label>Instruments<select id="queueModel"><option value="htdemucs" selected>4 pistes · standard (recommandé)</option><option value="htdemucs_ft">4 pistes · affiné (beaucoup plus long)</option><option value="htdemucs_6s">6 pistes · avec guitare et piano</option></select></label><small>Chant, batterie, basse et autres instruments. Le profil affiné effectue 4 passages en mode Équilibré : le calcul est beaucoup plus long, surtout sur processeur.</small><label>Calcul<select id="queueQuality"><option value="standard">Équilibré</option><option value="careful">Approfondi · plus long</option><option value="fast">Rapide</option></select></label><label>Langue des paroles<select id="queueLanguage"><option value="auto">Détection automatique</option><option value="fr">Français</option><option value="en">Anglais</option></select></label><small>Ces choix s’appliquent aux prochains ajouts. Séparation, tempo, tonalité et guides ; structure, paroles et accords selon les moteurs installés.</small></article>
 <article><h3>2. Ajouter les sources</h3><button id="queueFiles">＋ Fichiers sur mon ordinateur</button><p>Plusieurs fichiers à la fois, un morceau par fichier. Garde les sources disponibles jusqu’à leur import.</p></article>
 </div><div class="queue-toolbar"><button id="queueStart" class="primary">▶ Démarrer la file</button><button id="queuePause">Pause</button><button id="queueClear">Retirer les tâches terminées</button><button id="queueRefresh">Actualiser la file</button></div>
 <p id="queueStatus" role="status">Prête à recevoir tes morceaux.</p><p id="queueMessage" role="status" hidden></p><p class="queue-help">Laisse BandStudio ouvert. La file attend pendant une lecture ou une autre analyse. Les étapes terminées sont conservées ; après une pause ou une fermeture, seule l’étape interrompue est relancée. Les morceaux préparés restent à écouter et à valider.</p>
-<div id="queueItems" class="queue-items"></div>`;
+<div id="queueItems" class="queue-items"></div>`);
 queueView.querySelector('.page-heading').after(queueView.querySelector('.queue-toolbar'),queueView.querySelector('#queueStatus'),queueView.querySelector('#queueMessage'));
 $('view-library').after(queueView);
 const queueNav=button('',()=>view('queue'),'nav');queueNav.dataset.view='queue';
-queueNav.append(node('b','','≡'),node('span','','File de préparation'));
+queueNav.append(node('b','','≡'),node('span','',uiText('File de préparation')));
 document.querySelector('.rail [data-view=library]').after(queueNav);
-const queueHeader=button('＋ Ajouter à la file',()=>view('queue'));
+const queueHeader=button(uiText('＋ Ajouter à la file'),()=>view('queue'));
 $('view-library').querySelector('.page-heading').append(queueHeader);
 function queueOptions(){return {model:$('queueModel').value,quality:$('queueQuality').value,language:$('queueLanguage').value};}
 function queueSend(action,extra={}){send('batchQueue',{action,...extra});}
@@ -26,36 +26,36 @@ $('queueRefresh').onclick=()=>queueSend('refresh');
 function renderBatch(){
  const items=batchState.items||[],waiting=items.filter(e=>e.status==='pending'||e.status==='running').length,done=items.filter(e=>e.status==='done').length;
  $('queueStart').disabled=batchState.enabled||!waiting;
- $('queueStart').textContent=items.some(e=>e.completed>0&&e.status==='pending')?'▶ Reprendre la file':'▶ Démarrer la file';
+ $('queueStart').textContent=items.some(e=>e.completed>0&&e.status==='pending')?uiText('▶ Reprendre la file'):uiText('▶ Démarrer la file');
  $('queuePause').disabled=!batchState.enabled;
  $('queueClear').disabled=!done;
- $('queueStatus').textContent=(batchState.status||'En pause · démarrage manuel')+' · '+waiting+' en attente · '+done+' terminé(s)';
+ $('queueStatus').textContent=(batchState.status||uiText('En pause · démarrage manuel'))+' · '+waiting+uiText(' en attente · ')+done+uiText(' terminé(s)');
  $('queueMessage').textContent=batchState.message||'';$('queueMessage').hidden=!batchState.message;
  const signature=JSON.stringify(items);if(signature===batchSignature)return;batchSignature=signature;
  const list=$('queueItems');list.replaceChildren();
- const labels={pending:'En attente',running:'En cours',done:'Prêt à vérifier',error:'À reprendre'};
+ const labels={pending:uiText('En attente'),running:uiText('En cours'),done:uiText('Prêt à vérifier'),error:uiText('À reprendre')};
  items.forEach((item,index)=>{
   const row=node('article','queue-item'),info=node('div','queue-info'),actions=node('div','queue-actions');
   info.append(node('small','queue-state '+item.status,labels[item.status]||item.status),node('h3','',item.title),node('small','queue-source',item.source));
-  if(item.total)info.append(node('p','',item.completed+'/'+item.total+' étapes terminées'+(item.stage?' · '+item.stage:'')));
+  if(item.total)info.append(node('p','',item.completed+'/'+item.total+uiText(' étapes terminées')+(item.stage?' · '+item.stage:'')));
   if(item.total){
    const current=item.progress||{},part=Number.isFinite(current.progress)?Math.max(0,Math.min(100,current.progress)):0;
    const value=item.status==='done'?100:Math.min(99,100*(item.completed+(item.status==='running'?part/100:0))/item.total);
-   const meter=progressMeter('Préparation du morceau');
-   updateMeter(meter,value,Math.floor(value)+' % des étapes terminées');info.append(meter);
+   const meter=progressMeter(uiText('Préparation du morceau'));
+   updateMeter(meter,value,Math.floor(value)+uiText(' % des étapes terminées'));info.append(meter);
    if(item.status==='running'){
-    const step=progressMeter(item.stage||'Analyse');
-    updateMeter(step,part,(item.stage||'Analyse')+' · '+Math.floor(part)+' % · '+(current.progressLabel||'Préparation…'),!!current.indeterminate);info.append(step);
+    const step=progressMeter(item.stage||uiText('Analyse'));
+    updateMeter(step,part,(item.stage||uiText('Analyse'))+' · '+Math.floor(part)+' % · '+(current.progressLabel||uiText('Préparation…')),!!current.indeterminate);info.append(step);
    }
   }
   if(item.error)info.append(node('p','queue-error',item.error));
-  if(item.status==='done'&&item.project)actions.append(button('Ouvrir le morceau',()=>{send('library',{path:item.project});view('studio');},'primary'));
-  if(item.status==='error')actions.append(button('Réessayer',()=>queueSend('retry',{id:item.id})));
-  if(item.status==='pending'&&index>0){const up=button('↑ Monter',()=>queueSend('up',{id:item.id}));up.setAttribute('aria-label','Monter '+item.title);actions.append(up);}
-  const remove=button(item.status==='running'?'Annuler cette tâche':'Retirer',()=>queueSend('remove',{id:item.id}));remove.setAttribute('aria-label','Retirer '+item.title);actions.append(remove);
+  if(item.status==='done'&&item.project)actions.append(button(uiText('Ouvrir le morceau'),()=>{send('library',{path:item.project});view('studio');},'primary'));
+  if(item.status==='error')actions.append(button(uiText('Réessayer'),()=>queueSend('retry',{id:item.id})));
+  if(item.status==='pending'&&index>0){const up=button(uiText('↑ Monter'),()=>queueSend('up',{id:item.id}));up.setAttribute('aria-label',uiText('Monter ')+item.title);actions.append(up);}
+  const remove=button(item.status==='running'?uiText('Annuler cette tâche'):uiText('Retirer'),()=>queueSend('remove',{id:item.id}));remove.setAttribute('aria-label',uiText('Retirer ')+item.title);actions.append(remove);
   row.append(info,actions);list.append(row);
  });
- if(!items.length)list.append(node('p','queue-empty','Ta file est vide. Ajoute des fichiers ou colle tes liens ci-dessus.'));
+ if(!items.length)list.append(node('p','queue-empty',uiText('Ta file est vide. Ajoute des fichiers ou colle tes liens ci-dessus.')));
 }
 const receiveBeforeBatch=window.studioReceive;
 window.studioReceive=function(message){

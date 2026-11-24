@@ -27,6 +27,8 @@ def build(output,platform_name,app=None):
             if platform_name.startswith('windows') and path=='engine/web/index.html':
                 content=content.decode().replace("script-src 'self'","script-src 'self' 'unsafe-eval'").replace('<script src="diagnostics.js"','<script src="adapter.js" defer></script><script src="diagnostics.js"').encode()
             archive.writestr(path,content)
+            if platform_name.startswith('windows') and path=='engine/web/index.html':
+                archive.writestr('engine/web/index.en.html',content.replace(b'<html lang="fr">',b'<html lang="en">'))
         if platform_name.startswith('windows'):archive.write(ROOT/'desktop/studio/windows/adapter.js','engine/web/adapter.js')
         for source in ROOT.glob('reacue_*.py'):archive.write(source,'engine/'+source.name)
         for source in ROOT.glob('tools/setup_studio_*.py'):archive.write(source,'engine/tools/'+source.name)
