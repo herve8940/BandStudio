@@ -35,6 +35,7 @@ def test_packaged_release_contains_all_preparation_modules_and_visual_assets():
     spec=importlib.util.spec_from_file_location('release_package',ROOT/'tools/package_studio_windows.py')
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
     names={p.name for p in module.source_files()}
+    assert names.isdisjoint({'session.html', 'session.js', 'session.css', 'session-score.js'})
     assert {'lyrics_reference.py','chord_choice.py','chart_sections.py','section_functions.py','structure-compare.js','structure-compare.css','section-style.js','experience.js','experience.css'}<=names
 
 

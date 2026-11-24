@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import Accelerate
 
 struct StudioError: LocalizedError {
     let message: String
@@ -205,9 +206,18 @@ func inspectAudio(_ url: URL) throws -> (Double,[Float]) {
         try f.read(into:buffer)
         if buffer.frameLength == 0 { break }
         if let data=buffer.floatChannelData {
-            for i in 0..<Int(buffer.frameLength) {
-                let bucket=min(count-1,Int((position+Int64(i))*Int64(count)/f.length))
-                for ch in 0..<Int(buffer.format.channelCount) { peaks[bucket]=max(peaks[bucket],abs(data[ch][i])) }
+            let end = position + Int64(buffer.frameLength)
+            var frame = position
+            while frame < end {
+                let bucket = frame * Int64(count) / f.length
+                let next = min(end, ((bucket + 1) * f.length + Int64(count - 1)) / Int64(count))
+                let offset = Int(frame - position)
+                for channel in 0..<Int(buffer.format.channelCount) {
+                    var peak: Float = 0
+                    vDSP_maxmgv(data[channel] + offset, 1, &peak, vDSP_Length(next - frame))
+                    peaks[Int(bucket)] = max(peaks[Int(bucket)], peak)
+                }
+                frame = next
             }
         }
         position += Int64(buffer.frameLength)
