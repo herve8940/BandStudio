@@ -20,7 +20,7 @@ Dans **Éditeur du morceau**, choisis **1 · Préparer**. Le traitement utilise 
 
 Dans le même onglet, **Vérifier et compléter** propose une autre lecture du morceau. Compare les frises **Actuelle / Proposée**, écoute les changements, puis choisis ceux à appliquer. Tu peux aussi conserver ta préparation actuelle.
 
-[Guide français](BANDSTUDIO_TUTORIEL_fr.md) · [English tutorial](BANDSTUDIO_TUTORIAL_en.md) · [Notes de version FR / EN](RELEASE_2026-11-23.md).
+[Guide français](BANDSTUDIO_TUTORIEL_fr.md) · [English tutorial](BANDSTUDIO_TUTORIAL_en.md) · [Notes de version FR / EN](RELEASE_2026-11-24.md).
 
 ## Préparer une série
 
@@ -67,6 +67,21 @@ L’erreur `numpy.core.multiarray failed to import` peut venir de NumPy 2 avec s
 
 ## macOS
 
+**Installation existante, Mac Intel ou Apple Silicon.** Dans BandStudio, ouvre **Réglages**, vérifie les mises à jour puis quitte et rouvre l’application après le téléchargement. Les archives de mise à jour réutilisent le moteur et les modèles de l’installation.
+
+### Construire l’application depuis les sources
+
+Pour une installation de développement disposant déjà d’un moteur ReaCue local et de ses environnements Python, depuis la racine du dépôt :
+
+```sh
+python3 tools/build_studio_mac.py --prepare-runtime --source "$HOME/Documents/ReaCue"
+python3 tools/install_studio_mac.py
+```
+
+Le programme de construction attend les environnements `.venv`, `.venv-demucs`, `.venv-structure`, `.venv-words`, `.venv-chords`, `.venv-drums` et leurs ressources, préparés par les installateurs existants. Il produit une copie indépendante du moteur. Ce chemin s’adresse aux installations déjà préparées, pas à un ordinateur neuf. L’application installée est `~/Applications/BandStudio.app` et les morceaux sont dans `~/Music/BandStudio`.
+
+Les mises à jour `macos-x64` et `macos-arm64` ne contiennent que l’application et le code du moteur. Elles réutilisent les composants déjà installés. Aucun certificat Developer ID ni notarisation n’est fourni actuellement.
+
 ### Évaluer les analyses sans corrections manuelles
 
 `tools/check_studio_automatic.py` rejoue les analyses dans une **nouvelle bibliothèque isolée**. Il copie les fichiers audio et l’identité titre/artiste, puis recrée un document vierge : aucun tempo corrigé, décalage de piste, repère, parole, accord, réglage de morceau, référence choisie, cache d’analyse ou validation n’est repris. Les pistes séparées existantes sont réutilisées ; ce contrôle ne mesure donc pas la qualité de séparation. Les originaux sont contrôlés par SHA-256 avant et après l’essai.
@@ -80,17 +95,6 @@ python tools/check_studio_automatic.py --engine /chemin/Engine --library /chemin
 Le dossier de sortie doit être nouveau. Chaque étape utilise le vrai worker ; les modèles restent locaux et les recherches de références Internet utilisent le titre et l’artiste. L’option `--reuse-raw-structure` autorise uniquement les segments bruts SongFormer dont la clé audio/modèles/code/environnement/paramètres et le checksum sont identiques. Elle ne reprend aucune section du document : toutes les corrections et comparaisons ultérieures sont rejouées. La réutilisation est déclarée dans le rapport ; une incompatibilité déclenche une nouvelle inférence.
 
 `report.json` conserve les durées, erreurs, avertissements, provenance audio et résultats techniques. Sans annotations de référence indépendantes ou écoute comparative, ces résultats ne constituent pas une mesure de précision musicale. Les tests sur des projets corrigés restent utiles pour vérifier la conservation des modifications, mais ne servent pas de vérité terrain aux analyses automatiques.
-
-Pour une installation de développement disposant déjà d’un moteur ReaCue local et de ses environnements Python, depuis la racine du dépôt :
-
-```sh
-python3 tools/build_studio_mac.py --prepare-runtime --source "$HOME/Documents/ReaCue"
-python3 tools/install_studio_mac.py
-```
-
-Le programme de construction attend les environnements `.venv`, `.venv-demucs`, `.venv-structure`, `.venv-words`, `.venv-chords`, `.venv-drums` et leurs ressources, préparés par les installateurs existants. Il produit une copie indépendante du moteur. Ce chemin s’adresse aux installations déjà préparées, pas à un ordinateur neuf. L’application installée est `~/Applications/BandStudio.app` et les morceaux sont dans `~/Music/BandStudio`.
-
-Les mises à jour `macos-x64` et `macos-arm64` ne contiennent que l’application et le code du moteur. Elles réutilisent les composants déjà installés. Aucun certificat Developer ID ni notarisation n’est fourni actuellement.
 
 ## Communauté Discord
 

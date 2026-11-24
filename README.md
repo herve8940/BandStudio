@@ -1,85 +1,41 @@
-<div align="center">
-  <img src="desktop/studio/web/icon.svg" width="84" alt="BandStudio">
-  <h1>BandStudio</h1>
-  <p><strong>Ton morceau. À ta façon.</strong><br>Un atelier local pour tous les musiciens, de l’écoute à la répétition.</p>
+# BandStudio
 
-[💬 Discord · aide & communauté](https://discord.gg/5UnQPdMUpR) · [Site](https://herve8940.github.io/BandStudio/) · [Télécharger](https://github.com/herve8940/BandStudio/releases/latest) · [Guide](docs/BANDSTUDIO.md) · [Tuto import → REAPER](https://herve8940.github.io/BandStudio/tutoriel.html) · [Tuto fiche morceau → PDF](https://herve8940.github.io/BandStudio/fiche-morceau.html) · [Guide pas à pas](docs/BANDSTUDIO_TUTORIEL_fr.md) · [English](README.en.md) · [Signaler un bug](https://github.com/herve8940/BandStudio/issues/new/choose)
+**Prépare ta partie avant la répétition.** Importe un enregistrement, écoute la basse seule pour apprendre sa ligne, puis coupe-la pour jouer avec le reste du groupe. BandStudio rassemble les pistes séparées, le métronome, les paroles et la grille d’accords dans un éditeur local pour Mac et Windows.
 
-![Vérifications](https://github.com/herve8940/BandStudio/actions/workflows/bandstudio-release.yml/badge.svg)
-![Site](https://github.com/herve8940/BandStudio/actions/workflows/pages.yml/badge.svg)
-![Licence MIT](https://img.shields.io/badge/code-MIT-a78bfa)
-</div>
+[Site officiel](https://herve8940.github.io/BandStudio/) · [Télécharger pour Windows](https://github.com/herve8940/BandStudio/releases/latest/download/BandStudio-1.1.0-Windows-x64.zip) · [Guide macOS](docs/BANDSTUDIO.md#macos) · [English](README.en.md)
 
-BandStudio est un logiciel gratuit de séparation d’instruments (stems) et de préparation musicale locale : ajuste le tempo, travaille les accords et les paroles synchronisées, puis exporte le morceau et ses médias vers REAPER. Chant, guitare, basse, claviers et batterie disposent des mêmes commandes d’écoute. Les traitements audio tournent sur ton ordinateur.
+![L’éditeur de BandStudio avec un projet de démonstration, les pistes et les passages à réécouter](site/assets/editor-review.jpg)
 
-![Présentation de l’atelier BandStudio — illustration interactive disponible sur le site](site/assets/social.jpg)
+## Installer BandStudio
 
-## Ce que tu peux faire
+| Ton ordinateur | Pour démarrer |
+| --- | --- |
+| **Windows 11 x64** | Extrais le ZIP entier dans un dossier accessible en écriture, puis lance **BandStudio.exe**. Python et FFmpeg sont inclus. WebView2 et .NET Framework 4.8 sont requis. Les moteurs facultatifs s’installent dans **Réglages → Analyses locales**. |
+| **Mac Intel ou Apple Silicon déjà équipé** | Dans **Réglages**, vérifie les mises à jour. Une fois le téléchargement terminé, quitte BandStudio et rouvre-le. |
+| **Première installation sur Mac** | La compilation depuis les sources nécessite un moteur ReaCue et ses environnements Python déjà préparés. Aucun installateur complet pour Mac neuf n’est distribué actuellement. [Prérequis et commandes](docs/BANDSTUDIO.md#macos) |
 
-- **Séparer et mixer** : 4 ou 6 stems, volumes, panoramiques, mute, solo, original et mix. Choisis ton instrument pour l’isoler ou jouer sans lui. Sous-pistes de batterie et chant principal/chœurs avec les moteurs facultatifs.
-- **Travailler un passage** : boucles, vitesse de 50 à 150 %, transposition de ±12 demi-tons, progression du tempo et capo pour les accords affichés.
-- **Comprendre le morceau** : tempo, temps et débuts de mesure, tonalité, sections modifiables, accords et paroles synchronisées. Les corrections manuelles sont conservées.
-- **Organiser les morceaux** : bibliothèque en liste avec pochettes recherchées automatiquement par titre/artiste (y compris les anciens imports), intégrées ou choisies, suppression réversible et restauration.
-- **Préparer le morceau** dès l’import ou depuis l’éditeur. Les moteurs installés enchaînent les instruments, le chant, les paroles, les accords, la structure et les guides.
-- **Préparer une série de morceaux** : ajoute plusieurs fichiers locaux dans la file, puis clique sur **Démarrer la file**. Pause, reprise et erreurs par morceau ; aucun démarrage automatique à l’ouverture.
-- **Préparer la répétition** avec le click, les appels de sections, le décompte et les notes. Tu peux consigner ta vérification à l’écoute dans **Projet REAPER**.
-- **Exporter** : mix, stems WAV/FLAC/MP3/AAC, paroles LRC/SRT, fiche PDF, MIDI batterie et projet REAPER portable avec médias et décompte initial réglable pour préparer le départ.
+La version **1.1.0 du 24 novembre 2026** ouvre directement l’éditeur et optimise le calcul des formes d’onde. Les archives de mise à jour préservent les projets et les réglages. [Notes de version](docs/RELEASE_2026-11-24.md) · [Historique](CHANGELOG.md)
 
-La qualité dépend du morceau et des modèles installés. Vérifie à l’écoute les accords, les paroles et les sections proposés. [Fonctions et limites](docs/BANDSTUDIO.md#traitement-du-morceau).
+## Préparer ton premier morceau
 
-## Nouveautés du 23 novembre 2026
+1. Dans **Mes morceaux**, importe ton fichier audio. Laisse **Préparer automatiquement après l’import** activé pour utiliser les moteurs installés. Pour plusieurs fichiers, ouvre **Préparer une série** et démarre la file.
+2. Dans **Éditeur du morceau**, isole une piste, boucle une section ou ralentis la lecture. Réécoute les passages signalés avant de corriger un repère, une parole ou un accord.
+3. Ouvre **Fiche morceau** pour exporter un PDF avec les accords et les paroles par mesure. Dans **Projet REAPER**, exporte les pistes et leurs médias pour poursuivre le travail dans REAPER.
 
-- **Écouter et corriger** s’ouvre après la préparation. Dans **Écoute ciblée**, choisis un mot, un accord ou une section signalés pour entendre le passage et le modifier.
-- **Paroles** essaie le titre complet, un titre simplifié et plusieurs catalogues. BandStudio cale les mots sur ton enregistrement et signale les placements à réécouter.
-- Dans **Accords**, compare les grilles et choisis celle qui convient à ton arrangement. La fiche et le prompteur tiennent compte du capo.
-- La fiche PDF, le décompte et l’export REAPER suivent la même grille. Une entrée avant le prochain « 1 » apparaît au temps où elle est jouée.
+[Guide illustré de l’import à REAPER](https://herve8940.github.io/BandStudio/tutoriel.html) · [Guide de la fiche PDF](https://herve8940.github.io/BandStudio/fiche-morceau.html) · [Manuel complet](docs/BANDSTUDIO.md)
 
-![Écoute ciblée dans l’éditeur du morceau de démonstration](site/assets/editor-review.jpg)
+## Pendant la répétition
 
-[De l’import à REAPER](https://herve8940.github.io/BandStudio/tutoriel.html) · [Des paroles à la fiche PDF](https://herve8940.github.io/BandStudio/fiche-morceau.html) · [Notes de version FR / EN](docs/RELEASE_2026-11-23.md).
+- **Écoute**. Règle le volume, le panoramique, la vitesse et la transposition. Isole ta partie ou joue avec les autres pistes. Les instruments disponibles dépendent du modèle installé.
+- **Repères**. Ajuste le tempo, les sections, le métronome et le décompte. Compare les grilles d’accords, choisis ton capo et cale les paroles sur le chant.
+- **Exports**. Récupère le mix, les pistes séparées, les paroles LRC/SRT, le MIDI de batterie, la fiche PDF ou le projet REAPER. Les pistes audio exportées individuellement gardent leur vitesse et leur hauteur d’origine.
 
-## Installer
+Les calculs audio s’exécutent sur ton ordinateur. Les recherches de paroles, d’accords et de pochettes utilisent Internet. La qualité des propositions dépend de l’enregistrement et des moteurs installés. [Fonctions et limites](docs/BANDSTUDIO.md#traitement-du-morceau)
 
-**Windows 64 bits** : télécharge le ZIP de la [version stable](https://github.com/herve8940/BandStudio/releases/latest), extrais tout le dossier et ouvre `BandStudio.exe`. Python est inclus ; WebView2 doit être disponible. Installe les moteurs utiles dans **Réglages → Analyses locales**. Les paquets ne sont pas signés par un certificat commercial.
+## Aide et contribution
 
-**macOS** : application native pour les installations préparées avec le moteur local. La compilation et l’installation initiales sont décrites dans le [guide macOS](docs/BANDSTUDIO.md#macos). Les mises à jour des installations existantes sont distribuées pour Intel et Apple Silicon. Un installateur macOS complet pour un ordinateur neuf n’est pas encore distribué.
+Pour une question de musicien, rejoins le [Discord BandStudio](https://discord.gg/5UnQPdMUpR). Pour un problème reproductible, indique ton système et les étapes suivies. Dans **Aide & Discord**, tu peux relire un diagnostic avant de le partager. [Assistance](SUPPORT.md) · [Signaler un bug](https://github.com/herve8940/BandStudio/issues/new/choose)
 
-Les vérifications automatiques couvrent la compilation macOS, le paquet Windows déplacé dans un chemin avec espaces/accents, la synthèse vocale Windows, WebView2, le mixage hors ligne et les exports. Elles ne garantissent pas tous les pilotes audio ni tous les moteurs IA sur chaque ordinateur.
+Le code est sous [licence MIT](LICENSE). Les moteurs et modèles ont leurs propres licences, dont certaines limitent l’usage commercial. [Crédits et licences des composants](THIRD_PARTY_NOTICES.md) · [Contribuer et lancer les tests](CONTRIBUTING.md) · [Sécurité](SECURITY.md) · [Code de conduite](CODE_OF_CONDUCT.md)
 
-## BandStudio + BandPilot
-
-| Moment | Application | Rôle |
-|---|---|---|
-| Préparation personnelle | **BandStudio** | Stems, écoute, tempo, paroles, accords et guides |
-| Projet audio du groupe | **REAPER** | Reçoit les pistes, les repères et les médias vérifiés |
-| Répétition et son du groupe | **[BandPilot](https://herve8940.github.io/BandPilot/)** | Console, balances guidées, retours et fonctions de répétition |
-
-Les applications restent indépendantes. BandStudio est issu de ReaCue ; les scripts REAPER historiques restent disponibles. [Documentation ReaCue](README_REACUE.md).
-
-## Mises à jour et diagnostics
-
-Après un push sur `main`, GitHub Actions teste et construit les paquets. Le manifeste de mise à jour n’est publié que si les vérifications réussissent. BandStudio vérifie le flux au démarrage, contrôle l’empreinte SHA-256, télécharge en arrière-plan et installe à la fermeture. Une sauvegarde des fichiers remplacés est conservée ; les projets, modèles et réglages sont exclus des mises à jour. Tu peux les désactiver dans Réglages. Une évolution des dépendances peut nécessiter une installation complète.
-
-Les logs sont locaux, limités en taille, et ne collectent pas l’audio ni le contenu des projets. **Réglages → Exporter le diagnostic**, puis **Signaler un bug sur GitHub** ouvre un formulaire à compléter. Vérifie les logs avant de les joindre. Aucun rapport utilisateur n’est envoyé sans ton action. Les échecs de publication sur `main` créent un ticket GitHub avec le lien vers le job concerné.
-
-## Contribuer
-
-Voir [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) et [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
-
-```sh
-python -m pip install -r requirements-dev.txt
-python -m playwright install chromium webkit
-python -m pytest tests/test_standalone_studio.py tests/test_studio_support.py
-```
-
-Les tests audio supplémentaires demandent FFmpeg et le moteur de test local : `BANDSTUDIO_TEST_ENGINE=/chemin/Engine python -m pytest tests/test_studio_windows.py tests/test_studio_preparation.py tests/test_studio_services.py`.
-
-## Licence et crédits
-
-Code sous [licence MIT](LICENSE), par les contributeurs de BandStudio. Les composants et modèles conservent leurs licences ; certains modèles facultatifs de structure et batterie ont des restrictions non commerciales. Voir [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Aucun modèle ni morceau personnel n’est publié dans le dépôt.
-
-## Communauté & assistance
-
-Rejoins le [Discord BandStudio](https://discord.gg/5UnQPdMUpR), un serveur indépendant de BandPilot : entraide, démarrage, annonces, bugs et idées en français et en anglais.
-
-Dans **Aide & Discord**, décris le problème, ajoute si utile le diagnostic compact, puis **Copier le rapport et ouvrir Discord**. Colle le rapport dans `#rapports-de-bugs` et envoie-le. Aucun audio, projet ni journal brut n’est joint. Le diagnostic détaillé peut être exporté, relu, puis joint manuellement. [Aide et signalement](SUPPORT.md).
+Pour les balances et les retours de scène du groupe, voir [BandPilot](https://herve8940.github.io/BandPilot/). Les scripts REAPER historiques sont documentés dans le [manuel ReaCue](README_REACUE.md).

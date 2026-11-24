@@ -82,10 +82,15 @@ def test_homepage_comparison_and_download_links(public_browser,filename):
     browser,url=public_browser;page=browser.new_page(viewport=dict(width=375,height=812))
     try:
         page.goto(url+'/'+filename)
-        image=page.locator('.release-preview img');image.scroll_into_view_if_needed()
+        image=page.locator('.work-view:visible .release-preview img');image.scroll_into_view_if_needed()
         page.wait_for_function('document.querySelector(".release-preview img").naturalWidth>0')
         assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
         assert page.locator('header nav').is_visible()
         assert page.locator('a[href$="BandStudio-1.1.0-Windows-x64.zip"]').count()==1
-        assert page.locator('#nouveautes a[href="'+('tutorial.html' if filename=='en.html' else 'tutoriel.html')+'"]').count()==1
+        assert page.locator('#nouveautes a[href*="RELEASE_"]').count()==1
+        for index in (1,2,0):
+            page.locator(f'.view-switch [data-view="{index}"]').click()
+            assert page.locator(f'#view-{index}').is_visible()
+            assert page.locator('.work-view:visible').count()==1
+        assert page.locator('#guides a[href="'+('tutorial.html' if filename=='en.html' else 'tutoriel.html')+'"]').count()==1
     finally:page.close()
