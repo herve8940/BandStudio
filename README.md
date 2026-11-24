@@ -38,6 +38,8 @@ Les calculs audio s’exécutent sur ton ordinateur. Les recherches de paroles, 
 
 ## Aide et contribution
 
+BandStudio et BandPilot partagent la même page de soutien. [Offrir un café sur Ko-fi](https://ko-fi.com/bandpilot)
+
 Pour une question de musicien, rejoins le [Discord BandStudio](https://discord.gg/5UnQPdMUpR). Pour un problème reproductible, indique ton système et les étapes suivies. Dans **Aide & Discord**, tu peux relire un diagnostic avant de le partager. [Assistance](SUPPORT.md) · [Signaler un bug](https://github.com/herve8940/BandStudio/issues/new/choose)
 
 Le code est sous [licence MIT](LICENSE). Les moteurs et modèles ont leurs propres licences, dont certaines limitent l’usage commercial. [Crédits et licences des composants](THIRD_PARTY_NOTICES.md) · [Contribuer et lancer les tests](CONTRIBUTING.md) · [Sécurité](SECURITY.md) · [Code de conduite](CODE_OF_CONDUCT.md)

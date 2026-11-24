@@ -42,6 +42,8 @@ Audio processing runs on your computer. Lyrics, chord and artwork lookups use on
 
 ### Help and contributions
 
+BandStudio and BandPilot share a support page. [Buy a coffee on Ko-fi](https://ko-fi.com/bandpilot)
+
 Ask rehearsal questions in the [BandStudio Discord](https://discord.gg/5UnQPdMUpR). To report a reproducible issue, include your operating system and the steps you followed. **Help & Discord** lets you review diagnostic information before you share it. [Support](SUPPORT.md) · [Report an issue](https://github.com/herve8940/BandStudio/issues/new/choose)
 
 The source code uses the [MIT license](LICENSE). Dependencies and models have their own licenses, some with non-commercial terms. [Third-party notices](THIRD_PARTY_NOTICES.md) · [Contributing and running tests](CONTRIBUTING.md) · [Security](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md)
@@ -89,6 +91,8 @@ Pour choisir la langue de l’application, ouvre **Réglages → Langue de l’i
 Les calculs audio s’exécutent sur ton ordinateur. Les recherches de paroles, d’accords et de pochettes utilisent Internet. La qualité des propositions dépend de l’enregistrement et des moteurs installés. [Fonctions et limites](docs/BANDSTUDIO.md#traitement-du-morceau)
 
 ### Aide et contribution
+
+BandStudio et BandPilot partagent la même page de soutien. [Offrir un café sur Ko-fi](https://ko-fi.com/bandpilot)
 
 Pour une question de musicien, rejoins le [Discord BandStudio](https://discord.gg/5UnQPdMUpR). Pour un problème reproductible, indique ton système et les étapes suivies. Dans **Aide & Discord**, tu peux relire un diagnostic avant de le partager. [Assistance](SUPPORT.md) · [Signaler un bug](https://github.com/herve8940/BandStudio/issues/new/choose)
 
