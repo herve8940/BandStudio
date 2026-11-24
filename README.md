@@ -2,6 +2,8 @@
 
 **Prépare ta partie avant la répétition.** Importe un enregistrement, écoute la basse seule pour apprendre sa ligne, puis coupe-la pour jouer avec le reste du groupe. BandStudio rassemble les pistes séparées, le métronome, les paroles et la grille d’accords dans un éditeur local pour Mac et Windows.
 
+**BandStudio est disponible en français et en anglais sur Mac et Windows.**
+
 [Site officiel](https://herve8940.github.io/BandStudio/) · [Télécharger pour Windows](https://github.com/herve8940/BandStudio/releases/latest/download/BandStudio-1.1.0-Windows-x64.zip) · [Guide macOS](docs/BANDSTUDIO.md#macos) · [English](README.en.md)
 
 ![L’éditeur de BandStudio avec un projet de démonstration, les pistes et les passages à réécouter](site/assets/editor-review.jpg)
