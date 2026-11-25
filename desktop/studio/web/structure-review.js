@@ -114,10 +114,10 @@
   }));
   sourceDetails.hidden=!(proposal.sourceChecks||[]).length&&!found.length;
  }
- function beginAudition(selection=null){
+ function beginAudition(selection=null,view='studio'){
   const p=state.project,proposal=p.structureProposal,clips=(selection||clipsFor(proposal)).filter(c=>Number.isFinite(c.start)&&Number.isFinite(c.end)&&c.start>=0&&c.end>c.start&&c.end<=state.duration);
   if(!state.loaded||!clips.length||state.busy||dirty())return;
-  audition={project:p.id,proposal:proposal?.id,clips,index:0,armed:false,last:null,
+  audition={view,project:p.id,proposal:proposal?.id,clips,index:0,armed:false,last:null,
    loop:{on:!!transport.loop,start:transport.loopStart||0,end:transport.loopEnd||state.duration}};
   nextClip();
  }
@@ -139,7 +139,7 @@
  // Every guided excerpt shares this transport controller and loop restoration.
  // Lyrics and rhythm can be reviewed before a structure proposal exists.
  window.studioAudition={
-  play(clip){stopAudition();beginAudition([clip]);},
+  play(clip,view='studio'){stopAudition();beginAudition([clip],view);},
   stop:()=>stopAudition(),
   current:()=>audition?.clips[audition.index]||null
  };
@@ -157,6 +157,6 @@
  renderPreparation=function(){beforePreparation();render();};
  $('notes').addEventListener('input',()=>renderPreparation());
  $('guideForm').addEventListener('input',()=>queueMicrotask(()=>renderPreparation()));
- document.addEventListener('studio:view-changed',e=>{if(e.detail!=='studio')stopAudition();});
+ document.addEventListener('studio:view-changed',e=>{if(audition && e.detail!==audition.view)stopAudition();});
  render();
 })();

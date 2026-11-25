@@ -109,3 +109,17 @@ Discord BandStudio : https://discord.gg/5UnQPdMUpR
 Aide & Discord : entraide, bugs, idées et nouveautés.
 Prépare et relis le rapport, puis copie-le dans le salon des bugs.
 Le diagnostic compact est facultatif ; aucun audio ni projet n’est joint.
+
+EXPORTS ABLETON LIVE ET RÉGIE
+Dans Exporter, choisis le morceau ouvert, une sélection dans la bibliothèque ou une
+setlist. Tu peux réordonner les titres puis enregistrer la liste pour le prochain concert.
+Projet Ableton Live crée un Set Arrangement .als par titre. Garde le Set avec son dossier
+Samples pour retrouver les pistes, les guides, les repères et les changements de tempo.
+Régie QLab + grandMA3 crée un groupe QLab et une séquence lumière par titre.
+Tu peux livrer le mix stéréo, les pistes séparées ou les deux, et choisir une conduite
+grandMA3 pour le concert, une par titre ou les deux. Un mot ou un accord calé peut servir
+de point de départ pour un repère vidéo ou lumière.
+Sur le Mac de régie, ouvre un workspace vide dans QLab 5 et lance Build QLab.command.
+Le fichier README.txt de l’export décrit le patch façade, retours et LTC, ainsi que
+l’import des séquences et timecodes sur la console. Vérifie les sorties en répétition.
+Chaque export crée un nouveau dossier et conserve le travail fait sur les précédents.

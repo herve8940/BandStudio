@@ -1,3 +1,10 @@
+## BandStudio · 2026-11-25
+
+- Exporte un projet Ableton Live par morceau ou prépare une conduite de concert pour QLab et grandMA3.
+- Appuie sur **M** pendant la lecture pour poser un repère dans l’éditeur de paroles ou la vue Régie.
+
+[Notes du 25 novembre en français et en anglais](docs/RELEASE_2026-11-25.md).
+
 ## BandStudio · 2026-11-24
 
 BandStudio 1.1.0 s’ouvre directement dans l’éditeur. Le calcul des formes d’onde est optimisé sur Mac et Windows. Les paquets publics ne contiennent pas la démo Session.

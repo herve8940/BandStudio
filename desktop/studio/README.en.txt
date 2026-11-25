@@ -40,3 +40,16 @@ Review a diagnostic report in Help & Discord before sharing it.
 English walkthrough: https://herve8940.github.io/BandStudio/tutorial.html
 Song sheet and PDF: https://herve8940.github.io/BandStudio/song-sheet.html
 Community: https://discord.gg/5UnQPdMUpR
+
+ABLETON LIVE AND SHOW EXPORTS
+Under Export, choose the current song, a library selection or a setlist. Reorder the
+songs and save the list for the next show. Ableton Live Project creates one .als
+Arrangement Set per song. Keep the Set with its Samples folder to access tracks,
+guides, locators and tempo changes.
+QLab + grandMA3 Show creates one QLab group and one lighting sequence per song.
+Choose a stereo mix, stems or both, and full-show timecode, per-song timecode or both.
+Use a timed word or chord as the starting point for a video or lighting marker.
+On the show Mac, open an empty workspace in QLab 5 and run Build QLab.command.
+The exported README.txt covers FOH, monitor and LTC routing and importing the sequences
+and timecode shows on the console. Check the outputs in rehearsal.
+Each export creates a new folder and preserves previous exports and edits.

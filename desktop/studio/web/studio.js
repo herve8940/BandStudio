@@ -32,8 +32,35 @@ $('loopToggle').onclick=()=>send('loop',{on:!transport.loop,start:Number($('loop
 $('loopStart').onchange=$('loopEnd').onchange=()=>{if(transport.loop)send('loop',{on:true,start:Number($('loopStart').value),end:Number($('loopEnd').value)});};
 function displaySection(s){selected=s.id;$('selectionName').textContent=s.name;$('selectionInfo').textContent=time(s.start)+' → '+time(s.end)+' · '+(s.locked?uiText('section protégée'):uiText('proposition à vérifier'));$('loopStart').value=s.start.toFixed(3);$('loopEnd').value=s.end.toFixed(3);$('editSection').hidden=false;document.querySelectorAll('.section').forEach(e=>e.classList.toggle('selected',e.dataset.id===selected));}
 function selectSection(s){displaySection(s);if(transport.loop)send('loop',{on:true,start:s.start,end:s.end});send('seek',{time:s.start});}
-function openEditor(kind,item){window.openStudioEditor?.('structure');edit={kind,id:item?.id};$('editorType').textContent=kind==='section'?uiText('STRUCTURE DU MORCEAU'):uiText('REPÈRE DE JEU');$('editorTitle').textContent=(item?uiText('Modifier'):uiText('Créer'))+(kind==='section'?uiText(' une section'):uiText(' un repère'));$('editName').value=item?.name||'';$('editStart').value=(item?.start??item?.time??transport.position??0).toFixed(3);$('editEnd').value=(item?.end??Math.min(state.duration,(transport.position||0)+10)).toFixed(3);$('editLock').checked=item?.locked??true;$('editCallText').value=item?.callText||'';$('editAnnounce').checked=item?.announce!==false;$('endField').hidden=kind!=='section';$('editEnd').required=kind==='section';$('lockField').hidden=kind!=='section';$('deleteItem').hidden=!item;$('editor').showModal();$('editName').focus();}
-$('newSection').onclick=()=>openEditor('section');$('newCue').onclick=$('addCue').onclick=()=>openEditor('cue');
+function openEditor(kind, item, position = transport.position || 0) {
+ const section = kind === 'section';
+ if (section || ($('view-studio').hidden && $('view-regie').hidden)) window.openStudioEditor?.('structure');
+ edit = {kind, id:item?.id};
+ $('editorType').textContent = section ? uiText('STRUCTURE DU MORCEAU') : uiText('REPÈRE DE JEU');
+ $('editorTitle').textContent = (item ? uiText('Modifier') : uiText('Créer')) + (section ? uiText(' une section') : uiText(' un repère'));
+ $('editName').value = item?.name || '';
+ $('editStart').value = (item?.start ?? item?.time ?? position).toFixed(3);
+ $('editEnd').value = (item?.end ?? Math.min(state.duration, position + 10)).toFixed(3);
+ $('editLock').checked = item?.locked ?? true;
+ $('editCallText').value = item?.callText || '';
+ $('editAnnounce').checked = item ? item.announce !== false : $('view-regie').hidden;
+ $('endField').hidden = $('lockField').hidden = !section;
+ $('editEnd').required = section;
+ $('deleteItem').hidden = !item;
+ $('editor').showModal();
+ $('editName').focus();
+}
+function markAtPlayhead() {
+ if (!state.loaded || state.busy || $('editor').open) return;
+ openEditor('cue');
+ if (transport.playing) {
+  edit.capture = crypto.randomUUID();
+  send('captureCuePosition', {request:edit.capture});
+ }
+}
+$('editStart').addEventListener('input', () => { if (edit) delete edit.capture; });
+$('newSection').onclick = () => openEditor('section');
+$('newCue').onclick = $('addCue').onclick = markAtPlayhead;
 $('editSection').onclick=()=>openEditor('section',state.project.sections.find(s=>s.id===selected));
 $('closeEditor').onclick=()=>$('editor').close();
 $('deleteItem').onclick=()=>{send(edit.kind==='section'?'deleteSection':'deleteCue',{id:edit.id});$('editor').close();selected=null;};
@@ -101,7 +128,15 @@ function jobProgress(data){
  return text;
 }
 $('automaticUpdates').onchange=()=>send('automaticUpdates',{enabled:$('automaticUpdates').checked});
-window.studioReceive=data=>{if(data.type==='update'){$('automaticUpdates').checked=data.automatic!==false;$('updateStatus').textContent=data.message||uiText('Vérification automatique activée.');}else if(data.type==='state'){if(data.project.id!==state.project.id){selected=null;document.querySelectorAll('dialog[open]').forEach(d=>d.close());guideDirty=false;dirtyGuideSettings.clear();}if(data.job!==state.job||data.busy!==state.busy)$('jobDetail').textContent=uiText('Préparation du traitement…');state=data;render();}else if(data.type==='transport'){transport=data;renderTransport();}else if(data.type==='job'){$('jobDetail').textContent=jobProgress(data);}};
+window.studioReceive=data=>{
+ if (data.type==='cuePosition') {
+  if (state.project.id===data.projectID && $('editor').open && edit.capture && edit.capture===data.request && Number.isFinite(data.time)) {
+   $('editStart').value=data.time.toFixed(3);
+   delete edit.capture;
+  }
+  return;
+ }
+ if(data.type==='update'){$('automaticUpdates').checked=data.automatic!==false;$('updateStatus').textContent=data.message||uiText('Vérification automatique activée.');}else if(data.type==='state'){if(data.project.id!==state.project.id){selected=null;document.querySelectorAll('dialog[open]').forEach(d=>d.close());guideDirty=false;dirtyGuideSettings.clear();}if(data.job!==state.job||data.busy!==state.busy)$('jobDetail').textContent=uiText('Préparation du traitement…');state=data;render();}else if(data.type==='transport'){transport=data;renderTransport();}else if(data.type==='job'){$('jobDetail').textContent=jobProgress(data);}};
 document.addEventListener('keydown',e=>{if(e.defaultPrevented||e.target.closest('input,textarea,select,[contenteditable=true]')||document.querySelector('dialog[open]'))return;if(e.code==='Space'){if(e.target.closest('button,summary'))return;e.preventDefault();if(!e.repeat)send('play');}if((e.metaKey||e.ctrlKey)&&e.key==='z'){e.preventDefault();send(e.shiftKey?'redo':'undo');}});
 new ResizeObserver(()=>requestAnimationFrame(drawWaves)).observe($('tracks'));
 

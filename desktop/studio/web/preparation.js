@@ -64,13 +64,17 @@ function navigate(direction){
  send('seek',{time:Math.max(0,Math.min(state.duration,target))});
 }
 for(const [action,label] of [['start',uiText('|◀ Début')],['previous',uiText('◀ Repère')],['back',uiText('−1 mesure')],['forward',uiText('+1 mesure')],['next',uiText('Repère ▶')]])navigation.append(button(label,()=>navigate(action)));
-navigation.append(button(uiText('＋ Repère ici'),()=>openEditor('cue')));
+navigation.append(button(uiText('＋ Repère ici'),markAtPlayhead));
 $('workspace').prepend(navigation);
 document.addEventListener('keydown',e=>{
- if(e.defaultPrevented||e.target.closest('button,summary,input,textarea,select,[contenteditable=true]')||document.querySelector('dialog[open]')||e.metaKey||e.ctrlKey||e.altKey)return;
+ if(e.defaultPrevented||e.isComposing||e.target.closest('input,textarea,select,[contenteditable=true]')||document.querySelector('dialog[open]')||e.metaKey||e.ctrlKey||e.altKey)return;
+ if(e.key.toLowerCase()==='m'){
+  if(!state.loaded||state.busy||($('view-studio').hidden && $('view-regie').hidden))return;
+  e.preventDefault();if(!e.repeat)markAtPlayhead();return;
+ }
+ if(e.target.closest('button,summary'))return;
  const direction={Home:'start',End:'end',ArrowLeft:e.shiftKey?'previous':'back',ArrowRight:e.shiftKey?'next':'forward'}[e.code];
  if(direction){e.preventDefault();navigate(direction);}
- if(e.code==='KeyM'){e.preventDefault();openEditor('cue');}
 });
 renderPreparation();
 

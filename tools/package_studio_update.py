@@ -10,6 +10,8 @@ import subprocess
 import sys
 import zipfile
 
+from studio_export_resources import export_resources
+
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'desktop/studio'))
 from updater import allowed_path
@@ -30,6 +32,12 @@ def build(output,platform_name,app=None):
             if platform_name.startswith('windows') and path=='engine/web/index.html':
                 archive.writestr('engine/web/index.en.html',content.replace(b'<html lang="fr">',b'<html lang="en">'))
         if platform_name.startswith('windows'):archive.write(ROOT/'desktop/studio/windows/adapter.js','engine/web/adapter.js')
+        included = set(archive.namelist())
+        for source, relative in export_resources():
+            name = 'engine/' + relative
+            if name not in included:
+                assert allowed_path(name), name
+                archive.write(source,name)
         for source in ROOT.glob('reacue_*.py'):archive.write(source,'engine/'+source.name)
         for source in ROOT.glob('tools/setup_studio_*.py'):archive.write(source,'engine/tools/'+source.name)
         for component in ('stems','structure','words','chords','drums','whisper'):
