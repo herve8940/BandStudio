@@ -57,7 +57,8 @@ def time_addresses(db, songs):
 def stage_project(p, work):
     """Regenerate missing/stale guides in a private directory during a batch export."""
     root = Path(p['_root'])
-    required = p['settings']['exportGuides'] or p['settings']['exportCount']
+    settings = p['settings']
+    required = settings['exportGuides'] or settings['exportCount']
     old_tracks = p['tracks']
     instruments = [t for t in old_tracks if not t['role'].startswith('guide_')]
     if not required:
@@ -86,7 +87,8 @@ def stage_project(p, work):
         project['tracks'].append(dict(track, file=filename))
     snapshot, output = work / 'snapshot.json', work / 'guides.json'
     atomic(snapshot, project)
-    guides(snapshot, output)
+    include_announcements = settings['exportGuides'] and (settings['callsEnabled'] or settings['speakCues'])
+    guides(snapshot, output, include_announcements=include_announcements)
     generated = json.loads(output.read_text(encoding='utf-8'))
     project['guideFiles'] = {key: Path(path).relative_to(work).as_posix() for key,path in generated['files'].items()}
     for key, name, role in [('click','Click','guide_click'), ('calls',ui_text('Annonces','Calls'),'guide_voice'),

@@ -313,7 +313,7 @@ def announcement_text(item, language):
     return name
 
 
-def guides(project_file,output):
+def guides(project_file,output,*,include_announcements=True):
     from analysis_progress import phase_items
     import numpy as np
     import soundfile as sf
@@ -352,7 +352,8 @@ def guides(project_file,output):
         if item['id'] in count_plans:
             count_plans[item['id']]=[e for e in count_plans[item['id']] if e['time']>=previous_start]
         previous_start=max(previous_start,item['start'])
-    for item in phase_items(p.get('sections',[])+p.get('cues',[]),1,5,ui_text('Annonces des passages', 'Announcing passages')):
+    announcement_items = p.get('sections', []) + p.get('cues', []) if include_announcements else []
+    for item in phase_items(announcement_items,1,5,ui_text('Annonces des passages', 'Announcing passages')):
         if item.get('announce') is False:continue
         text=announcement_text(item,s['language']);target=item.get('start',item.get('time',0))
         path=reusable_voice(text,cache,s,p.get('_root'))

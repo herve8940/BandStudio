@@ -38,12 +38,16 @@ def export(tmp_path, songs, **options):
     return Path(json.loads(out.read_text())['path'])
 
 
-def test_live_set_media_positions_mix_and_locators(tmp_path):
+@pytest.mark.parametrize('export_guides', [False, True])
+def test_live_set_media_positions_mix_and_locators(tmp_path, monkeypatch, export_guides):
+    def reject_speech(*args):
+        pytest.fail('A click-only export requested speech synthesis')
+    monkeypatch.setattr('services.voice_wav', reject_speech)
     songs=build_library(tmp_path)
     song=songs[0]
     song['tracks'][0].update(offset=-.25,gain=.55,pan=.3)
     song['sections'][-1]['end']=11.75
-    song['settings']['exportCount']=True
+    song['settings'].update(exportCount=True, exportGuides=export_guides)
     song['settings'].update(countVoice=False,callsEnabled=False,regionCountEnabled=False,speakCues=False)
     atomic(Path(song['_root'])/'project.json',song)
     bundle=export(tmp_path,[song],kind='live')
@@ -59,6 +63,22 @@ def test_live_set_media_positions_mix_and_locators(tmp_path):
     assert {e.get('Value') for e in document.findall('.//Locator/Name')}=={'Intro','Refrain','Stop'}
     ids=[e.get('Id') for e in document.iter() if 'Id' in e.attrib and (e.tag=='Pointee' or e.tag.endswith('Target'))]
     assert len(ids)==len(set(ids))
+
+
+def test_count_without_guide_tracks_synthesizes_only_spoken_numbers(tmp_path, monkeypatch):
+    spoken = set()
+    def synthesize(text, folder, settings):
+        spoken.add(text)
+        path = folder / (text + '.wav')
+        sf.write(path, np.full((4410, 2), .25), 44100)
+        return path
+    monkeypatch.setattr('services.voice_wav', synthesize)
+    song = build_library(tmp_path)[0]
+    song['settings'].update(exportCount=True, exportGuides=False, countVoice=True)
+    atomic(Path(song['_root']) / 'project.json', song)
+    bundle = export(tmp_path, [song], kind='live')
+    assert next(bundle.glob('*.als')).is_file()
+    assert spoken == {'un', 'deux', 'trois', 'quatre'}
 
 
 @pytest.mark.parametrize('layout,num',[('concert',1),('songs',2),('both',3)])
