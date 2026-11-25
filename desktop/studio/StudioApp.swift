@@ -80,7 +80,8 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         }
         NSApp.mainMenu=menu
         window=NSWindow(contentRect:NSRect(x:0,y:0,width:1360,height:900),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
-        window.title="BandStudio";window.minSize=NSSize(width:960,height:660)
+        window.title = isDevelopmentSession ? uiText("BandStudio · Développement", "BandStudio · Development") : "BandStudio"
+        window.minSize=NSSize(width:960,height:660)
         window.appearance=NSAppearance(named:.darkAqua);window.setFrameAutosaveName("BandStudio")
         let cfg=WKWebViewConfiguration();cfg.websiteDataStore = .nonPersistent()
         let localeScript = "window.bandStudioLanguage = '" + StudioLanguage.current + "'"
@@ -453,6 +454,9 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             if recordPending && !["stop","studioControl"].contains(command) {throw StudioError(uiText("Termine l’autorisation du microphone avant de continuer.", "Finish granting microphone access first."))}
             if recorder.running && !["stop","record","studioControl"].contains(command) {throw StudioError(uiText("Arrête la prise avant cette modification.", "Stop recording before making this change."))}
             switch command {
+            case "captureCuePosition":
+                guard let request=args["request"] as? String else{return}
+                send(["type":"cuePosition","projectID":project.id,"request":request,"time":audio.current()]);return
             case "creative":try creativeTask(args)
             case "captureSettings":try setCapture(args)
             case "newSession":try newSession(args["name"] as? String ?? uiText("Répétition", "Rehearsal"))
@@ -548,6 +552,15 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 project.structureProposal=nil;try changed(invalidate:false);notice=uiText("Parcours actuel conservé.", "Current arrangement kept.")
             case "exportStructure":try exportStructure(args)
             case "applyStructure":try applyStructure(args)
+            case "exportShow":
+                try requireIdle()
+                let options = try JSONSerialization.data(withJSONObject:args)
+                try startJob("showExport", arguments:["--options",String(decoding:options,as:UTF8.self)]) { result in
+                    let value = try JSONSerialization.jsonObject(with:Data(contentsOf:result)) as? [String:Any]
+                    guard let path = value?["path"] as? String else { throw StudioError(uiText("Export incomplet.", "Incomplete export.")) }
+                    self.lastExport = path
+                    self.notice = uiText("Export terminé. Afficher l’export ouvre le dossier.", "Export complete. Show export opens the folder.")
+                }
             case "reaper":try exportRPP(open:args["open"] as? Bool ?? false,preflight:args["preflight"] as? Bool == true)
             case "showExport":if !lastExport.isEmpty{NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath:lastExport)])}
             case "annotation":try annotation(args)

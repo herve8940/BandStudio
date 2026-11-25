@@ -533,6 +533,15 @@ class Api:
         if m.get('projectID')!=p['id']:raise ValueError(ui_text('Le projet a changé. Recommence ton action.', 'The project has changed. Try again.'))
         if cmd=='newSession':recording.command(self,dict(action='new',name=args.get('name',ui_text('Répétition', 'Rehearsal'))));return
         if cmd=='captureSettings':recording.command(self,dict(action='configure',settings=args));return
+        if cmd=='showExport' and self._last_export:
+            self._reveal(self._last_export);return
+        if cmd=='exportShow':
+            def export_show():
+                _, result = self._work('showExport', arguments=['--options',json.dumps(args,ensure_ascii=False)])
+                self._last_export = result['path']
+                self._notice = ui_text('Export terminé. Afficher l’export ouvre le dossier.', 'Export complete. Show export opens the folder.')
+            self._op(ui_text('Export de scène','Show export'), export_show, rollback=False)
+            return
         if cmd=='setlist':
             name=str(args.get('name') or '').strip();paths=args.get('paths') or []
             if not name:raise ValueError(ui_text('Donne un nom à la setlist avant de l’enregistrer.', 'Give the setlist a name before saving.'))
@@ -543,6 +552,9 @@ class Api:
             ident=args.get('id') or model.ident();item=dict(id=ident,name=name[:120],paths=paths)
             self._setlists=[x for x in self._setlists if x['id']!=ident]+[item];atomic(self._library/'setlists.json',self._setlists);return
         if self._root is None:raise ValueError(ui_text('Importe ou ouvre d’abord un morceau.', 'Import or open a song first.'))
+        if cmd=='captureCuePosition':
+            self._send(dict(type='cuePosition',projectID=p['id'],request=args.get('request'),time=a.position))
+            return
         if cmd=='play':
             if a.running:a.pause()
             elif self._ready_guides():a.play()

@@ -203,3 +203,14 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 Transformers 4.44.2: Apache-2.0, Hugging Face. ONNX Runtime 1.19.2: MIT, Microsoft. SentencePiece 0.2.0: Apache-2.0, Google. Safetensors 0.4.5: Apache-2.0, Hugging Face. Their distribution license files are preserved in the isolated Python runtime.
+
+### Ableton Live export templates
+
+The stripped Live 11 set schema in `desktop/studio/export_assets/live11-set.xml`
+is adapted from [ML-Ableton](https://github.com/nebulusneighbor/ML-Ableton/tree/aae09a2b0fb5c3f2f781c2db446baa371d3b6dba) by Torin Hopkins (MIT).
+Only an empty audio track and project structure are used.
+
+The unwarped clip template in `desktop/studio/export_assets/live11-clip.xml` is
+adapted from the anonymized Live 11.0.12 fixture of
+[Abletoolz](https://github.com/elixirbeats/abletoolz/tree/master/test/version_fixtures/skeletons)
+and is available under MPL 2.0. The editable XML and both licenses accompany the application.

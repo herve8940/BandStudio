@@ -6,15 +6,18 @@ import bisect
 import hashlib
 import json
 import math
+import mmap
 import os
 from pathlib import Path
 import re
 import shutil
 import signal
 import subprocess
+import tempfile
 import time
 import uuid
 from collections import Counter
+from contextlib import ExitStack
 from platform_tools import executable, creation_flags
 from musical_timing import BeatClock, count_plan, pulse_bpm, pulse_scale, metronome_grid, prepare_clock, tempo_envelope
 
@@ -313,7 +316,12 @@ def announcement_text(item, language):
     return name
 
 
-def guides(project_file,output):
+def guides(project_file,output,*,include_announcements=True):
+    with ExitStack() as scratch:
+        _render_guides(project_file, output, include_announcements, scratch)
+
+
+def _render_guides(project_file, output, include_announcements, scratch):
     from analysis_progress import phase_items
     import numpy as np
     import soundfile as sf
@@ -323,10 +331,15 @@ def guides(project_file,output):
     duration=clock.basis['duration'];beats=list(clock.beats);sr=44100
     # Memory-mapped timelines avoid allocating two whole stereo songs in RAM.
     shape=(max(1,math.ceil(duration*sr)),2)
-    click=np.memmap(root/'click.raw',dtype='float32',mode='w+',shape=shape);click[:]=0
-    calls=np.memmap(root/'calls.raw',dtype='float32',mode='w+',shape=shape);calls[:]=0
-    cues=np.memmap(root/'cues.raw',dtype='float32',mode='w+',shape=shape);cues[:]=0
-    counts=np.memmap(root/'counts.raw',dtype='float32',mode='w+',shape=shape);counts[:]=0
+    def timeline():
+        file = scratch.enter_context(tempfile.TemporaryFile(dir=root))
+        file.truncate(math.prod(shape) * np.dtype('float32').itemsize)
+        mapping = scratch.enter_context(mmap.mmap(file.fileno(), 0))
+        samples = np.ndarray(shape, dtype='float32', buffer=mapping)
+        samples.fill(0)
+        return samples
+
+    click, calls, cues, counts = (timeline() for _ in range(4))
     def place(dest,data,at):
         start=round(at*sr)
         if start<0:data=data[-start:];start=0
@@ -352,7 +365,8 @@ def guides(project_file,output):
         if item['id'] in count_plans:
             count_plans[item['id']]=[e for e in count_plans[item['id']] if e['time']>=previous_start]
         previous_start=max(previous_start,item['start'])
-    for item in phase_items(p.get('sections',[])+p.get('cues',[]),1,5,ui_text('Annonces des passages', 'Announcing passages')):
+    announcement_items = p.get('sections', []) + p.get('cues', []) if include_announcements else []
+    for item in phase_items(announcement_items,1,5,ui_text('Annonces des passages', 'Announcing passages')):
         if item.get('announce') is False:continue
         text=announcement_text(item,s['language']);target=item.get('start',item.get('time',0))
         path=reusable_voice(text,cache,s,p.get('_root'))
@@ -390,9 +404,6 @@ def guides(project_file,output):
         with sf.SoundFile(path,'w',samplerate=sr,channels=2,subtype='FLOAT') as writer:
             for a in range(0,len(data),65536):writer.write(np.clip(data[a:a+65536],-1,1))
         file_map[name]=str(path)
-    # The loop variable also holds the final mmap; release it before unlinking on Windows.
-    del data,click,calls,cues,counts
-    for name in ['click','calls','cues','counts']:(root/(name+'.raw')).unlink()
     atomic(output,dict(files=file_map,events=events,countEvents=count_events,guideWarnings=warnings,
                        beats=beats,duration=duration,generatorVersion=8,timingGrid=clock.payload(),firstBeatCorrection=correction))
 
@@ -402,6 +413,13 @@ def quote(value):
     return '"'+str(value).replace('"',"'").replace('\r',' ').replace('\n',' ')+'"'
 
 
+def portable_project_stem(name):
+    stem = safe_name(name)
+    if re.match(r'^(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\.|$)',stem,re.I):
+        stem = ui_text('Morceau-', 'Song-')+stem
+    return stem
+
+
 def reaper_filename(name, folder):
     """Leave room for Windows media, waveform caches and REAPER backups."""
     def units(value):return len(str(value).encode('utf-16-le'))//2
@@ -409,10 +427,61 @@ def reaper_filename(name, folder):
     # Audio/<UUID>.wav.reapeaks is longer than our metadata filenames.
     if budget<len('Audio/00000000-0000-0000-0000-000000000000.wav.reapeaks'):
         raise ValueError(ui_text('Chemin d’export trop long pour REAPER. Place le morceau dans un dossier plus court, puis relance l’export.', 'REAPER export path is too long. Move the song to a shorter path and export again.'))
-    stem=safe_name(name)
-    if re.match(r'^(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\.|$)',stem,re.I):stem=ui_text('Morceau-', 'Song-')+stem
+    stem=portable_project_stem(name)
     while units(stem)>min(60,budget-len('.rpp-bak')):stem=stem[:-1]
     return (stem.rstrip(' .') or ui_text('Morceau', 'Song'))+'.rpp'
+
+
+def arrangement_items(p, media, plan, preroll):
+    """Media positions and mix decisions shared by every concert export."""
+    root = Path(p['_root'])
+    s = p['settings']
+
+    def item(path, name, role, position, skip, length, gain, pan, muted):
+        return dict(path=path, name=name, role=role, position=position, skip=skip,
+                    length=length, gain=gain, pan=pan, muted=muted)
+
+    has_stems=any(t['role'] not in ('source','take') and not t['role'].startswith('guide_') for t in p['tracks'])
+    mode=p.get('_mode','mix')
+    has_solo=any(t['solo'] for t in p['tracks'] if t['role']!='source')
+    guide_solo=any(t['solo'] for t in p['tracks'] if t['role'].startswith('guide_'))
+    for t in p['tracks']:
+        if t['role'].startswith('guide_') and not s['exportGuides']:
+            continue
+        original = (root / t['file']).resolve()
+        if not original.is_relative_to(root.resolve()):
+            raise ValueError(ui_text('Fichier hors du projet.', 'File outside the project.'))
+        audible=not t['muted'] and (not has_solo or t['solo'])
+        if mode=='original':audible=t['role']=='source' and not t['muted'] and not guide_solo
+        elif t['role']=='source':audible=mode=='mix' and not has_stems and not t['muted'] and not has_solo
+        else:audible=audible and included(t['role'],mode)
+        if t['role']=='vocals' and any(x['role'].startswith('vocal_') for x in p['tracks']) and not t['solo']:audible=False
+        if t['role']=='drums' and any(x['role'].startswith('drum_') for x in p['tracks']) and not t['solo']:audible=False
+        muted=not audible
+        gain=t['gain'];pan=t['pan']
+        if t['role']=='guide_click':muted=not (s['clickEnabled'] and guide_audible(p,t['role']));gain=s['clickGain'];pan=s['clickPan']
+        if t['role']=='guide_voice':muted=not (s['callsEnabled'] and guide_audible(p,t['role']));gain=s['callsGain'];pan=s['callsPan']
+        if t['role']=='guide_cue':muted=not (s['speakCues'] and guide_audible(p,t['role']));gain=s.get('cuesGain',s['callsGain']);pan=s['callsPan']
+        if t['role']=='guide_count':muted=not (s['regionCountEnabled'] and guide_audible(p,t['role']));gain=s['countGain'];pan=s['countPan']
+        offset=t['offset']+preroll;skip=max(0,-offset)
+        if s['exportCount'] and plan['events'] and (t['role']=='guide_count' or (t['role']=='guide_click' and s['countClick'])):
+            skip=max(skip,plan['target']-t['offset']);offset=t['offset']+skip+preroll
+        yield item(original, t['name'], t['role'], max(0,offset), skip,
+                   max(0,t['duration']-skip), gain, pan, muted) | {'id': t['id']}
+    if s['exportCount'] and plan['events']:
+        count = render_count(p, root, plan, media / 'count-in.wav')
+        yield item(count, ui_text('Décompte', 'Count-in'), 'guide_count', 0, 0, plan['end'],
+                   s['countGain'], s['countPan'], not guide_audible(p,'guide_count'))
+        if s['exportGuides'] and s['callsEnabled'] and (s['countBars']>1 or not s['countVoice']):
+            first=next((x for x in p['sections'] if x['start']<=plan['target']+.1 and x['end']>plan['target'] and x.get('announce') is not False),None)
+            relative=p.get('guideFiles',{}).get('call:'+first['id']) if first else None
+            if relative:
+                import soundfile as sf
+                initial=media/'initial-call.wav';shutil.copy2(root/relative,initial)
+                available=next((e['time'] for e in plan['events'] if e['spoken']),plan['end']) if s['countVoice'] else plan['end']
+                length=min(sf.info(initial).duration,max(0,available-.05))
+                yield item(initial, ui_text('Annonce de départ', 'Start announcement'), 'guide_voice',
+                           0, 0, length, s['callsGain'], s['callsPan'], not guide_audible(p,'guide_voice'))
 
 
 def export_reaper(project_file,output,*,final_folder=None):
@@ -436,48 +505,24 @@ def export_reaper(project_file,output,*,final_folder=None):
     for i,section in enumerate(p['sections'],1):
         lines += [f'  MARKER {i} {section["start"]+preroll:.9f} {quote(section["name"])} 1',f'  MARKER {i} {section["end"]+preroll:.9f} "" 1']
     for i,cue in enumerate(p['cues'],len(p['sections'])+1):lines.append(f'  MARKER {i} {cue["time"]+preroll:.9f} {quote(cue["name"])} 0')
-    has_stems=any(t['role'] not in ('source','take') and not t['role'].startswith('guide_') for t in p['tracks'])
-    mode=p.get('_mode','mix')
-    has_solo=any(t['solo'] for t in p['tracks'] if t['role']!='source')
-    guide_solo=any(t['solo'] for t in p['tracks'] if t['role'].startswith('guide_'))
-    for t in p['tracks']:
-        if t['role'].startswith('guide_') and not s['exportGuides']:continue
-        original=(root/t['file']).resolve()
-        if not original.is_relative_to(root.resolve()):raise ValueError(ui_text('Fichier hors du projet.', 'File outside the project.'))
-        name=str(uuid.uuid5(uuid.NAMESPACE_OID,t['id']))+'.wav';dest=media/name
-        if not dest.exists():
-            if original.suffix.lower()=='.wav':shutil.copy2(original,dest)
-            else:decode(original,dest,Path(__file__).resolve().parent)
-        audible=not t['muted'] and (not has_solo or t['solo'])
-        if mode=='original':audible=t['role']=='source' and not t['muted'] and not guide_solo
-        elif t['role']=='source':audible=mode=='mix' and not has_stems and not t['muted'] and not has_solo
-        else:audible=audible and included(t['role'],mode)
-        if t['role']=='vocals' and any(x['role'].startswith('vocal_') for x in p['tracks']) and not t['solo']:audible=False
-        if t['role']=='drums' and any(x['role'].startswith('drum_') for x in p['tracks']) and not t['solo']:audible=False
-        muted=not audible
-        gain=t['gain'];pan=t['pan']
-        if t['role']=='guide_click':muted=not (s['clickEnabled'] and guide_audible(p,t['role']));gain=s['clickGain'];pan=s['clickPan']
-        if t['role']=='guide_voice':muted=not (s['callsEnabled'] and guide_audible(p,t['role']));gain=s['callsGain'];pan=s['callsPan']
-        if t['role']=='guide_cue':muted=not (s['speakCues'] and guide_audible(p,t['role']));gain=s.get('cuesGain',s['callsGain']);pan=s['callsPan']
-        if t['role']=='guide_count':muted=not (s['regionCountEnabled'] and guide_audible(p,t['role']));gain=s['countGain'];pan=s['countPan']
-        offset=t['offset']+preroll;skip=max(0,-offset)
-        if s['exportCount'] and plan['events'] and (t['role']=='guide_count' or (t['role']=='guide_click' and s['countClick'])):
-            skip=max(skip,plan['target']-t['offset']);offset=t['offset']+skip+preroll
-        lines += ['  <TRACK','    NAME '+quote(t['name']),f'    VOLPAN {gain:.8f} {pan:.8f}',f'    MUTESOLO {int(muted)} 0 0',
-                  '    <ITEM','      BEAT 0',f'      POSITION {max(0,offset):.9f}',f'      SOFFS {skip:.9f}',f'      LENGTH {max(0,t["duration"]-skip):.9f}',
-                  '      VOLPAN 1 0 1 -1','      NAME '+quote(t['name']),'      <SOURCE WAVE','        FILE '+quote('Audio/'+name),'      >','    >','  >']
-    if s['exportCount'] and plan['events']:
-        render_count(p,root,plan,media/'count-in.wav')
-        lines+=['  <TRACK',ui_text('    NAME "Décompte"', '    NAME "Count-in"'),f'    MUTESOLO {int(not guide_audible(p,"guide_count"))} 0 0',f'    VOLPAN {s["countGain"]} {s["countPan"]}','    <ITEM','      POSITION 0',f'      LENGTH {plan["end"]:.9f}','      <SOURCE WAVE','        FILE "Audio/count-in.wav"','      >','    >','  >']
-        if s['exportGuides'] and s['callsEnabled'] and (s['countBars']>1 or not s['countVoice']):
-            first=next((x for x in p['sections'] if x['start']<=plan['target']+.1 and x['end']>plan['target'] and x.get('announce') is not False),None)
-            relative=p.get('guideFiles',{}).get('call:'+first['id']) if first else None
-            if relative:
-                import soundfile as sf
-                initial=media/'initial-call.wav';shutil.copy2(root/relative,initial)
-                available=next((e['time'] for e in plan['events'] if e['spoken']),plan['end']) if s['countVoice'] else plan['end']
-                length=min(sf.info(initial).duration,max(0,available-.05))
-                lines+=['  <TRACK',ui_text('    NAME "Annonce de départ"', '    NAME "Start announcement"'),f'    MUTESOLO {int(not guide_audible(p,"guide_voice"))} 0 0',f'    VOLPAN {s["callsGain"]} {s["callsPan"]}','    <ITEM','      POSITION 0',f'      LENGTH {length:.9f}','      <SOURCE WAVE','        FILE "Audio/initial-call.wav"','      >','    >','  >']
+    for item in arrangement_items(dict(p, _root=str(root)), media, plan, preroll):
+        original = item['path']
+        if 'id' in item:
+            name = str(uuid.uuid5(uuid.NAMESPACE_OID,item['id'])) + '.wav'
+            dest = media / name
+            if not dest.exists():
+                if original.suffix.lower() == '.wav':
+                    shutil.copy2(original, dest)
+                else:
+                    decode(original, dest, Path(__file__).resolve().parent)
+        else:
+            name = original.name
+        lines += ['  <TRACK','    NAME '+quote(item['name']),
+                  f'    VOLPAN {item["gain"]:.8f} {item["pan"]:.8f}',f'    MUTESOLO {int(item["muted"])} 0 0',
+                  '    <ITEM','      BEAT 0',f'      POSITION {item["position"]:.9f}',
+                  f'      SOFFS {item["skip"]:.9f}',f'      LENGTH {item["length"]:.9f}',
+                  '      VOLPAN 1 0 1 -1','      NAME '+quote(item['name']),'      <SOURCE WAVE',
+                  '        FILE '+quote('Audio/'+name),'      >','    >','  >']
     if p.get('_exportChordTrack') and p.get('chords'):
         # Empty, muted items make the reviewed harmony readable in REAPER.
         # The original annotation metadata remains available for round trips.

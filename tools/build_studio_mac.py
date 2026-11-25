@@ -10,6 +10,8 @@ import shutil
 import subprocess
 import sys
 
+from studio_export_resources import export_resources
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'desktop/studio'))
 from chord_provider_defaults import write_catalog
@@ -69,6 +71,11 @@ def build(source, prepare=False):
     if prepare:
         prepare_runtime(source, engine)
     if engine.exists():
+        (engine / 'lyric_monitor.py').unlink(missing_ok=True)
+        for source, relative in export_resources():
+            destination = engine / relative
+            destination.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(source,destination)
         write_catalog(engine)
         for name in ('rhythm-quality.json','rhythm-adapter.json'):
             calibration=ROOT/'desktop/studio'/name

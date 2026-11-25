@@ -9,6 +9,8 @@ import shutil
 import subprocess
 import uuid
 
+from studio_export_resources import export_resources
+
 ROOT=Path(__file__).resolve().parents[1]
 BUILD=ROOT/'desktop-build/standalone'
 VERSION='1.1.0'
@@ -27,21 +29,31 @@ def install(update=False):
     ident=uuid.uuid4().hex[:10]
     engine=support/('Engine-'+VERSION+'-'+ident)
     engine_stage=support/('.Engine-install-'+ident);stage=applications/('.BandStudio-install-'+ident+'.app')
-    for folder in (applications,support,library):folder.mkdir(parents=True,exist_ok=True)
     engine_source=BUILD/'Engine'
     if update and (app/'Contents/Resources/studio.json').is_file():
-        installed=Path(json.loads((app/'Contents/Resources/studio.json').read_text())['runtime'])
+        config=json.loads((app/'Contents/Resources/studio.json').read_text())
+        library=Path(config.get('library',library))
+        installed=Path(config['runtime'])
         if (installed/'.studio-owned').is_file():engine_source=installed
+    for folder in (applications,support,library):folder.mkdir(parents=True,exist_ok=True)
     copy(engine_source,engine_stage)
     # Preserve optional environments and downloaded models, then refresh program code.
     for code in (BUILD/'Engine').glob('*.py'):shutil.copy2(code,engine_stage/code.name)
+    (engine_stage / 'lyric_monitor.py').unlink(missing_ok=True)
+    for _, relative in export_resources():
+        if '/' in relative:
+            destination=engine_stage/relative
+            destination.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(BUILD/'Engine'/relative,destination)
     # Queue projects share the portable document model, including on existing Mac runtimes.
     (engine_stage/'windows').mkdir(exist_ok=True)
     for name in ('__init__.py','project.py'):
         shutil.copy2(BUILD/'Engine/windows'/name,engine_stage/'windows'/name)
     if (BUILD/'Engine/build.json').is_file():shutil.copy2(BUILD/'Engine/build.json',engine_stage/'build.json')
     for name in ('.venv','.venv-demucs','.venv-structure','.venv-words','.venv-chords','.venv-drums','.venv-creative'):
-        if not (engine_stage/name).is_dir():continue
+        environment=engine_stage/name
+        # A local installation can deliberately reuse another runtime's environment.
+        if not environment.is_dir() or not (environment/'pyvenv.cfg').resolve().is_relative_to(engine_stage.resolve()):continue
         version='3.11' if name=='.venv-structure' else '3.12';base=engine/('python'+version.replace('.',''))
         (engine_stage/name/'pyvenv.cfg').write_text(f'home = {base}/bin\ninclude-system-site-packages = false\nversion = {version}\n')
     os.rename(engine_stage,engine)

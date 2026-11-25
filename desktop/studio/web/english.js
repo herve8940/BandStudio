@@ -1,5 +1,7 @@
 // English text for the BandStudio interface. Keys match the original UI copy.
 const bandStudioEnglish = {
+  "Projet Ableton Live": "Ableton Live Set",
+  "Régie QLab + grandMA3": "QLab + grandMA3 show",
   " % des étapes": " % of steps",
   " % des étapes terminées": " % of steps completed",
   " (passage : ": " (pass: ",

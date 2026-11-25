@@ -60,6 +60,15 @@ document.querySelector('.inspector').prepend(review);
 
 function reviewMarkers(){return [...state.project.sections.map(item=>({kind:'section',item,time:item.start})),...state.project.cues.map(item=>({kind:'cue',item,time:item.time}))].sort((a,b)=>a.time-b.time||a.kind.localeCompare(b.kind));}
 function focusMarker(){return reviewMarkers().find(m=>m.item.id===editorFocus?.id&&m.kind===editorFocus?.kind);}
+const editTimelineCue = button('✎', () => {
+ const marker = focusMarker();
+ if (marker?.kind === 'cue') openEditor('cue', marker.item);
+});
+editTimelineCue.hidden = true;
+editTimelineCue.setAttribute('aria-label', interfaceLanguage==='en' ? 'Edit selected marker' : 'Modifier le repère sélectionné');
+editTimelineCue.title = editTimelineCue.getAttribute('aria-label');
+$('newCue').before(editTimelineCue);
+
 function chooseMarker(kind,id,seek=true){
  editorFocus={kind,id};const marker=focusMarker();if(!marker)return;
  if(kind==='section')displaySection(marker.item);
@@ -144,6 +153,8 @@ function attachMarkerDrag(button,marker){
 }
 
 renderSections=function(){
+ editTimelineCue.hidden = !state.loaded || focusMarker()?.kind !== 'cue';
+ editTimelineCue.disabled = !!state.busy;
  const v=viewport(),g=musicalGrid(state.project);$('sections').replaceChildren();$('cues').replaceChildren();$('cueList').replaceChildren();$('ruler').replaceChildren();
  for(const m of reviewMarkers()){
   const item=m.item;if(m.kind==='section'&&item.end>v.start&&item.start<v.end){

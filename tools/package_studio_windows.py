@@ -13,6 +13,8 @@ import urllib.request
 import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT/'tools'))
+from studio_export_resources import export_resources
 sys.path.insert(0,str(ROOT/'desktop/studio'))
 from chord_provider_defaults import write_catalog
 
@@ -61,6 +63,10 @@ def build(output):
             text=source.read_text(encoding='utf-8-sig').replace('ReaCue','BandStudio')
             dest.write_bytes(b'\xef\xbb\xbf'+text.replace('\r\n','\n').replace('\n','\r\n').encode('utf-8'))
         else:shutil.copy2(source,dest)
+    for source, relative in export_resources():
+        destination = engine / relative
+        destination.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(source,destination)
     write_catalog(engine)
     (engine/'build.json').write_text(json.dumps({'version':VERSION,'commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),'runtime':1}))
     shutil.copy2(ROOT/'desktop/studio/README.en.txt',package/'README.en.txt')

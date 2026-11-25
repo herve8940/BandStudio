@@ -1,10 +1,11 @@
 import AppKit
 
 extension StudioApp {
-    var automaticUpdates:Bool {UserDefaults.standard.object(forKey:"automaticUpdates") as? Bool ?? true}
+    var isDevelopmentSession: Bool { ProcessInfo.processInfo.environment["BANDSTUDIO_DEVELOPMENT"] == "1" }
+    var automaticUpdates:Bool { !isDevelopmentSession && (UserDefaults.standard.object(forKey:"automaticUpdates") as? Bool ?? true) }
     func sendUpdate(_ message:String="") {send(["type":"update","automatic":automaticUpdates,"message":message])}
     func checkUpdates() {
-        guard !checkingUpdate else{return};checkingUpdate=true;sendUpdate(uiText("Vérification des mises à jour…", "Checking for updates…"))
+        guard !isDevelopmentSession, !checkingUpdate else{return};checkingUpdate=true;sendUpdate(uiText("Vérification des mises à jour…", "Checking for updates…"))
         let engine=runtime!,application=Bundle.main.bundleURL
         DispatchQueue.global(qos:.utility).async { [weak self] in
             let process=Process(),output=Pipe()
