@@ -6,15 +6,18 @@ import bisect
 import hashlib
 import json
 import math
+import mmap
 import os
 from pathlib import Path
 import re
 import shutil
 import signal
 import subprocess
+import tempfile
 import time
 import uuid
 from collections import Counter
+from contextlib import ExitStack
 from platform_tools import executable, creation_flags
 from musical_timing import BeatClock, count_plan, pulse_bpm, pulse_scale, metronome_grid, prepare_clock, tempo_envelope
 
@@ -314,6 +317,11 @@ def announcement_text(item, language):
 
 
 def guides(project_file,output,*,include_announcements=True):
+    with ExitStack() as scratch:
+        _render_guides(project_file, output, include_announcements, scratch)
+
+
+def _render_guides(project_file, output, include_announcements, scratch):
     from analysis_progress import phase_items
     import numpy as np
     import soundfile as sf
@@ -323,10 +331,15 @@ def guides(project_file,output,*,include_announcements=True):
     duration=clock.basis['duration'];beats=list(clock.beats);sr=44100
     # Memory-mapped timelines avoid allocating two whole stereo songs in RAM.
     shape=(max(1,math.ceil(duration*sr)),2)
-    click=np.memmap(root/'click.raw',dtype='float32',mode='w+',shape=shape);click[:]=0
-    calls=np.memmap(root/'calls.raw',dtype='float32',mode='w+',shape=shape);calls[:]=0
-    cues=np.memmap(root/'cues.raw',dtype='float32',mode='w+',shape=shape);cues[:]=0
-    counts=np.memmap(root/'counts.raw',dtype='float32',mode='w+',shape=shape);counts[:]=0
+    def timeline():
+        file = scratch.enter_context(tempfile.TemporaryFile(dir=root))
+        file.truncate(math.prod(shape) * np.dtype('float32').itemsize)
+        mapping = scratch.enter_context(mmap.mmap(file.fileno(), 0))
+        samples = np.ndarray(shape, dtype='float32', buffer=mapping)
+        samples.fill(0)
+        return samples
+
+    click, calls, cues, counts = (timeline() for _ in range(4))
     def place(dest,data,at):
         start=round(at*sr)
         if start<0:data=data[-start:];start=0
@@ -391,9 +404,6 @@ def guides(project_file,output,*,include_announcements=True):
         with sf.SoundFile(path,'w',samplerate=sr,channels=2,subtype='FLOAT') as writer:
             for a in range(0,len(data),65536):writer.write(np.clip(data[a:a+65536],-1,1))
         file_map[name]=str(path)
-    # The loop variable also holds the final mmap; release it before unlinking on Windows.
-    del data,click,calls,cues,counts
-    for name in ['click','calls','cues','counts']:(root/(name+'.raw')).unlink()
     atomic(output,dict(files=file_map,events=events,countEvents=count_events,guideWarnings=warnings,
                        beats=beats,duration=duration,generatorVersion=8,timingGrid=clock.payload(),firstBeatCorrection=correction))
 

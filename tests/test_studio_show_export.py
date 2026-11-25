@@ -120,6 +120,19 @@ def test_batch_failure_publishes_no_partial_show(tmp_path):
     assert not list((tmp_path/'Exports').iterdir())
 
 
+def test_missing_requested_voice_reports_song_and_releases_temporary_files(tmp_path, monkeypatch):
+    def unavailable(*args):
+        raise RuntimeError('voice unavailable')
+
+    monkeypatch.setattr('services.voice_wav', unavailable)
+    song = build_library(tmp_path)[0]
+    song['settings'].update(exportCount=True, countVoice=True)
+    atomic(Path(song['_root']) / 'project.json', song)
+    with pytest.raises(ValueError, match='Été & feu — voice unavailable'):
+        export(tmp_path, [song], kind='live')
+    assert not list((tmp_path / 'Exports').iterdir())
+
+
 def test_address_follows_song_and_only_extended_song_moves(tmp_path):
     import sqlite3
     from show_export import time_addresses
