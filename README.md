@@ -16,7 +16,11 @@
 | **Mac Intel ou Apple Silicon déjà équipé** | Dans **Réglages**, vérifie les mises à jour. Une fois le téléchargement terminé, quitte BandStudio et rouvre-le. |
 | **Première installation sur Mac** | La compilation depuis les sources nécessite un moteur ReaCue et ses environnements Python déjà préparés. Aucun installateur complet pour Mac neuf n’est distribué actuellement. [Prérequis et commandes](docs/BANDSTUDIO.md#macos) |
 
-La version **1.1.0 du 24 novembre 2026** ouvre directement l’éditeur et optimise le calcul des formes d’onde. Les archives de mise à jour préservent les projets et les réglages. [Notes de version](docs/RELEASE_2026-11-24.md) · [Historique](CHANGELOG.md)
+**Nouveautés du 27 novembre 2026 · BandStudio 1.1.0**
+
+Zoome sur un refrain, puis fais glisser le cadre de la vue d’ensemble pour examiner le couplet suivant pendant que la musique continue. **Revenir à la lecture** te ramène à ce que tu entends, au même niveau de zoom.
+
+Dans **Explorer**, rejoins une mesure ou une section, place les points A et B autour d’un passage, puis écoute-le en boucle. Sur Mac, tu peux aussi recaler la grille ou écouter la transition avant de créer une variante avec un refrain en plus ou en moins. L’original reste dans ta bibliothèque. [Notes de version](docs/RELEASE_2026-11-27.md) · [Historique](CHANGELOG.md)
 
 ## Préparer ton premier morceau
 
