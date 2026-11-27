@@ -99,10 +99,43 @@ class BeatClock:
     """Shared musical coordinates for guides, counts, sheets and exported tempo."""
     def __init__(self,project,duration=None):
         self.basis=timing_basis(project,duration);b=self.basis
-        values=_completed_clock(tuple(b['beats']),tuple(b['downbeats']),b['bpm'],b['first'],
-                                b['meter'],b['mode'],b['locked'],b['duration'])
-        self.beats,self.anchor,self.head,self.tail,self.filled,self.confidence,self.detected=values
         self.meter=b['meter'];self.first=b['first'];self.period=60/b['bpm']
+        edits=project.get('meterChanges') or []
+        exact=sorted(set(b['beats'])) if edits and b['mode']=='detected' else []
+        if len(exact)>=2:
+            # An edited passage already has every pulse. Gap filling here would
+            # add extra clicks when a musician deliberately halves the tempo.
+            self.beats=tuple(exact)
+            self.anchor=min(range(len(exact)),key=lambda i:abs(exact[i]-self.first))%self.meter
+            self.head=exact[1]-exact[0];self.tail=exact[-1]-exact[-2]
+            self.detected=True;self.confidence=0.;self.filled=0
+        else:
+            self.beats,self.anchor,self.head,self.tail,self.filled,self.confidence,self.detected=_completed_clock(
+                tuple(b['beats']),tuple(b['downbeats']),b['bpm'],b['first'],b['meter'],b['mode'],b['locked'],b['duration'])
+        self.changes=sorted({round(self.coordinate(m['time'])):m['meter'] for m in edits}.items())
+        self.change_beats=[beat for beat,meter in self.changes]
+        self.change_bars=[]
+        previous=bar=0
+        meter=self.meter
+        for beat,next_meter in self.changes:
+            bar+=math.ceil((beat-previous)/meter)
+            self.change_bars.append(bar)
+            previous,meter=beat,next_meter
+
+    def signature(self,beat):
+        idx=bisect.bisect_right(self.change_beats,beat+1e-7)-1
+        return self.changes[idx] if idx>=0 else (0,self.meter)
+
+    def bar_phase(self,time):
+        beat=self.coordinate(time)
+        start,meter=self.signature(beat)
+        return (math.floor(beat+1e-7)-start)%meter,meter
+
+    def bar_start(self,bar):
+        idx=bisect.bisect_right(self.change_bars,bar)-1
+        if idx<0:return self.at(bar*self.meter)
+        beat,meter=self.changes[idx]
+        return self.at(beat+(bar-self.change_bars[idx])*meter)
 
     def at(self,value):
         if not self.detected:return self.first+value*self.period
@@ -151,12 +184,11 @@ def grid(project):
 
 
 def count_plan(project,position=0):
-    s=project['settings'];meter=s['beatsPerBar'];n=s['countBars']*meter
+    s=project['settings'];clock=BeatClock(project);anchor,meter=clock.signature(clock.coordinate(position));n=s['countBars']*meter
     if not n:return dict(lead=0,end=0,target=position,events=[])
-    clock=BeatClock(project);at=clock.at
+    at=clock.at
     target=(math.ceil(clock.coordinate(0)/meter-1e-9)*meter if position<=0 else
             math.ceil(clock.coordinate(position)-1e-9))
-    anchor=0
     # Count every beat through an opening pickup, including the final "four".
     # The music keeps its pickup; the generated click takes over on the "one".
     lead=max(0,position-at(target-n))
@@ -175,18 +207,23 @@ def tempo_envelope(project,preroll=0):
     clock=BeatClock(project);scale=pulse_scale(project['settings']);meter=clock.meter
     coordinate=clock.coordinate(-preroll);index=math.floor(coordinate+1e-9)
     exact=abs(clock.at(index)+preroll)<1e-7
-    pickup=(-index)%meter if exact else 0
+    base,meter=clock.signature(index)
+    pickup=(base-index)%meter if exact else 0
     denominator=8 if scale==1.5 else 4
     def point(time,i,pulses=0,partial=False):
         return dict(time=max(0.,time),bpm=60*scale/(clock.at(i+1)-clock.at(i)),
                     numerator=pulses*(3 if scale==1.5 else 1),denominator=denominator,
                     flags=(5 if partial else 1) if pulses else 0)
     points=[point(0,index,pickup or meter)]
+    signature_changes=dict(clock.changes)
     limit=clock.basis['duration']+preroll
     for i in range(index+1,math.ceil(clock.coordinate(clock.basis['duration']))+1):
         time=clock.at(i)+preroll
         if time>=limit-1e-9:break
-        if not exact:
+        if i in signature_changes:
+            meter=signature_changes[i];pickup=0;exact=True
+            item=point(time,i,meter,True)
+        elif not exact:
             pickup=(-i)%meter
             item=point(time,i,pickup or meter,True);exact=True
         elif pickup and i%meter==0:

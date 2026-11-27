@@ -5,6 +5,7 @@ import AVFoundation
 final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
     var window:NSWindow!
     var web:WKWebView!
+    private var frontendReady=false
     let audio=StudioAudio()
     let recorder=Recorder()
     var project=StudioProject()
@@ -121,7 +122,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             }
     }
     func send(_ value:[String:Any]) {
-        guard let web=web,let data=try? JSONSerialization.data(withJSONObject:value),let json=String(data:data,encoding:.utf8) else{return}
+        guard frontendReady,let web=web,let data=try? JSONSerialization.data(withJSONObject:value),let json=String(data:data,encoding:.utf8) else{return}
         web.evaluateJavaScript("window.studioReceive && window.studioReceive(\(json))",completionHandler:nil)
     }
     func sendTransport() {
@@ -153,13 +154,14 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         if requestedClockBasis?.matches(project)==true{return clockRequest != nil}
         let python=runtime.appendingPathComponent(".venv/bin/python"),script=runtime.appendingPathComponent("musical_timing.py")
         guard FileManager.default.isExecutableFile(atPath:python.path),FileManager.default.fileExists(atPath:script.path) else{return false}
-        let basis=project.timingBasis,request=UUID(),settings=project.settings
+        let basis=project.timingBasis,request=UUID(),settings=project.settings,meters=project.meterChanges ?? []
         requestedClockBasis=basis;clockRequest=request
         DispatchQueue.global(qos:.userInitiated).async {
             var result:TimingGrid?
             do {
-                let data=try JSONSerialization.data(withJSONObject:["settings":JSONSerialization.jsonObject(with:JSONEncoder().encode(settings)),
-                    "bpm":basis.bpm,"beats":basis.beats,"downbeats":basis.downbeats,"gridLocked":basis.locked,"sessionDuration":basis.duration])
+                let payload:[String:Any]=["settings":try JSONSerialization.jsonObject(with:JSONEncoder().encode(settings)),
+                    "meterChanges":try JSONSerialization.jsonObject(with:JSONEncoder().encode(meters)),"bpm":basis.bpm,"beats":basis.beats,"downbeats":basis.downbeats,"gridLocked":basis.locked,"sessionDuration":basis.duration]
+                let data=try JSONSerialization.data(withJSONObject:payload)
                 let process=Process(),input=Pipe(),output=Pipe()
                 process.executableURL=python;process.arguments=[script.path,"--clock"]
                 process.standardInput=input;process.standardOutput=output;process.standardError=FileHandle.nullDevice
@@ -186,7 +188,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
         let object=(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(display))) ?? [:]
         let lists=(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(setlists))) ?? []
         let providers=ChordProvider.all.map{["id":$0.id,"publisher":$0.publisher,"domain":$0.domain,"automatic":$0.template != nil] as [String:Any]}
-        send(["type":"state","project":object,"duration":project.duration,"loaded":root != nil,"library":projectList(),"analysisPlan":analysisPlan(),"trashAvailable":hasTrashedProjects(),"setlists":lists,"busy":busy,"job":jobName,"jobTask":jobKind,"jobID":jobIdentifier,"jobPlan":jobPlan,"jobPlanIndex":jobPlanIndex,"notice":notice,"undo":!history.isEmpty,"redo":!future.isEmpty,"revision":revision,"lastExport":lastExport,"guidesReady":project.guideKey==project.desiredGuideKey(),"chordProviders":providers,"sheetClockPending":waitingForClock])
+        send(["type":"state","project":object,"duration":project.duration,"loaded":root != nil,"library":projectList(),"analysisPlan":analysisPlan(),"trashAvailable":hasTrashedProjects(),"setlists":lists,"busy":busy,"job":jobName,"jobTask":jobKind,"jobID":jobIdentifier,"jobPlan":jobPlan,"jobPlanIndex":jobPlanIndex,"notice":notice,"undo":!history.isEmpty,"redo":!future.isEmpty,"revision":revision,"lastExport":lastExport,"guidesReady":project.guideKey==project.desiredGuideKey(),"chordProviders":providers,"exploreAdaptation":true,"sheetClockPending":waitingForClock])
         sendTransport()
     }
     func changed(invalidate:Bool=true) throws {
@@ -420,7 +422,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
                 return
             }
             if command == "artwork" {try artworkCommand(args);return}
-            if command == "ready" {sendState();sendUpdate();try startQueue();send(queueState);if automaticUpdates{checkUpdates()};return}
+            if command == "ready" {frontendReady=true;sendState();sendUpdate();try startQueue();send(queueState);if automaticUpdates{checkUpdates()};return}
             if command == "import" {chooseAudio(new:true,prepare:args["prepare"] as? Bool ?? true);return}
             if command == "open" {openProject();return}
             if ["bandpilot","bridge","studioControl","record","newSession","captureSettings"].contains(command) {
@@ -467,7 +469,9 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             case "seek":try audio.seek(number(args,"time",range:0...project.duration))
             case "rate":
                 let r=try number(args,"value",range:0.5...1.5);let pos=audio.current(),playing=audio.running
-                audio.pause();audio.position=pos;audio.rate=Float(r);try savePlayback();if playing{try audio.play()}
+                let tail=audio.previewTail, inTail=audio.playingPreviewTail
+                let preview=inTail ? tail?.upperBound : audio.previewEnd
+                audio.pause();audio.position=pos;audio.rate=Float(r);try savePlayback();if playing{try audio.play(withCount:preview == nil,until:preview,then:inTail ? nil : tail)}
             case "pitch":
                 let value=try number(args,"value",range:-12...12);audio.pitch=Float(value);audio.configureTimeEffects();try savePlayback()
             case "mode":
@@ -521,6 +525,27 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
             case "exportCues":try exportCues()
             case "guideMix":try guideMix(args)
             case "moveMarker","reviewMarker":try editMarker(args,review:command=="reviewMarker")
+            case "alignPassage","passageVariant":try editPassage(command,args)
+            case "previewJoin":
+                try requireIdle()
+                let a=try number(args,"start",range:0...project.duration),b=try number(args,"end",range:0...project.duration)
+                guard b-a>=0.05,let edit=args["edit"] as? String,["cut","repeat"].contains(edit) else{return}
+                let left=edit=="cut" ? a : b,right=edit=="cut" ? b : a
+                let start=max(0,left-2),end=min(edit=="cut" ? project.duration : b,right+2)
+                guard left>start || end>right else{throw StudioError(uiText("La coupe enlève tout le morceau.", "The cut removes the entire song."))}
+                audio.pause()
+                try withGuides(afterPreparation {
+                    if left>start {
+                        self.audio.position=start
+                        try self.audio.play(withCount:false,until:left,then:end>right ? right..<end : nil)
+                    } else {self.audio.position=right;try self.audio.play(withCount:false,until:end)}
+                })
+            case "auditionOnce":
+                try requireIdle()
+                let a=try number(args,"start",range:0...project.duration),b=try number(args,"end",range:0...project.duration)
+                guard b-a >= 0.05 else{return}
+                audio.pause()
+                try withGuides(afterPreparation{self.audio.position=a;try self.audio.play(withCount:false,until:b)})
             case "audition":
                 let start=try number(args,"start",range:0...project.duration),end=try number(args,"end",range:0...project.duration)
                 guard end>start+0.05 else{throw StudioError(uiText("Choisis un passage à écouter.", "Choose a passage to play."))}
@@ -579,7 +604,7 @@ final class StudioApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, 
     func number(_ args:[String:Any],_ key:String,range:ClosedRange<Double>) throws -> Double {
         guard let value=args[key] as? Double,value.isFinite,range.contains(value) else{throw StudioError(uiText("Valeur invalide : ", "Invalid value: ")+key)};return value
     }
-    func webView(_ webView:WKWebView,didFinish navigation:WKNavigation!){sendState()}
+    func webView(_ webView:WKWebView,didStartProvisionalNavigation navigation:WKNavigation!){frontendReady=false}
     func webView(_ webView:WKWebView,decidePolicyFor action:WKNavigationAction,decisionHandler:@escaping(WKNavigationActionPolicy)->Void) {
         let allowed=action.targetFrame?.isMainFrame == true && action.request.url?.isFileURL == true && action.request.url?.standardizedFileURL.path == webRoot.appendingPathComponent("index.html").standardizedFileURL.path
         decisionHandler(allowed ? .allow : .cancel)

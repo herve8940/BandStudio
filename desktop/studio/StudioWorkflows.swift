@@ -65,6 +65,36 @@ extension StudioApp {
             self.lastExport=path;self.notice=uiText("Proposition appliquée et projet REAPER exporté. Afficher l’export permet de le retrouver.", "Suggestion applied and REAPER project exported. Choose Show export to find it.")
         }
     }
+    func editPassage(_ command:String,_ args:[String:Any]) throws {
+        try requireIdle()
+        guard root != nil else{return}
+        audio.pause()
+        let options=try JSONSerialization.data(withJSONObject:args)
+        try startJob(command,arguments:["--options",String(decoding:options,as:UTF8.self)]) {result in
+            let data=try Data(contentsOf:result)
+            if command=="alignPassage" {
+                struct Alignment:Decodable {var beats:[Double];var downbeats:[Double];var meterChanges:[MeterChange]}
+                let grid=try JSONDecoder().decode(Alignment.self,from:data)
+                self.remember()
+                let bpm=self.project.pulseBPM
+                self.project.settings.gridMode="detected";self.project.bpm=bpm
+                self.project.beats=grid.beats;self.project.downbeats=grid.downbeats
+                self.project.meterChanges=grid.meterChanges;self.project.timingGrid=nil
+                self.project.gridLocked=true;self.project.analysisNote=uiText("Calage manuel du passage.", "Passage timing aligned manually.")
+                self.audio.project=self.project;try self.changed()
+            } else {
+                struct Result:Decodable {var join:Double}
+                let join=try JSONDecoder().decode(Result.self,from:data).join
+                let staged=result.deletingLastPathComponent().appendingPathComponent("Variant.bandstudio")
+                let variant=try StudioProject.load(staged)
+                let dest=self.library.appendingPathComponent(self.safeName(variant.name)+" "+String(variant.id.prefix(8))+".bandstudio")
+                try FileManager.default.moveItem(at:staged,to:dest)
+                try self.load(dest,prepareGuides:false)
+                self.audio.position=max(0,min(variant.duration,join)-2)
+                self.notice=uiText("Variante ouverte, deux secondes avant la jonction. L’original reste dans Mes morceaux.", "Variant opened near the join. The original is in My songs.")
+            }
+        }
+    }
     func snapshot(at url:URL, includeGuideStatus:Bool=false) throws {
         var object=try JSONSerialization.jsonObject(with:JSONEncoder().encode(project)) as! [String:Any]
         object["_root"]=root?.path
@@ -105,6 +135,7 @@ extension StudioApp {
                 StudioDiagnostics.shared.event("job.finish",["kind":kind,"exit":process.terminationStatus]);let cancelled=self.job == nil
                 self.send(["type":"job","task":kind,"jobID":folder.lastPathComponent,"finished":!cancelled && process.terminationStatus==0,"failed":cancelled || process.terminationStatus != 0,"progress":!cancelled && process.terminationStatus==0 ? 100 : 0])
                 self.busy=false;self.job=nil;self.jobName=""
+                if cancelled && kind=="passageVariant" {try? FileManager.default.removeItem(at:folder.appendingPathComponent("Variant.bandstudio"))}
                 if cancelled {self.notice=uiText("Traitement annulé. Le projet est conservé.", "Task canceled. Your project has been kept.");self.sendState();return}
                 guard self.project.id == identity else{self.sendState();return}
                 guard process.terminationStatus == 0 else {self.notice=uiText("Le traitement a échoué : ", "Task failed: ")+self.jobDetail();self.sendState();return}
@@ -112,7 +143,7 @@ extension StudioApp {
             }
         }
         StudioDiagnostics.shared.event("job.start",["kind":kind]);try p.run();job=p;busy=true;jobLog=log;jobStarted=ProcessInfo.processInfo.systemUptime;lastBroadcast=0
-        let titles:[String:String]=["showExport":uiText("Préparation de l’export", "Preparing export"),"prepareReview":uiText("Vérification finale des sections et accords", "Final check of sections and chords"),"structureApply":uiText("Application de la proposition", "Applying suggestion"),"structureMemory":uiText("Recherche d’une préparation mémorisée", "Looking for a saved preparation"),"structureReview":uiText("Comparaison de la structure", "Structure comparison"),"structureExport":uiText("Validation et export REAPER", "REAPER review and export"),"validate":uiText("Vérification du morceau et des médias", "Checking song and media"),"generate":uiText("Création musicale locale", "Creating music locally"),"vocalsplit":uiText("Séparation chant principal et chœurs", "Separating lead and backing vocals"),"smartgrid":uiText("Détection des temps et débuts de mesure", "Detecting beats and downbeats"),"drumsep":uiText("Séparation des éléments de batterie", "Separating drum kit"),"key":uiText("Estimation de la tonalité", "Estimating key"),"lyricsimport":uiText("Import des paroles synchronisées", "Importing synced lyrics"),"lyricsexport":uiText("Export des paroles", "Exporting lyrics"),"stemsexport":uiText("Export des stems", "Exporting stems"),"master":uiText("Normalisation du mix", "Normalizing mix"),"report":uiText("Analyse des niveaux audio", "Analyzing audio levels"),"portable":uiText("Création du projet portable", "Creating portable project"),"sheet":uiText("Création de la fiche PDF", "Creating PDF song sheet"),"guides":uiText("Préparation du click, des appels et du décompte", "Preparing click, announcements and count-in"),"separate":uiText("Séparation des instruments", "Instrument separation"),"structure":uiText("Analyse de la structure", "Analyzing structure"),"grid":uiText("Détection du tempo et des temps", "Detecting tempo and beats"),"reaper":uiText("Création du projet REAPER", "Creating REAPER project"),"lyrics":uiText("Transcription et vérification des paroles", "Transcribing and checking lyrics"),"lyricscorrect":uiText("Correction des paroles et recalage vocal", "Correcting and aligning vocals"),"chords":uiText("Recherche de grille Internet", "Finding an online chord chart"),"drums":uiText("Transcription de la batterie", "Transcribing drums"),"midi":uiText("Export MIDI", "Exporting MIDI"),"decode":uiText("Conversion du fichier audio", "Converting audio file")]
+        let titles:[String:String]=["alignPassage":uiText("Calage du passage","Aligning passage"),"passageVariant":uiText("Création de la variante","Creating variant"),"showExport":uiText("Préparation de l’export", "Preparing export"),"prepareReview":uiText("Vérification finale des sections et accords", "Final check of sections and chords"),"structureApply":uiText("Application de la proposition", "Applying suggestion"),"structureMemory":uiText("Recherche d’une préparation mémorisée", "Looking for a saved preparation"),"structureReview":uiText("Comparaison de la structure", "Structure comparison"),"structureExport":uiText("Validation et export REAPER", "REAPER review and export"),"validate":uiText("Vérification du morceau et des médias", "Checking song and media"),"generate":uiText("Création musicale locale", "Creating music locally"),"vocalsplit":uiText("Séparation chant principal et chœurs", "Separating lead and backing vocals"),"smartgrid":uiText("Détection des temps et débuts de mesure", "Detecting beats and downbeats"),"drumsep":uiText("Séparation des éléments de batterie", "Separating drum kit"),"key":uiText("Estimation de la tonalité", "Estimating key"),"lyricsimport":uiText("Import des paroles synchronisées", "Importing synced lyrics"),"lyricsexport":uiText("Export des paroles", "Exporting lyrics"),"stemsexport":uiText("Export des stems", "Exporting stems"),"master":uiText("Normalisation du mix", "Normalizing mix"),"report":uiText("Analyse des niveaux audio", "Analyzing audio levels"),"portable":uiText("Création du projet portable", "Creating portable project"),"sheet":uiText("Création de la fiche PDF", "Creating PDF song sheet"),"guides":uiText("Préparation du click, des appels et du décompte", "Preparing click, announcements and count-in"),"separate":uiText("Séparation des instruments", "Instrument separation"),"structure":uiText("Analyse de la structure", "Analyzing structure"),"grid":uiText("Détection du tempo et des temps", "Detecting tempo and beats"),"reaper":uiText("Création du projet REAPER", "Creating REAPER project"),"lyrics":uiText("Transcription et vérification des paroles", "Transcribing and checking lyrics"),"lyricscorrect":uiText("Correction des paroles et recalage vocal", "Correcting and aligning vocals"),"chords":uiText("Recherche de grille Internet", "Finding an online chord chart"),"drums":uiText("Transcription de la batterie", "Transcribing drums"),"midi":uiText("Export MIDI", "Exporting MIDI"),"decode":uiText("Conversion du fichier audio", "Converting audio file")]
         jobName=kind == "rpp" ? uiText("Import des pistes et régions REAPER", "Importing REAPER tracks and regions") : (titles[kind] ?? kind);notice="";sendState()
     }
     // Stop revokes a queued transport action while guides are still rendering.

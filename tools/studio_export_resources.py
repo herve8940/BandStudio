@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def export_resources():
     studio = ROOT / 'desktop/studio'
-    for name in ('live_set.py', 'show_export.py', 'show_control.py'):
+    for name in ('passage_edit.py', 'live_set.py', 'show_export.py', 'show_control.py'):
         yield studio / name, name
     for path in sorted((studio / 'export_assets').iterdir()):
         name = path.name + '.txt' if path.suffix == '.xml' else path.name

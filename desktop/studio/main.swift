@@ -434,7 +434,20 @@ if CommandLine.arguments.count >= 3 && CommandLine.arguments[1] == "--transport-
             guard audio.running,position>0.05,position<0.8 else{throw StudioError("Horloge audio incorrecte : \(position)")}
             audio.pause()
         }
-        print("PASS repeated real-time play/pause, no startup jump to end");exit(0)
+        try audio.configureLoop(on:true,start:0,end:0.8)
+        for tail in [nil,0.10..<0.30] as [Range<Double>?] {
+            audio.position=0.45
+            try audio.play(withCount:false,until:0.65,then:tail)
+            let deadline=Date().addingTimeInterval(2)
+            var crossed=false
+            while audio.running && Date()<deadline {
+                RunLoop.current.run(until:Date().addingTimeInterval(0.01))
+                if audio.current()<0.4 {crossed=true};audio.tick()
+            }
+            guard !audio.running, audio.loop, abs(audio.position-(tail?.upperBound ?? 0.65))<0.001,
+                  crossed == (tail != nil) else{throw StudioError("A–B preview clock or loop restoration failed")}
+        }
+        print("PASS repeated real-time play/pause, one-shot and joined previews, loop restoration");exit(0)
     } catch {fputs("FAIL: \(error.localizedDescription)\n",stderr);exit(1)}
 }
 if CommandLine.arguments.count >= 4 && CommandLine.arguments[1] == "--prepare-all-test" {

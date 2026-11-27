@@ -1,0 +1,28 @@
+.explore-nav, .explore-panel {padding:8px 14px;border-bottom:1px solid #304056;background:#101a2a}
+.explore-nav {display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.explore-rail, .explore-range {position:relative;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
+.explore-rail {width:100%;height:24px;margin-top:5px;background:#0a1221;border:1px solid #3e506a;border-radius:5px;cursor:crosshair}
+.explore-frame,.explore-highlight {position:absolute;top:0;bottom:0;border:2px solid #88d4c3;background:#71cdb52f;border-radius:3px;box-sizing:border-box}
+.explore-frame {cursor:grab;min-width:2px}
+.explore-frame:active {cursor:grabbing}
+.explore-grip {position:absolute;top:0;bottom:0;width:min(9px,27%);background:#a4dece;cursor:ew-resize}
+.explore-grip:first-child {left:0}.explore-grip:last-child {right:0}
+.explore-head {position:absolute;top:0;bottom:0;width:2px;background:#fff3c5;pointer-events:none}
+.explore-panel summary {cursor:pointer;color:#e4edf7;font-weight:650;padding:4px 0}
+.explore-row {display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:8px 0}
+.explore-row input {min-width:0;width:10em}.explore-row input[type=number]{width:6em}
+.explore-row label {display:inline-flex;align-items:center;gap:5px}
+.explore-row small,.explore-nav output {color:#b9cce0;font-variant-numeric:tabular-nums}
+.explore-nav button,.explore-row button,.explore-row select {padding:5px 9px;font-size:12px}
+.explore-range {height:25px;background:#172639;cursor:crosshair}
+.explore-highlight {pointer-events:none}
+.explore-range .explore-highlight {pointer-events:auto;cursor:move}
+.explore-results:empty {display:none}
+#ruler {cursor:crosshair}
+#ruler .ruler-mark {white-space:nowrap}
+.explore-panel fieldset {border:1px solid #344559;border-radius:6px;min-width:0;margin:8px 0;padding:4px 10px}
+.explore-panel legend {color:#c7d8e7;font-size:12px}
+#workspaceOverview .overview-window {pointer-events:auto;cursor:grab;touch-action:none}
+#openExplorer {padding:5px 9px;font-size:12px}
+#explorer [hidden],.explore-nav[hidden],.explore-rail[hidden],.explore-highlight[hidden] {display:none}
+.timeline-head .explore-range {flex:1 1 0;min-width:0}

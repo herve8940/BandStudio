@@ -1,7 +1,7 @@
 import AppKit
 
 extension StudioApp {
-    var isDevelopmentSession: Bool { ProcessInfo.processInfo.environment["BANDSTUDIO_DEVELOPMENT"] == "1" }
+    var isDevelopmentSession: Bool { ProcessInfo.processInfo.environment["BANDSTUDIO_DEVELOPMENT"] == "1" || Bundle.main.object(forInfoDictionaryKey:"BandStudioPreview") as? Bool == true }
     var automaticUpdates:Bool { !isDevelopmentSession && (UserDefaults.standard.object(forKey:"automaticUpdates") as? Bool ?? true) }
     func sendUpdate(_ message:String="") {send(["type":"update","automatic":automaticUpdates,"message":message])}
     func checkUpdates() {

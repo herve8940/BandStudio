@@ -89,6 +89,7 @@ struct StudioProject: Codable {
     var capo=0
     var analysesCompleted:[String]=[]
     var gridLocked=false
+    var meterChanges:[MeterChange]?
     var downbeats:[Double]=[]
     var analysisNote=""
     var sourceURL=""
@@ -135,6 +136,12 @@ struct StudioProject: Codable {
         for s in sections {
             guard s.start.isFinite, s.end.isFinite, s.start >= 0, s.end > s.start,
                   s.end <= duration + 0.1 else { throw StudioError(uiText("Les limites d’une section sont invalides.", "Invalid section boundaries.")) }
+        }
+        if let changes=meterChanges {
+            guard changes.allSatisfy({$0.time.isFinite && $0.time>=0 && $0.time<=duration+0.001 && (1...12).contains($0.meter)}),
+                  zip(changes,changes.dropFirst()).allSatisfy({$0.time<$1.time}) else {
+                throw StudioError(uiText("Changement de mesure invalide.", "Invalid meter change."))
+            }
         }
         guard bpm.isFinite, bpm >= 0, bpm <= 1000,
               beats.allSatisfy({$0.isFinite && $0 >= 0 && $0 <= duration + 0.1}),
@@ -244,6 +251,10 @@ final class StudioAudio {
     var rate:Float=1
     var pitch:Float=0
     var mode="mix"
+    private(set) var previewEnd:Double?
+    private(set) var previewTail:Range<Double>?
+    var playingPreviewTail:Bool {previewTail != nil && running && elapsed()>=firstLength}
+    private var repeating:Bool {loop && previewEnd == nil}
     var loop=false
     var loopStart=0.0
     var loopEnd=0.0
@@ -319,16 +330,17 @@ final class StudioAudio {
     func current() -> Double {
         guard running else{return position}
         let e=elapsed()
-        if loop && loopEnd-loopStart > 0.05 && e >= firstLength {
+        if let tail=previewTail,e>=firstLength {return min(tail.upperBound,tail.lowerBound+e-firstLength)}
+        if repeating && loopEnd-loopStart >= 0.05 && e >= firstLength {
             let phase=(e-firstLength).truncatingRemainder(dividingBy:loopEnd-loopStart+loopGap)
             return loopStart+max(0,phase-loopGap)
         }
-        return min(project.duration,startPosition+max(0,e-preRoll))
+        return min(previewEnd ?? project.duration,startPosition+max(0,e-preRoll))
     }
     func countRemaining()->Int {
         guard running else{return 0}
         var time=elapsed(),events=initialCountEvents
-        if loop && time>=firstLength {
+        if repeating && time>=firstLength {
             time=(time-firstLength).truncatingRemainder(dividingBy:loopEnd-loopStart+loopGap)
             events=repeatCountEvents
         }
@@ -388,14 +400,15 @@ final class StudioAudio {
             node.prepare(withFrameCount:AVAudioFrameCount(node.outputFormat(forBus:0).sampleRate*0.25))
         }
     }
-    func play(withCount:Bool=true) throws {
+    func play(withCount:Bool=true,until endOfPreview:Double?=nil,then tail:Range<Double>?=nil) throws {
         guard !players.isEmpty else{return}
         if running{return}
+        previewEnd=endOfPreview;previewTail=tail
         if position >= project.duration-0.001 {position=0}
-        if loop && (position < loopStart || position >= loopEnd) {position=loopStart}
+        if repeating && (position < loopStart || position >= loopEnd) {position=loopStart}
         clock.stop();for n in players+[countClick,countVoice,startCall]{n.stop()}
         startPosition=position
-        let end=loop ? loopEnd : project.duration
+        let end=previewEnd ?? (loop ? loopEnd : project.duration)
         preRoll=withCount ? plannedCount(at:position) : 0
         initialCountEvents=withCount ? project.countPlan(at:position).events : []
         repeatCountEvents=project.settings.countEveryLoop ? project.countPlan(at:loopStart).events : []
@@ -404,7 +417,8 @@ final class StudioAudio {
         configureTimeEffects()
         scheduleCount(at:0,position:position,enabled:withCount)
         schedule(position,end,at:preRoll,counting:withCount)
-        if loop { for _ in 0..<3 {scheduleCount(at:scheduled,position:loopStart,enabled:project.settings.countEveryLoop);schedule(loopStart,loopEnd,at:scheduled+loopGap,counting:project.settings.countEveryLoop);scheduled += loopEnd-loopStart+loopGap} }
+        if let tail=tail {schedule(tail.lowerBound,tail.upperBound,at:scheduled);scheduled += tail.upperBound-tail.lowerBound}
+        if repeating { for _ in 0..<3 {scheduleCount(at:scheduled,position:loopStart,enabled:project.settings.countEveryLoop);schedule(loopStart,loopEnd,at:scheduled+loopGap,counting:project.settings.countEveryLoop);scheduled += loopEnd-loopStart+loopGap} }
         let silence=AVAudioPCMBuffer(pcmFormat:clockFormat,frameCapacity:1024)!
         silence.frameLength=1024
         for c in 0..<2 {silence.floatChannelData![c].initialize(repeating:0,count:1024)}
@@ -417,6 +431,7 @@ final class StudioAudio {
     }
     func pause() {
         if running {position=current()}
+        previewEnd=nil;previewTail=nil
         running=false;clock.stop();for n in players+[countClick,countVoice,startCall]{n.stop()};engine.pause()
     }
     func seek(_ value:Double) throws {
@@ -429,9 +444,9 @@ final class StudioAudio {
     }
     func tick() {
         guard running else{return}
-        if loop {
+        if repeating {
             let size=loopEnd-loopStart
-            if size > 0.05 {
+            if size >= 0.05 {
                 while scheduled-elapsed() < (size+loopGap)*2 {scheduleCount(at:scheduled,position:loopStart,enabled:project.settings.countEveryLoop);schedule(loopStart,loopEnd,at:scheduled+loopGap,counting:project.settings.countEveryLoop);scheduled += size+loopGap}
                 let lap=elapsed()<firstLength ? 0 : 1+Int((elapsed()-firstLength)/(size+loopGap))
                 if lap>completedLoops {
@@ -439,7 +454,11 @@ final class StudioAudio {
                     if s.loopStep>0,Double(rate)<s.loopMaxRate,lap%s.loopEvery==0 {rate=min(Float(s.loopMaxRate),rate+Float(s.loopStep));configureTimeEffects()}
                 }
             }
-        } else if current() >= project.duration-0.001 {pause();position=project.duration}
+        } else {
+            if let end=previewEnd {
+                if elapsed() >= scheduled {let final=previewTail?.upperBound ?? end;pause();position=final}
+            } else if current() >= project.duration-0.001 {pause();position=project.duration}
+        }
     }
     func render(to url:URL,start:Double,end:Double,includeCount:Bool=false) throws {
         pause();engine.stop()

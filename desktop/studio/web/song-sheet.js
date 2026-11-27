@@ -5,19 +5,19 @@
  const EPS = 1e-7;
  function sheetGrid(project, duration) {
   const clock=musicalGrid(project),{at,coordinate,meter}=clock;
-  const bpm=pulseTempo(project),origin=at(0),detected=clock.detected;
+  const bpm=pulseTempo(project),origin=clock.barAt(0),detected=clock.detected;
   function position(t) {
    // Round only floating-point noise, not the actual position of a word or chord.
-   const value=Math.round(coordinate(t)*1e6)/1e6, bar=Math.floor(value/meter);
-   return {bar:bar+1, beat:value-bar*meter+1};
+   const value=Math.round(coordinate(t)*1e6)/1e6, bar=clock.barNumber(t);
+   return {bar:bar+1, beat:value-coordinate(clock.barAt(bar))+1};
   }
   const bars=[];
   if (origin>EPS) bars.push({number:0,start:0,end:Math.min(origin,duration)});
-  for(let n=0; n<20000 && at(n*meter)<duration-EPS; n++) {
-   const start=Math.max(0,at(n*meter)), end=Math.min(duration,at((n+1)*meter));
+  for(let n=0; n<20000 && clock.barAt(n)<duration-EPS; n++) {
+   const start=Math.max(0,clock.barAt(n)), end=Math.min(duration,clock.barAt(n+1));
    if(end>start+EPS)bars.push({number:n+1,start,end});
   }
-  return {at,coordinate,position,bars,meter,origin,bpm:tempoSummary(project).bpm,pulseBPM:bpm,timeSignature:pulseScale(project)===1.5?(meter*3)+'/8':meter+'/4',detected};
+  return {...clock,position,bars,meter,origin,bpm:tempoSummary(project).bpm,pulseBPM:bpm,timeSignature:pulseScale(project)===1.5?(meter*3)+'/8':meter+'/4',detected};
  }
  window.bandStudioSheetGrid = sheetGrid;
 
@@ -217,7 +217,7 @@
  }
  const move=node('div','sheet-move');
  for(const [label,beats] of [[uiText('← 1 mesure'),'bar-'],[uiText('← 1 temps'),-1],[uiText('1 temps →'),1],[uiText('1 mesure →'),'bar+']]) {
-  const b=button(label,()=>{const g=editorGrid(),amount=beats==='bar-'?-g.meter:beats==='bar+'?g.meter:beats;moveTo(g.at(g.coordinate(Number($('annotationStart').value))+amount));});
+  const b=button(label,()=>{const g=editorGrid(),t=Number($('annotationStart').value);moveTo(typeof beats==='string'?g.barOffset(t,beats==='bar-'?-1:1):g.at(g.coordinate(t)+beats));});
   b.dataset.shift=beats;move.append(b);
  }
  for(const [label,delta] of [['← 100 ms',-.1],['100 ms →',.1]]) {
@@ -257,8 +257,8 @@
  for(const side of ['Start','End']) {
   for(const part of ['Bar','Beat']) $('sheet'+side+part).onchange=()=>{
    const g=editorGrid(),bar=Number($('sheet'+side+'Bar').value),beat=Number($('sheet'+side+'Beat').value);
-   if(!Number.isInteger(bar)||!Number.isFinite(beat)||beat<1||beat>=g.meter+1){error.textContent=uiText('Saisis une mesure entière et un temps compris entre 1 et ')+g.meter+'.';refreshPosition();return;}
-   const t=g.at((bar-1)*g.meter+beat-1);
+   if(!Number.isInteger(bar)||!Number.isFinite(beat)||beat<1||beat>=g.meterAt(g.barAt(bar-1))+1){error.textContent=uiText('Saisis une mesure entière et un temps compris entre 1 et ')+g.meter+'.';refreshPosition();return;}
+   const t=g.at(g.coordinate(g.barAt(bar-1))+beat-1);
    if(side==='Start')moveTo(t);
    else if(t>Number($('annotationStart').value)&&t<=state.duration+EPS){$('annotationEnd').value=Number(Math.min(t,state.duration).toFixed(3));error.textContent='';refreshPosition();}
    else{error.textContent=uiText('La fin doit suivre le début et rester dans le morceau.');refreshPosition();}

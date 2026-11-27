@@ -130,6 +130,7 @@ struct TimingBasis:Codable {
         return beats==p.beats && downbeats==p.downbeats && bpm==p.pulseBPM && first==p.settings.firstBeat && meter==p.settings.beatsPerBar && mode==p.settings.gridMode && locked==p.gridLocked && abs(duration-p.duration)<0.00001
     }
 }
+struct MeterChange:Codable {var time:Double;var meter:Int}
 struct TimingGrid:Codable {
     var version:Int;var basis:TimingBasis;var beats:[Double];var anchor:Int
     var head:Double;var tail:Double;var detected:Bool
@@ -172,9 +173,11 @@ extension StudioProject {
 
     var pulseBPM:Double {settings.gridMode=="fixed" ? settings.manualBPM/settings.pulseScale : bpm>0 ? bpm : settings.manualBPM/settings.pulseScale}
     func countPlan(at position:Double)->CountPlan {
-        let meter=settings.beatsPerBar,n=settings.countBars*meter
+        let clock=musicalClock
+        let change=meterChanges?.last(where:{$0.time<=position+0.000001})
+        let meter=change?.meter ?? settings.beatsPerBar,n=settings.countBars*meter
         guard n>0 else{return CountPlan(lead:0,end:0,target:position,events:[])}
-        let clock=musicalClock,anchor=0
+        let anchor=change.map{Int(round(clock.coordinate($0.time)))} ?? 0
         let at:(Int)->Double={clock.at(Double($0))}
         let target=position<=0 ? Int(ceil(clock.coordinate(0)/Double(meter)-1e-9))*meter : Int(ceil(clock.coordinate(position)-1e-9))
         // Speak the full count through the pickup, including "four" before "one".
@@ -188,6 +191,7 @@ extension StudioProject {
         beats=(result["beats"] as? [Double] ?? []).map{$0+offset}.filter{$0>=0 && $0<duration}
         downbeats=(result["downbeats"] as? [Double] ?? []).map{$0+offset}.filter{$0>=0 && $0<duration}
         bpm=result["bpm"] as? Double ?? 0
+        meterChanges=nil
         settings.gridMode="detected"
         settings.pulseUnit=result["pulseUnit"] as? String ?? "quarter"
         settings.firstBeat=(result["firstBeat"] as? Double).map{$0+offset} ?? beats.first ?? 0
@@ -197,12 +201,13 @@ extension StudioProject {
     }
 
     enum CodingKeys:String,CodingKey {
-        case sectionGridVersion,timingGrid
+        case sectionGridVersion,timingGrid,meterChanges
         case structureProposal,preparation,sessionDuration,capture,version,id,name,tracks,sections,cues,bpm,beats,notes,settings,guideFiles,guideKey,lyrics,lyricsReference,chords,chordReference,drumHits,key,sourceURL,capo,analysesCompleted,gridLocked,downbeats,analysisNote
     }
     init(from decoder:Decoder) throws {
         let d=try decoder.container(keyedBy:CodingKeys.self)
         sectionGridVersion=try d.decodeIfPresent(Int.self,forKey:.sectionGridVersion)
+        meterChanges=try d.decodeIfPresent([MeterChange].self,forKey:.meterChanges)
         timingGrid=try d.decodeIfPresent(TimingGrid.self,forKey:.timingGrid)
         structureProposal=try d.decodeIfPresent(StructureProposal.self,forKey:.structureProposal)
         preparation=try d.decodeIfPresent(Preparation.self,forKey:.preparation)
@@ -232,7 +237,7 @@ extension StudioProject {
         sourceURL=try d.decodeIfPresent(String.self,forKey:.sourceURL) ?? ""
     }
     func desiredGuideKey()->String {
-        struct Input:Encodable{var generator=8;var settings:GuideSettings;var bpm:Double;var beats:[Double];var downbeats:[Double];var gridLocked:Bool;var sections:[Section];var cues:[Cue];var duration:Double}
+        struct Input:Encodable{var generator=8;var meterChanges:[MeterChange]?=nil;var settings:GuideSettings;var bpm:Double;var beats:[Double];var downbeats:[Double];var gridLocked:Bool;var sections:[Section];var cues:[Cue];var duration:Double}
         var sound=settings
         sound.referenceBPM=nil
         if sound.gridMode=="detected" {sound.pulseUnit=nil}
@@ -242,7 +247,7 @@ extension StudioProject {
         var regions=sections;var markers=cues
         for i in regions.indices {regions[i].reviewed=nil;regions[i].locked=false;regions[i].origin=""}
         for i in markers.indices {markers[i].reviewed=nil}
-        let input=Input(settings:sound,bpm:bpm,beats:beats,downbeats:downbeats,gridLocked:gridLocked,sections:regions,cues:markers,duration:duration)
+        let input=Input(meterChanges:meterChanges,settings:sound,bpm:bpm,beats:beats,downbeats:downbeats,gridLocked:gridLocked,sections:regions,cues:markers,duration:duration)
         let enc=JSONEncoder();enc.outputFormatting = .sortedKeys
         return SHA256.hash(data:(try? enc.encode(input)) ?? Data()).map{String(format:"%02x",$0)}.joined()
     }

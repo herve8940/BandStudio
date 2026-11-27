@@ -537,7 +537,7 @@ def practice_grid(p, options=None):
         raise ValueError(ui_text('Le morceau doit avoir une durée, un tempo et une mesure valides.', 'The song must have a valid duration, tempo and time signature.'))
     from musical_timing import BeatClock
     clock = BeatClock(p, duration)
-    origin = clock.at(0)
+    origin = clock.bar_start(0)
     at, coordinate = clock.at, clock.coordinate
 
     shift = int(finite(options.get('pitch', 0), -12, 12))
@@ -558,8 +558,8 @@ def practice_grid(p, options=None):
     if origin > 1e-7:
         bars.append(dict(number=0, start=0, end=min(origin, duration)))
     n = max(0, math.floor(coordinate(0)/meter))
-    while at(n*meter) < duration-1e-7:
-        start, end = max(0, at(n*meter)), min(duration, at((n+1)*meter))
+    while clock.bar_start(n) < duration-1e-7:
+        start, end = max(0, clock.bar_start(n)), min(duration, clock.bar_start(n+1))
         if end > start+1e-7:
             bars.append(dict(number=n+1, start=start, end=end))
         n += 1
@@ -606,7 +606,7 @@ def practice_grid(p, options=None):
             continuation = a > bar['start']+1e-7
             cells.append(dict(number=bar['number'], start=a, end=b, chords=names, lyrics=text,
                               cues=cues, partial=continuation or b < bar['end']-1e-7, continuation=continuation,
-                              startBeat=coordinate(a)%meter+1))
+                              startBeat=(coordinate(a)-clock.signature(coordinate(a))[0])%clock.signature(coordinate(a))[1]+1))
         group['cells'] = cells
     return dict(groups=groups, bpm=tempo_info(p)['bpm'], pulseBPM=bpm, meter=meter, timeSignature=f'{meter*3}/8' if pulse_scale(settings)==1.5 else f'{meter}/4', key=transpose(p.get('key') or '?', shift),
                 capo=capo, shift=shift, has_lyrics=bool(lyrics), duration=duration)

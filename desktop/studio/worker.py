@@ -181,7 +181,7 @@ def analyze(audio, output, mode, engine, project_file=None, *, reanalyze=False):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument('command', choices=['showExport','prepareReview','structureMemory','structureReview','structureApply','structureExport','validate','generate','vocalsplit','grid', 'structure', 'separate','drumsep','guides','decode','reaper','rpp','lyrics','lyricscorrect','chords','drums','midi','smartgrid','key','lyricsimport','lyricsexport','stemsexport','master','report','portable','sheet'])
+    p.add_argument('command', choices=['alignPassage','passageVariant','showExport','prepareReview','structureMemory','structureReview','structureApply','structureExport','validate','generate','vocalsplit','grid', 'structure', 'separate','drumsep','guides','decode','reaper','rpp','lyrics','lyricscorrect','chords','drums','midi','smartgrid','key','lyricsimport','lyricsexport','stemsexport','master','report','portable','sheet'])
     p.add_argument('--options',default='{}')
     p.add_argument('--options-file')
     p.add_argument('--input', default='')
@@ -217,6 +217,14 @@ def execute(a):
     progress(a.output, a.command)
     from analysis_progress import emit, legacy_status
     from services import guides,decode,export_reaper,export_midi,import_reaper
+    if a.command in ('alignPassage','passageVariant'):
+        from passage_edit import align, variant
+        project = json.loads(Path(a.project).read_text())
+        options = json.loads(Path(a.options_file).read_text() if a.options_file else a.options)
+        result = (align(project,options) if a.command=='alignPassage' else
+                  variant(project,options,Path(a.output).parent/'Variant.bandstudio'))
+        write(a.output,result)
+        return
     if a.command == 'showExport':
         from show_export import export_show
         options = json.loads(Path(a.options_file).read_text(encoding='utf-8') if a.options_file else a.options)

@@ -29,14 +29,32 @@ function musicalGrid(project) {
   const i=Math.max(0,Math.min(beats.length-2,lo-1));
   return i-anchor+(t-beats[i])/(beats[i+1]-beats[i]);
  }
- const label=t=>{const c=coordinate(t),b=Math.floor((c+1e-7)/meter);return c<-.0001?uiText('Levée'):uiText('Mesure ')+(b+1)+uiText(' · temps ')+(c-b*meter+1).toFixed(2).replace(/\.00$/,'');};
- return {meter,detected,at,coordinate,label,snap:(t,unit)=>at(Math.round(coordinate(t)/unit)*unit)};
+ // Each signature starts a new bar. A truncated bar before the change keeps its number.
+ const initial={beat:0,bar:0,meter},signatures=[];
+ for(const change of project.meterChanges||[]){
+  const beat=Math.round(coordinate(change.time)),prev=signatures.at(-1)||initial;
+  const next={beat,bar:prev.bar+Math.ceil((beat-prev.beat)/prev.meter),meter:change.meter};
+  if(beat===prev.beat)signatures.pop();
+  signatures.push(next);
+ }
+ function segment(value,key){
+  let lo=0,hi=signatures.length;
+  while(lo<hi){const mid=(lo+hi)>>1;if(signatures[mid][key]<=value+1e-7)lo=mid+1;else hi=mid;}
+  return lo?signatures[lo-1]:initial;
+ }
+ function barNumber(t){const c=coordinate(t),s=segment(c,'beat');return s.bar+Math.floor((c-s.beat+1e-7)/s.meter);}
+ function barAt(bar){const s=segment(bar,'bar');return at(s.beat+(bar-s.bar)*s.meter);}
+ const meterAt=t=>segment(coordinate(t),'beat').meter;
+ function barOffset(t,n){const bar=barNumber(t);return at(coordinate(barAt(bar+n))+coordinate(t)-coordinate(barAt(bar)));}
+ function nearestBar(t){const n=barNumber(t),a=barAt(n),b=barAt(n+1);return t-a<b-t?a:b;}
+ const label=t=>{const n=barNumber(t);return n<0?uiText('Levée'):uiText('Mesure ')+(n+1)+uiText(' · temps ')+(coordinate(t)-coordinate(barAt(n))+1).toFixed(2).replace(/\.00$/,'');};
+ return {meter,detected,at,coordinate,label,barAt,barNumber,barOffset,nearestBar,meterAt,snap:(t,unit)=>at(Math.round(coordinate(t)/unit)*unit)};
 }
 
 let editorSong='',editorFocus=null,editorPending=null,zoomStart=0,zoomSpan=0;
 const zoomBar=node('div','editor-zoom');
 zoomBar.title=uiText('Ctrl + molette (ou Cmd + molette) sur une piste : zoom autour du pointeur');
-zoomBar.innerHTML=uiMarkup('<strong>ÉCOUTER & AJUSTER</strong><button id="zoomAll">Tout</button><button id="zoomOut" aria-label="Dézoomer">−</button><button id="zoomIn" aria-label="Zoomer">＋</button><span id="zoomLabel"></span><label class="editor-follow"><input id="zoomFollow" type="checkbox" checked>Suivre la lecture</label><label>Calage <select id="markerSnap"><option value="bar">Mesure</option><option value="beat">Temps</option></select></label><input id="zoomPosition" type="range" min="0" max="1000" value="0" aria-label="Parcourir le morceau">');
+zoomBar.innerHTML=uiMarkup('<strong>ÉCOUTER & AJUSTER</strong><button id="zoomAll">Tout</button><button id="zoomOut" aria-label="Dézoomer">−</button><button id="zoomIn" aria-label="Zoomer">＋</button><span id="zoomLabel"></span><label class="editor-follow"><input id="zoomFollow" type="checkbox" checked>Suivre la lecture</label><label>Calage <select id="markerSnap"><option value="bar">Mesure</option><option value="beat">Temps</option><option value="free">Libre</option></select></label><input id="zoomPosition" type="range" min="0" max="1000" value="0" aria-label="Parcourir le morceau">');
 document.querySelector('.workspace-grid').before(zoomBar);
 zoomBar.append(node('small','',uiText('Ctrl / Cmd + molette sur les pistes pour zoomer')));
 const gridSummary=node('p','grid-calibration');
@@ -89,7 +107,7 @@ function navigateMarker(delta){const rows=reviewMarkers(),i=rows.findIndex(m=>m.
 $('markerPrevious').onclick=()=>navigateMarker(-1);$('markerNext').onclick=()=>navigateMarker(1);
 $('markerChoice').onchange=()=>{const marker=reviewMarkers()[Number($('markerChoice').value)];if(marker)chooseMarker(marker.kind,marker.item.id);};
 $('markerName').onclick=()=>{const marker=focusMarker();if(marker)openEditor(marker.kind,marker.item);};
-document.querySelectorAll('[data-marker-step]').forEach(b=>b.onclick=()=>{const m=focusMarker(),g=musicalGrid(state.project),unit=b.dataset.unit==='bar'?g.meter:1;if(m)moveMarker(m,g.at((Math.round(g.coordinate(m.time)/unit)+Number(b.dataset.markerStep))*unit));});
+document.querySelectorAll('[data-marker-step]').forEach(b=>b.onclick=()=>{const m=focusMarker(),g=musicalGrid(state.project),step=Number(b.dataset.markerStep);if(m)moveMarker(m,b.dataset.unit==='bar'?g.barOffset(g.nearestBar(m.time),step):g.at(Math.round(g.coordinate(m.time))+step));});
 $('markerListen').onclick=()=>{
  const m=focusMarker();if(!m)return;const g=musicalGrid(state.project),c=g.coordinate(m.time),s={...guideDefaults,...state.project.settings};
  const start=Math.max(0,g.at(c-Math.max(2*g.meter,s.leadBeats+g.meter))),end=Math.min(state.duration,g.at(c+g.meter));
@@ -100,7 +118,9 @@ $('markerValidate').onclick=()=>{const m=focusMarker();if(!m||editorPending)retu
 function viewport(){const total=Math.max(.001,state.duration);if(!zoomSpan)zoomSpan=total;zoomSpan=Math.min(total,zoomSpan);zoomStart=Math.max(0,Math.min(total-zoomSpan,zoomStart));return {start:zoomStart,end:zoomStart+zoomSpan,span:zoomSpan};}
 let zoomFrame=0;
 function setZoom(factor,anchor=null){
- const v=viewport(),center=anchor?.time??Math.max(v.start,Math.min(v.end,focusMarker()?.time??transport.position??v.start)),span=Math.max(Math.min(2,state.duration),Math.min(state.duration,v.span*factor));
+ const v=viewport(),focus=focusMarker()?.time,play=transport.position;
+ const center=anchor?.time??([focus,play].find(t=>Number.isFinite(t)&&t>=v.start&&t<=v.end)??(v.start+v.span/2));
+ const span=Math.max(Math.min(2,state.duration),Math.min(state.duration,v.span*factor));
  zoomStart=center-span*(anchor?.ratio??.5);zoomSpan=span;viewport();
  if(anchor){if(!zoomFrame)zoomFrame=requestAnimationFrame(()=>{zoomFrame=0;redrawTimeline();});}
  else redrawTimeline();
@@ -118,7 +138,13 @@ document.querySelector('.arrangement').addEventListener('wheel',e=>{
 },{passive:false});
 $('zoomAll').onclick=()=>{zoomStart=0;zoomSpan=state.duration;redrawTimeline();};
 $('zoomIn').onclick=()=>setZoom(.5);$('zoomOut').onclick=()=>setZoom(2);
-$('zoomPosition').oninput=()=>{zoomStart=Number($('zoomPosition').value)/1000*Math.max(0,state.duration-zoomSpan);redrawTimeline();};
+$('zoomPosition').oninput=()=>{$('zoomFollow').checked=false;zoomStart=Number($('zoomPosition').value)/1000*Math.max(0,state.duration-zoomSpan);redrawTimeline();};
+function seekInTimeline(t){
+ if(!state.loaded||transport.recording)return;
+ window.studioAudition?.stop();
+ if(transport.loop&&(t<transport.loopStart||t>=transport.loopEnd))send('loop',{on:false,start:transport.loopStart,end:transport.loopEnd});
+ send('seek',{time:t});
+}
 function redrawTimeline(){viewport();renderSections();drawWaves();renderTransport();renderManualEditor();}
 
 function renderManualEditor(){
@@ -146,7 +172,7 @@ function attachMarkerDrag(button,marker){
   if(e.button!==0||state.busy||editorPending)return;
   const rect=button.parentElement.getBoundingClientRect(),v=viewport(),down=e.clientX,original=marker.time;
   let moved=false,target=original;button.setPointerCapture(e.pointerId);
-  button.onpointermove=ev=>{if(Math.abs(ev.clientX-down)<4&&!moved)return;moved=true;const g=musicalGrid(state.project),unit=$('markerSnap').value==='bar'?g.meter:1;target=g.snap(original+(ev.clientX-down)/rect.width*v.span,unit);button.style.left=((target-v.start)/v.span*100)+'%';$('markerFeedback').textContent=g.label(target);};
+  button.onpointermove=ev=>{if(Math.abs(ev.clientX-down)<4&&!moved)return;moved=true;const g=musicalGrid(state.project),unit=$('markerSnap').value==='bar'?g.meter:1;const raw=original+(ev.clientX-down)/rect.width*v.span;target=$('markerSnap').value==='free'?Math.max(0,Math.min(state.duration,raw)):$('markerSnap').value==='bar'?g.nearestBar(raw):g.snap(raw,unit);button.style.left=((target-v.start)/v.span*100)+'%';$('markerFeedback').textContent=g.label(target);};
   button.onpointerup=ev=>{button.onpointermove=null;button.onpointerup=null;button.releasePointerCapture(ev.pointerId);if(moved){button.onclick=ev=>ev.preventDefault();editorFocus={kind:marker.kind,id:marker.item.id};moveMarker(marker,target);renderSections();}};
   button.onpointercancel=()=>{button.onpointermove=null;button.onpointerup=null;renderSections();};
  };
@@ -166,8 +192,9 @@ renderSections=function(){
   }
  }
  if(!state.project.cues.length)$('cueList').append(node('small','',uiText('Ajoute un fill, un arrêt ou une reprise.')));
- const startBar=Math.ceil(g.coordinate(v.start)/g.meter),endBar=Math.floor(g.coordinate(v.end)/g.meter),step=Math.max(1,Math.ceil((endBar-startBar)/10));
- for(let b=startBar;b<=endBar;b+=step){const mark=node('span','ruler-mark',b<0?uiText('Levée'):'M'+(b+1));mark.style.left=((g.at(b*g.meter)-v.start)/v.span*100)+'%';$('ruler').append(mark);}
+ const first=g.barNumber(v.start),startBar=g.barAt(first)<v.start-1e-7?first+1:first,endBar=g.barNumber(v.end);
+ const step=Math.max(1,Math.ceil((endBar-startBar)/Math.max(2,$('ruler').clientWidth/90)));
+ for(let b=startBar;b<=endBar;b+=step){const mark=node('span','ruler-mark',b<0?uiText('Levée'):'M'+(b+1));mark.textContent+=' · '+time(g.barAt(b));mark.style.left=((g.barAt(b)-v.start)/v.span*100)+'%';$('ruler').append(mark);}
 };
 drawWaves=function(){
  const v=viewport(),g=musicalGrid(state.project);
@@ -176,10 +203,10 @@ drawWaves=function(){
   const width=canvas.clientWidth,height=100,scale=window.devicePixelRatio||1;canvas.width=width*scale;canvas.height=height*scale;
   const ctx=canvas.getContext('2d');ctx.scale(scale,scale);ctx.clearRect(0,0,width,height);
   const first=Math.ceil(g.coordinate(v.start)),last=Math.floor(g.coordinate(v.end)),stride=Math.max(1,Math.ceil((last-first)/400));
-  for(let beat=first;beat<=last;beat+=stride){const bar=beat%g.meter===0;if(!bar&&(last-first)>80)continue;const x=(g.at(beat)-v.start)/v.span*width;ctx.strokeStyle=bar?'#64718c66':'#64718c22';ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,height);ctx.stroke();}
+  for(let beat=first;beat<=last;beat+=stride){const t=g.at(beat),bar=Math.abs(g.barAt(g.barNumber(t))-t)<.00001;if(!bar&&(last-first)>80)continue;const x=(g.at(beat)-v.start)/v.span*width;ctx.strokeStyle=bar?'#64718c66':'#64718c22';ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,height);ctx.stroke();}
   const samples=t.peaks||[];ctx.strokeStyle=colors[t.role]||colors.other;ctx.globalAlpha=.82;ctx.beginPath();
   for(let x=0;x<width;x+=2){const a=Math.floor((v.start+x/width*v.span-t.offset)/t.duration*samples.length),b=Math.ceil((v.start+(x+2)/width*v.span-t.offset)/t.duration*samples.length);let peak=0;for(let i=Math.max(0,a);i<Math.min(samples.length,b);i++)peak=Math.max(peak,samples[i]);const amp=Math.min(1,peak)*39;ctx.moveTo(x,50-amp);ctx.lineTo(x,50+amp);}ctx.stroke();
-  canvas.parentElement.onclick=e=>{const r=canvas.parentElement.getBoundingClientRect();send('seek',{time:Math.max(0,Math.min(state.duration,v.start+(e.clientX-r.left)/r.width*v.span))});};
+  canvas.parentElement.onclick=e=>{const r=canvas.parentElement.getBoundingClientRect();seekInTimeline(Math.max(0,Math.min(state.duration,v.start+(e.clientX-r.left)/r.width*v.span)));};
  });
 };
 const editorTransport=renderTransport;

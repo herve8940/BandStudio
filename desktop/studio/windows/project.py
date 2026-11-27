@@ -136,6 +136,7 @@ def track(path,root,name,role,offset=0):
 
 def guide_key(p):
     value={k:p[k] for k in ['settings','bpm','beats','sections','cues']};value['duration']=duration(p);value['downbeats']=p.get('downbeats',[]);value['gridLocked']=p.get('gridLocked',False)
+    if p.get("meterChanges"):value["meterChanges"]=p["meterChanges"]
     value=copy.deepcopy(value)
     value['settings'].pop('referenceBPM',None)
     if value['settings']['gridMode']=='detected':value['settings'].pop('pulseUnit',None)
@@ -192,6 +193,7 @@ def apply_grid(p,result,offset=0,*,reanalyze=False):
     if p.get('gridLocked') or (not reanalyze and analysis_done(p,'smartgrid')):return
     from services import calibrate_grid
     result=calibrate_grid(result)
+    p.pop('meterChanges',None)
     length=duration(p)
     p['beats']=[t+offset for t in result['beats'] if 0<=t+offset<length]
     p['downbeats']=[t+offset for t in result.get('downbeats',[]) if 0<=t+offset<length]

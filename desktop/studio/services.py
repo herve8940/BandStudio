@@ -351,7 +351,7 @@ def _render_guides(project_file, output, include_announcements, scratch):
         for sub in range(s['subdivision']):
             at=beat+sub*span/s['subdivision']
             if at < -1e-9 or at>=duration:continue
-            accented=sub==0 and index%s['beatsPerBar']==0
+            accented=sub==0 and clock.bar_phase(beat)[0]==0
             n=int(sr*.035);t=np.arange(n)/sr
             sound=np.sin(2*np.pi*(1760 if accented else 1100)*t)*np.exp(-t*130)*(0.8 if sub==0 else 0.35)
             place(click,np.repeat(sound[:,None],2,axis=1),max(0.,at))
@@ -396,7 +396,7 @@ def _render_guides(project_file, output, include_announcements, scratch):
             if s['countClick']:
                 # A pickup can start on any beat. Counting "one" must not
                 # introduce a competing bar accent over the main metronome.
-                accented=round(clock.coordinate(at))%s['beatsPerBar']==0
+                accented=clock.bar_phase(at)[0]==0
                 t=np.arange(int(sr*.035))/sr;wave=.65*np.sin(2*np.pi*(1760 if accented else 1100)*t)*np.exp(-t*130)
                 place(counts,np.repeat(wave[:,None],2,axis=1),at)
     for name,data in phase_items([('click',click),('calls',calls),('cues',cues),('counts',counts)],4,5,ui_text('Enregistrement des guides', 'Saving guides')):
